@@ -1,9 +1,9 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../api";
 import { IrDropHeatmap, PowerStackBars, SlackBars } from "../components/charts";
-import { Card, Meter, StatTile, StatusBadge } from "../components/ui";
+import { Card, Field, Meter, StatTile, StatusBadge } from "../components/ui";
 
 /* Real design example: lowRISC Ibex RISC-V core hardened on SkyWater SKY130
    (the OpenROAD/OpenLane reference flow). VDD 1.8V, clk 10ns (100MHz), SKY130
@@ -50,13 +50,195 @@ const IBEX_CORNERS = [
   { name: "ff_n40C_1v95", endpoint_slacks_ps: [120, 45, 380, 200, 550, 610, 85, 420, 770, 30, 300, 440] },
 ];
 
+// Ibex-style pulse synchronizer (clean 2-FF CDC) — default sample for the ladder
+const SAMPLE_RTL = `module ibex_pulse_sync (
+  input  logic clk_src_i,
+  input  logic clk_dst_i,
+  input  logic rst_ni,
+  input  logic pulse_src_i,
+  output logic pulse_dst_o
+);
+  logic toggle_q;
+  logic toggle_q_meta, toggle_q_sync, toggle_q_prev;
+
+  always_ff @(posedge clk_src_i or negedge rst_ni) begin
+    if (!rst_ni) toggle_q <= 1'b0;
+    else if (pulse_src_i) toggle_q <= ~toggle_q;
+  end
+
+  always_ff @(posedge clk_dst_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      toggle_q_meta <= 1'b0;
+      toggle_q_sync <= 1'b0;
+      toggle_q_prev <= 1'b0;
+    end else begin
+      toggle_q_meta <= toggle_q;
+      toggle_q_sync <= toggle_q_meta;
+      toggle_q_prev <= toggle_q_sync;
+    end
+  end
+
+  assign pulse_dst_o = toggle_q_sync ^ toggle_q_prev;
+endmodule
+`;
+
 export default function Analysis() {
   return (
     <div className="space-y-6">
+      <RtlSignoffSection />
       <IrDropSection />
       <TimingSection />
       <GlitchSection />
     </div>
+  );
+}
+
+function RtlSignoffSection() {
+  const [code, setCode] = useState(SAMPLE_RTL);
+  const [projectId, setProjectId] = useState<number | "">("");
+  const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
+  const run = useMutation({
+    mutationFn: () =>
+      api.rtlSignoff({ code, ...(projectId !== "" ? { project_id: projectId } : {}) }),
+  });
+
+  const verdictStatus = { SIGNED_OFF: "good", CONDITIONAL: "warning", REJECTED: "critical" } as const;
+  const verdictLabel = {
+    SIGNED_OFF: "SIGNED_OFF",
+    CONDITIONAL: "CONDITIONAL — 게이팅 단계 일부 생략",
+    REJECTED: "REJECTED",
+  } as const;
+  const stageStatus = { pass: "good", fail: "critical", skip: "neutral" } as const;
+
+  return (
+    <Card
+      title="RTL 사인오프 래더"
+      subtitle="verilator lint → 설계 룰(CDC/리셋/FSM) → yosys 합성 → 판정 · ai_driven_rtl에서 이식한 결정론적 래더"
+      actions={
+        <div className="flex items-end gap-2">
+          <Field label="프로젝트에 기록 (선택)">
+            <select
+              className="input"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value === "" ? "" : Number(e.target.value))}
+            >
+              <option value="">기록 안 함</option>
+              {(projects.data ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <button className="btn btn-primary" onClick={() => run.mutate()} disabled={run.isPending}>
+            {run.isPending ? "래더 실행 중…" : "사인오프 래더 실행"}
+          </button>
+        </div>
+      }
+    >
+      <textarea
+        className="input w-full font-mono"
+        style={{ minHeight: 200, fontSize: 12, lineHeight: 1.55 }}
+        spellCheck={false}
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        aria-label="SystemVerilog 소스"
+      />
+
+      {run.isError && (
+        <p className="mt-3 text-sm" style={{ color: "var(--status-critical)" }}>
+          {(run.error as Error).message}
+        </p>
+      )}
+
+      {run.data && (
+        <div className="mt-4 space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusBadge
+              status={verdictStatus[run.data.verdict]}
+              label={verdictLabel[run.data.verdict]}
+            />
+            <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+              QoR {run.data.score}점 · 등급 {run.data.grade}
+              {run.data.module && ` · 모듈 ${run.data.module}`}
+              {run.data.run_id && ` · 런 #${run.data.run_id}로 기록됨`}
+            </span>
+          </div>
+
+          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {run.data.stages.map((s) => (
+              <li
+                key={s.name}
+                className="rounded-lg px-3 py-2"
+                style={{ border: "1px solid var(--grid-hairline)" }}
+              >
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-sm font-medium">{s.name}</span>
+                  <StatusBadge status={stageStatus[s.status]} label={s.status} />
+                </div>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {s.detail}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs" style={{ color: "var(--text-muted)" }}>
+                  <th className="py-1.5 font-medium">DRC 룰</th>
+                  <th className="py-1.5 font-medium">이름</th>
+                  <th className="py-1.5 font-medium">상태</th>
+                  <th className="py-1.5 font-medium">상세</th>
+                </tr>
+              </thead>
+              <tbody>
+                {run.data.rules.map((r) => (
+                  <tr key={r.code + r.detail} className="hairline-t">
+                    <td className="py-1.5 pr-3 font-mono text-xs">{r.code}</td>
+                    <td className="py-1.5 pr-3">{r.name}</td>
+                    <td className="py-1.5 pr-3">
+                      <StatusBadge
+                        status={
+                          r.status === "pass"
+                            ? "good"
+                            : r.severity === "error"
+                              ? "critical"
+                              : r.severity === "warn"
+                                ? "warning"
+                                : "neutral"
+                        }
+                        label={r.status === "pass" ? "pass" : r.severity}
+                      />
+                    </td>
+                    <td className="py-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+                      {r.detail}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {run.data.suggestions.length > 0 && (
+            <div
+              className="rounded-lg px-4 py-3 text-sm"
+              style={{ border: "1px solid var(--grid-hairline)", color: "var(--text-secondary)" }}
+            >
+              <div className="mb-1 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                개선 제안
+              </div>
+              <ul className="list-disc space-y-1 pl-4">
+                {run.data.suggestions.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

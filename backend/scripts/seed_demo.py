@@ -57,7 +57,14 @@ def seed() -> None:
         db.flush()
         return r
 
-    # RTL: early timing prediction (shift-left)
+    # RTL: quality signoff ladder (lint/CDC/synth) + early timing (shift-left)
+    run(
+        Domain.rtl,
+        Stage.rtl,
+        "rtl-signoff-ladder (lint=verilator)",
+        RunStatus.passed,
+        {"verdict": "CONDITIONAL", "score": 96, "grade": "A", "module": "ibex_pulse_sync"},
+    )
     run(
         Domain.sta,
         Stage.rtl,

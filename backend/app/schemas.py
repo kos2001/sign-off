@@ -93,6 +93,15 @@ class GlitchPowerRequest(BaseModel):
     clock_period_ns: float = 1.0
 
 
+class RtlSignoffRequest(BaseModel):
+    code: str = Field(min_length=1, description="Single-file SystemVerilog source")
+    project_id: int | None = Field(
+        default=None,
+        description="When set, record the result as a signoff run (domain=rtl, stage=rtl) "
+        "and file failing checks as violations",
+    )
+
+
 class TimingCorner(BaseModel):
     name: str = Field(min_length=1, examples=["ss_0p675v_125c"])
     endpoint_slacks_ps: list[float] = Field(min_length=1)
