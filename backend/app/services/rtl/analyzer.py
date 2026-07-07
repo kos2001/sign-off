@@ -207,22 +207,21 @@ def _grade(score: int) -> str:
             else "D" if score >= 60 else "F")
 
 
-def analyze(code: str) -> dict:
-    """Deterministic QoR report: lint + structural checks + synth + score."""
-    code = tools.strip_fences(code)
+def strict_width_findings(code: str, lint_result: tools.LintResult) -> int:
+    """Count WIDTH truncation/expansion findings from the strict lint pass."""
+    if not lint_result.available:
+        return 0
+    wr = tools.lint(code, strict=True)
+    return sum(1 for i in wr.issues if "WIDTH" in i.upper())
 
-    lr = tools.lint(code)
-    lint_tool = "verilator" if lr.available else "unavailable"
-    lint_pass = lr.ok if lr.available else True  # tool absence never fails the design
 
+def design_checks(code: str, width_findings: int) -> tuple[list[Check], dict, dict, dict]:
+    """Structural design-rule checks plus reset/FSM/CDC analyses."""
     checks = _static_checks(code)
 
-    if lr.available:
-        wr = tools.lint(code, strict=True)
-        width_findings = sum(1 for i in wr.issues if "WIDTH" in i.upper())
-        if width_findings:
-            checks.append(Check("width_clean", "warn", False,
-                                f"{width_findings} width mismatch finding(s)"))
+    if width_findings:
+        checks.append(Check("width_clean", "warn", False,
+                            f"{width_findings} width mismatch finding(s)"))
 
     rst = reset_analysis(code)
     if rst["present"]:
@@ -250,7 +249,21 @@ def analyze(code: str) -> dict:
         checks.append(Check("cdc_safe", "info", True,
                             f"multi-clock ({len(cdc['clocks'])} domains), no unsynchronized crossing detected"))
 
-    sr = tools.synthesize(code)
+    return checks, rst, fsm, cdc
+
+
+def build_report(
+    code: str,
+    lr: tools.LintResult,
+    width_findings: int,
+    sr: tools.SynthResult,
+) -> dict:
+    """Assemble the QoR report from precomputed tool results (streaming-friendly)."""
+    lint_tool = "verilator" if lr.available else "unavailable"
+    lint_pass = lr.ok if lr.available else True  # tool absence never fails the design
+
+    checks, rst, fsm, cdc = design_checks(code, width_findings)
+
     synthesizable = sr.ok if sr.available else None
     if sr.available:
         checks.append(Check("synthesizable", "error", sr.ok,
@@ -290,3 +303,12 @@ def analyze(code: str) -> dict:
             "latches": sr.latches,
         },
     }
+
+
+def analyze(code: str) -> dict:
+    """Deterministic QoR report: lint + structural checks + synth + score."""
+    code = tools.strip_fences(code)
+    lr = tools.lint(code)
+    width = strict_width_findings(code, lr)
+    sr = tools.synthesize(code)
+    return build_report(code, lr, width, sr)

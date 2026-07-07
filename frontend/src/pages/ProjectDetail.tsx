@@ -16,13 +16,16 @@ export default function ProjectDetail() {
     queryKey: ["project", projectId],
     queryFn: () => api.getProject(projectId),
   });
+  // 5s polling keeps runs and gate status live while ladders execute elsewhere
   const runs = useQuery({
     queryKey: ["runs", projectId],
     queryFn: () => api.listRuns(projectId),
+    refetchInterval: 5000,
   });
   const gate = useQuery({
     queryKey: ["gate", projectId, stage],
     queryFn: () => api.gateStatus(projectId, stage),
+    refetchInterval: 5000,
   });
 
   const invalidate = () => {

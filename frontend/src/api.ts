@@ -99,6 +99,11 @@ export interface RtlSignoffResult {
   run_id: number | null;
 }
 
+export type RtlStreamEvent =
+  | { event: "stage_start"; stage: string }
+  | { event: "stage_done"; stage: string; status: "pass" | "fail" | "skip"; detail: string }
+  | { event: "result"; result: RtlSignoffResult };
+
 export interface CornerStats {
   name?: string;
   wns_ps: number;
@@ -201,6 +206,36 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  rtlSignoffStream: async (
+    payload: { code: string; project_id?: number },
+    onEvent: (event: RtlStreamEvent) => void,
+  ) => {
+    const res = await fetch("/api/analysis/rtl-signoff/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok || !res.body) {
+      const body = await res.json().catch(() => null);
+      throw new Error(
+        body && typeof body.detail === "string" ? body.detail : `${res.status} ${res.statusText}`,
+      );
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim()) onEvent(JSON.parse(line) as RtlStreamEvent);
+      }
+    }
+    if (buffer.trim()) onEvent(JSON.parse(buffer) as RtlStreamEvent);
+  },
   timingSummary: (payload: {
     corners: { name: string; endpoint_slacks_ps: number[] }[];
     pba_pessimism_credit_ps?: number;

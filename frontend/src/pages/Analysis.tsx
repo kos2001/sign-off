@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import type { RtlSignoffResult } from "../api";
 import { api } from "../api";
 import { IrDropHeatmap, PowerStackBars, SlackBars } from "../components/charts";
 import { Card, Field, Meter, StatTile, StatusBadge } from "../components/ui";
@@ -93,14 +94,55 @@ export default function Analysis() {
   );
 }
 
+const LADDER = ["lint", "design", "synthesize", "simulate"] as const;
+type LiveStatus = "pending" | "running" | "pass" | "fail" | "skip";
+
 function RtlSignoffSection() {
   const [code, setCode] = useState(SAMPLE_RTL);
   const [projectId, setProjectId] = useState<number | "">("");
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
-  const run = useMutation({
-    mutationFn: () =>
-      api.rtlSignoff({ code, ...(projectId !== "" ? { project_id: projectId } : {}) }),
-  });
+
+  const [running, setRunning] = useState(false);
+  const [live, setLive] = useState<Record<string, { status: LiveStatus; detail?: string }>>({});
+  const [log, setLog] = useState<string[]>([]);
+  const [result, setResult] = useState<RtlSignoffResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const appendLog = (line: string) =>
+    setLog((prev) => [...prev, `${new Date().toLocaleTimeString("ko-KR", { hour12: false })}  ${line}`]);
+
+  async function runLadder() {
+    setRunning(true);
+    setResult(null);
+    setError(null);
+    setLog([]);
+    setLive(Object.fromEntries(LADDER.map((s) => [s, { status: "pending" as LiveStatus }])));
+    appendLog("▸ 사인오프 래더 시작");
+    try {
+      await api.rtlSignoffStream(
+        { code, ...(projectId !== "" ? { project_id: projectId } : {}) },
+        (ev) => {
+          if (ev.event === "stage_start") {
+            setLive((p) => ({ ...p, [ev.stage]: { status: "running" } }));
+            appendLog(`▸ ${ev.stage} 실행 중…`);
+          } else if (ev.event === "stage_done") {
+            setLive((p) => ({ ...p, [ev.stage]: { status: ev.status, detail: ev.detail } }));
+            const icon = ev.status === "pass" ? "✓" : ev.status === "fail" ? "✕" : "–";
+            appendLog(`${icon} ${ev.stage} ${ev.status} — ${ev.detail}`);
+          } else {
+            setResult(ev.result);
+            appendLog(`■ 판정: ${ev.result.verdict} (QoR ${ev.result.score}점)`);
+            if (ev.result.run_id) appendLog(`■ 런 #${ev.result.run_id}로 기록됨`);
+          }
+        },
+      );
+    } catch (e) {
+      setError((e as Error).message);
+      appendLog(`✕ 오류: ${(e as Error).message}`);
+    } finally {
+      setRunning(false);
+    }
+  }
 
   const verdictStatus = { SIGNED_OFF: "good", CONDITIONAL: "warning", REJECTED: "critical" } as const;
   const verdictLabel = {
@@ -108,7 +150,13 @@ function RtlSignoffSection() {
     CONDITIONAL: "CONDITIONAL — 게이팅 단계 일부 생략",
     REJECTED: "REJECTED",
   } as const;
-  const stageStatus = { pass: "good", fail: "critical", skip: "neutral" } as const;
+  const liveStatusBadge: Record<LiveStatus, { status: "good" | "critical" | "warning" | "neutral"; label: string }> = {
+    pending: { status: "neutral", label: "대기" },
+    running: { status: "warning", label: "실행 중" },
+    pass: { status: "good", label: "pass" },
+    fail: { status: "critical", label: "fail" },
+    skip: { status: "neutral", label: "skip" },
+  };
 
   return (
     <Card
@@ -130,8 +178,8 @@ function RtlSignoffSection() {
               ))}
             </select>
           </Field>
-          <button className="btn btn-primary" onClick={() => run.mutate()} disabled={run.isPending}>
-            {run.isPending ? "래더 실행 중…" : "사인오프 래더 실행"}
+          <button className="btn btn-primary" onClick={runLadder} disabled={running}>
+            {running ? "래더 실행 중…" : "사인오프 래더 실행"}
           </button>
         </div>
       }
@@ -145,43 +193,70 @@ function RtlSignoffSection() {
         aria-label="SystemVerilog 소스"
       />
 
-      {run.isError && (
+      {error && (
         <p className="mt-3 text-sm" style={{ color: "var(--status-critical)" }}>
-          {(run.error as Error).message}
+          {error}
         </p>
       )}
 
-      {run.data && (
+      {Object.keys(live).length > 0 && (
+        <div className="mt-4 space-y-4">
+          {/* live ladder — updates as each tool actually runs */}
+          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {LADDER.map((name) => {
+              const s = live[name] ?? { status: "pending" as LiveStatus };
+              const badge = liveStatusBadge[s.status];
+              return (
+                <li
+                  key={name}
+                  className={`rounded-lg px-3 py-2 ${s.status === "running" ? "stage-running" : ""}`}
+                  style={{ border: "1px solid var(--grid-hairline)" }}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-sm font-medium">{name}</span>
+                    <StatusBadge status={badge.status} label={badge.label} />
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    {s.detail ?? (s.status === "running" ? "툴 실행 중…" : " ")}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* live event log */}
+          <div
+            className="rounded-lg px-4 py-3 font-mono text-xs"
+            style={{
+              background: "#141413",
+              border: "1px solid var(--grid-hairline)",
+              color: "var(--text-secondary)",
+              maxHeight: 140,
+              overflowY: "auto",
+            }}
+            aria-live="polite"
+            aria-label="사인오프 실행 로그"
+          >
+            {log.map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {result && (
         <div className="mt-4 space-y-4">
           <div className="flex flex-wrap items-center gap-3">
             <StatusBadge
-              status={verdictStatus[run.data.verdict]}
-              label={verdictLabel[run.data.verdict]}
+              status={verdictStatus[result.verdict]}
+              label={verdictLabel[result.verdict]}
             />
             <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-              QoR {run.data.score}점 · 등급 {run.data.grade}
-              {run.data.module && ` · 모듈 ${run.data.module}`}
-              {run.data.run_id && ` · 런 #${run.data.run_id}로 기록됨`}
+              QoR {result.score}점 · 등급 {result.grade}
+              {result.module && ` · 모듈 ${result.module}`}
+              {result.run_id && ` · 런 #${result.run_id}로 기록됨`}
             </span>
           </div>
-
-          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {run.data.stages.map((s) => (
-              <li
-                key={s.name}
-                className="rounded-lg px-3 py-2"
-                style={{ border: "1px solid var(--grid-hairline)" }}
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-sm font-medium">{s.name}</span>
-                  <StatusBadge status={stageStatus[s.status]} label={s.status} />
-                </div>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  {s.detail}
-                </p>
-              </li>
-            ))}
-          </ul>
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -194,7 +269,7 @@ function RtlSignoffSection() {
                 </tr>
               </thead>
               <tbody>
-                {run.data.rules.map((r) => (
+                {result.rules.map((r) => (
                   <tr key={r.code + r.detail} className="hairline-t">
                     <td className="py-1.5 pr-3 font-mono text-xs">{r.code}</td>
                     <td className="py-1.5 pr-3">{r.name}</td>
@@ -221,7 +296,7 @@ function RtlSignoffSection() {
             </table>
           </div>
 
-          {run.data.suggestions.length > 0 && (
+          {result.suggestions.length > 0 && (
             <div
               className="rounded-lg px-4 py-3 text-sm"
               style={{ border: "1px solid var(--grid-hairline)", color: "var(--text-secondary)" }}
@@ -230,7 +305,7 @@ function RtlSignoffSection() {
                 개선 제안
               </div>
               <ul className="list-disc space-y-1 pl-4">
-                {run.data.suggestions.map((s) => (
+                {result.suggestions.map((s) => (
                   <li key={s}>{s}</li>
                 ))}
               </ul>

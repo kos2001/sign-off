@@ -13,9 +13,11 @@ failure is REJECTED. Findings carry SpyGlass-style DRC rule codes so they can
 be filed as violations against a signoff run.
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
-from .analyzer import analyze
+from . import tools
+from .analyzer import build_report, design_checks, strict_width_findings
 
 DRC_RULES = {
     "module_present":     ("DRC-STRUCT-001", "Module declaration present"),
@@ -54,6 +56,20 @@ class SignoffResult:
     suggestions: list[str] = field(default_factory=list)
     report: dict = field(default_factory=dict)
 
+    def to_dict(self) -> dict:
+        return {
+            "verdict": self.verdict,
+            "score": self.score,
+            "grade": self.grade,
+            "module": self.module,
+            "stages": [
+                {"name": s.name, "status": s.status, "gating": s.gating, "detail": s.detail}
+                for s in self.stages
+            ],
+            "rules": self.rules,
+            "suggestions": self.suggestions,
+        }
+
 
 def _verdict(stages: list[LadderStage]) -> str:
     gating = [s for s in stages if s.gating]
@@ -81,42 +97,38 @@ def _suggestions(stages: list[LadderStage]) -> list[str]:
     return out
 
 
-def run_signoff(rtl_code: str) -> SignoffResult:
-    report = analyze(rtl_code)
-    stages: list[LadderStage] = []
+def _lint_stage(lr: tools.LintResult) -> LadderStage:
+    if not lr.available:
+        return LadderStage("lint", "skip", gating=True, detail="verilator not installed")
+    return LadderStage(
+        "lint", "pass" if lr.ok else "fail", gating=True,
+        detail=f"verilator: {len(lr.issues)} finding(s)",
+    )
 
-    # 1. lint
-    if not report["lint_available"]:
-        stages.append(LadderStage("lint", "skip", gating=True, detail="verilator not installed"))
-    else:
-        stages.append(LadderStage(
-            "lint", "pass" if report["lint_pass"] else "fail", gating=True,
-            detail=f"verilator: {len(report['lint_findings'])} finding(s)",
-        ))
 
-    # 2. design — error-severity structural checks gate (synthesizable is stage 3)
+def _design_stage(checks) -> LadderStage:
     failing_errors = [
-        c for c in report["checks"]
-        if c.severity == "error" and not c.ok and c.id != "synthesizable"
+        c for c in checks if c.severity == "error" and not c.ok and c.id != "synthesizable"
     ]
-    stages.append(LadderStage(
+    return LadderStage(
         "design", "pass" if not failing_errors else "fail", gating=True,
         detail="; ".join(c.detail for c in failing_errors) or "structural checks ok",
-    ))
+    )
 
-    # 3. synthesize
-    synth = report["synth"]
-    if not synth["available"]:
-        stages.append(LadderStage("synthesize", "skip", gating=True, detail="yosys not installed"))
-    else:
-        stages.append(LadderStage(
-            "synthesize", "pass" if synth["ok"] else "fail", gating=True,
-            detail=f"cells={synth['cells']} flops={synth['flops']} latches={synth['latches']}",
-        ))
 
-    # 4. simulate — testbench integration not wired here; skipped (gating)
-    stages.append(LadderStage("simulate", "skip", gating=True, detail="no testbench available"))
+def _synth_stage(sr: tools.SynthResult) -> LadderStage:
+    if not sr.available:
+        return LadderStage("synthesize", "skip", gating=True, detail="yosys not installed")
+    return LadderStage(
+        "synthesize", "pass" if sr.ok else "fail", gating=True,
+        detail=f"cells={sr.cells} flops={sr.flops} latches={sr.latches}",
+    )
 
+
+_SIMULATE_SKIP = LadderStage("simulate", "skip", gating=True, detail="no testbench available")
+
+
+def _build_result(report: dict, stages: list[LadderStage]) -> SignoffResult:
     rules = []
     for c in report["checks"]:
         code_id, name = DRC_RULES.get(c.id, (f"DRC-GEN-{c.id.upper()}", c.id))
@@ -139,3 +151,57 @@ def run_signoff(rtl_code: str) -> SignoffResult:
         suggestions=_suggestions(stages) if verdict != "SIGNED_OFF" else [],
         report=report,
     )
+
+
+def run_signoff(rtl_code: str) -> SignoffResult:
+    """Run the full ladder at once and return the consolidated result."""
+    code = tools.strip_fences(rtl_code)
+    lr = tools.lint(code)
+    width = strict_width_findings(code, lr)
+    sr = tools.synthesize(code)
+    report = build_report(code, lr, width, sr)
+    stages = [
+        _lint_stage(lr),
+        _design_stage(report["checks"]),
+        _synth_stage(sr),
+        _SIMULATE_SKIP,
+    ]
+    return _build_result(report, stages)
+
+
+def stream_signoff(rtl_code: str) -> Iterator[dict]:
+    """Run the ladder stage by stage, yielding progress events as each real
+    tool executes, ending with the consolidated result:
+
+      {"event": "stage_start", "stage": "lint"}
+      {"event": "stage_done", "stage": "lint", "status": "pass", "detail": ...}
+      ...
+      {"event": "result", "result": {<SignoffResult.to_dict()>}}
+    """
+    code = tools.strip_fences(rtl_code)
+
+    yield {"event": "stage_start", "stage": "lint"}
+    lr = tools.lint(code)
+    width = strict_width_findings(code, lr)
+    lint_stage = _lint_stage(lr)
+    yield {"event": "stage_done", "stage": "lint",
+           "status": lint_stage.status, "detail": lint_stage.detail}
+
+    yield {"event": "stage_start", "stage": "design"}
+    checks, _rst, _fsm, _cdc = design_checks(code, width)
+    design_stage = _design_stage(checks)
+    yield {"event": "stage_done", "stage": "design",
+           "status": design_stage.status, "detail": design_stage.detail}
+
+    yield {"event": "stage_start", "stage": "synthesize"}
+    sr = tools.synthesize(code)
+    synth_stage = _synth_stage(sr)
+    yield {"event": "stage_done", "stage": "synthesize",
+           "status": synth_stage.status, "detail": synth_stage.detail}
+
+    yield {"event": "stage_done", "stage": "simulate",
+           "status": _SIMULATE_SKIP.status, "detail": _SIMULATE_SKIP.detail}
+
+    report = build_report(code, lr, width, sr)
+    result = _build_result(report, [lint_stage, design_stage, synth_stage, _SIMULATE_SKIP])
+    yield {"event": "result", "result": result.to_dict()}

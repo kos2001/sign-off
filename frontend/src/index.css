@@ -171,6 +171,18 @@ body {
   border-bottom: 1px solid var(--grid-hairline);
 }
 
+.stage-running {
+  border-color: rgba(57, 135, 229, 0.55) !important;
+  animation: stage-pulse 1.2s ease-in-out infinite;
+}
+@keyframes stage-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(57, 135, 229, 0.25); }
+  50% { box-shadow: 0 0 0 5px rgba(57, 135, 229, 0.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-running { animation: none; }
+}
+
 .viz-tooltip {
   position: fixed;
   pointer-events: none;
