@@ -1,4 +1,4 @@
-export type Domain = "sta" | "emir" | "pv" | "glitch_power" | "thermal";
+export type Domain = "rtl" | "sta" | "emir" | "pv" | "glitch_power" | "thermal";
 export type Stage = "rtl" | "synthesis" | "placement" | "routing" | "final";
 export type RunStatus = "running" | "passed" | "failed";
 export type Severity = "info" | "warning" | "error" | "critical";
@@ -80,6 +80,23 @@ export interface GlitchResult {
     functional_power_uw: number;
     glitch_power_uw: number;
   }[];
+}
+
+export interface RtlSignoffResult {
+  verdict: "SIGNED_OFF" | "CONDITIONAL" | "REJECTED";
+  score: number;
+  grade: string;
+  module: string | null;
+  stages: { name: string; status: "pass" | "fail" | "skip"; gating: boolean; detail: string }[];
+  rules: {
+    code: string;
+    name: string;
+    severity: "error" | "warn" | "info";
+    status: "pass" | "violation";
+    detail: string;
+  }[];
+  suggestions: string[];
+  run_id: number | null;
 }
 
 export interface CornerStats {
@@ -179,6 +196,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  rtlSignoff: (payload: { code: string; project_id?: number }) =>
+    request<RtlSignoffResult>("/analysis/rtl-signoff", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   timingSummary: (payload: {
     corners: { name: string; endpoint_slacks_ps: number[] }[];
     pba_pessimism_credit_ps?: number;
@@ -190,6 +212,7 @@ export const api = {
 };
 
 export const DOMAIN_LABELS: Record<Domain, string> = {
+  rtl: "RTL 품질",
   sta: "STA",
   emir: "EM/IR",
   pv: "PV",

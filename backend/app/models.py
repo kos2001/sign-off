@@ -12,6 +12,7 @@ def utcnow() -> datetime:
 
 
 class Domain(str, enum.Enum):
+    rtl = "rtl"
     sta = "sta"
     emir = "emir"
     pv = "pv"

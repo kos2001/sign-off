@@ -10,7 +10,9 @@
 ## 구조
 
 - `backend/` — FastAPI + SQLAlchemy + SQLite. 사인오프 런/위반/웨이버 관리, shift-left 스테이지
-  게이트, 분석 API 3종. 상세: `backend/README.md`
+  게이트, 분석 API 4종. RTL 사인오프 래더(verilator lint → CDC/리셋/FSM 설계 룰 → yosys 합성 →
+  SIGNED_OFF/CONDITIONAL/REJECTED)는 `~/gitspace/ai_driven_rtl`의 결정론적 검증 모듈을 이식한 것.
+  상세: `backend/README.md`
 - `frontend/` — Vite 7 + React 19 + TypeScript + Tailwind CSS v4 + TanStack Query + React Router 7.
   커스텀 SVG 시각화(IR-drop 히트맵, 슬랙 다이버징 바, 전력 스택 바), 라이트/다크 모드.
 

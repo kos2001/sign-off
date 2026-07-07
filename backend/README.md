@@ -11,7 +11,8 @@
 | §3 STA / MMMC / GBA→PBA | `app/services/timing.py` — 코너별 WNS/TNS/NVP 집계, 엔드포인트 단위 MMMC 머지, GBA→PBA 비관성 크레딧 추정 (`POST /analysis/timing-summary`) |
 | §4 IR-drop ML 스크리닝 | `app/services/irdrop.py` — arXiv:2601.22707의 물리 기반 공식(density×activity/strength)으로 IR-drop 맵·핫스팟 사전 스크리닝 (`POST /analysis/ir-drop`) |
 | §5 벡터리스 글리치 파워 | `app/services/glitch.py` — 토글률 초과분 기반 글리치 파워 추정, transport/inertial 디레이팅 (`POST /analysis/glitch-power`) |
-| §9 사인오프 런 관리 실무 | 프로젝트/런/위반/웨이버 CRUD — 도메인(sta·emir·pv·glitch_power·thermal), 툴, 스테이지, 심각도 추적 |
+| §9 사인오프 런 관리 실무 | 프로젝트/런/위반/웨이버 CRUD — 도메인(rtl·sta·emir·pv·glitch_power·thermal), 툴, 스테이지, 심각도 추적 |
+| RTL 사인오프 래더 (ai_driven_rtl 이식) | `app/services/rtl/` — verilator lint → 설계 룰(SV 타입·non-blocking·리셋 분류·CDC·FSM 도달성, DRC-XXX 코드) → yosys 합성 → SIGNED_OFF/CONDITIONAL/REJECTED 판정 + QoR 점수 (`POST /analysis/rtl-signoff`). `project_id` 지정 시 런/위반 자동 기록 → RTL 스테이지 게이트 구동. 툴 부재 시 skip으로 우아하게 강등 |
 
 분석 엔드포인트는 골든 사인오프 툴(PrimeTime/RedHawk-SC/Calibre)의 **대체가 아닌 사전 스크리닝 계층**입니다 — 리포트의 핵심 결론과 동일한 포지셔닝.
 

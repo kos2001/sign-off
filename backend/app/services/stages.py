@@ -2,7 +2,8 @@
 
 Signoff checks are no longer a single final step: each design stage has a set
 of domains that must have a passing run before the design advances. The matrix
-below encodes that shift-left policy: early timing at RTL, glitch power from
+below encodes that shift-left policy: RTL-quality signoff (lint/CDC/synth
+ladder) plus early timing at RTL, glitch power from
 synthesis (vectorless estimation needs no simulation vectors), IR/PV screening
 from placement, and the full multi-physics set (including thermal) at final
 signoff.
@@ -11,7 +12,7 @@ signoff.
 from ..models import Domain, RunStatus, Severity, SignoffRun, Stage, ViolationStatus
 
 REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
-    Stage.rtl: (Domain.sta,),
+    Stage.rtl: (Domain.rtl, Domain.sta),
     Stage.synthesis: (Domain.sta, Domain.glitch_power),
     Stage.placement: (Domain.sta, Domain.emir, Domain.pv),
     Stage.routing: (Domain.sta, Domain.emir, Domain.pv),
