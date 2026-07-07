@@ -1,29 +1,32 @@
 @import "tailwindcss";
 
-/* Design tokens — dataviz reference palette (light/dark selected, not flipped) */
+/* Design tokens — dataviz reference palette, committed to the DARK theme.
+   The dark column values were selected (not auto-flipped) and validated
+   against the dark chart surface (#1a1a19). */
 :root {
-  --page: #f9f9f7;
-  --surface-1: #fcfcfb;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --surface-2: #222221;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
   --text-muted: #898781;
-  --grid-hairline: #e1e0d9;
-  --baseline: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.1);
+  --grid-hairline: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.1);
 
-  --series-1: #2a78d6; /* blue */
-  --series-2: #1baf7a; /* aqua */
+  --series-1: #3987e5; /* blue */
+  --series-2: #199e70; /* aqua */
 
   /* diverging pair: blue <-> red, neutral gray midpoint */
-  --div-pos: #2a78d6;
-  --div-neg: #e34948;
-  --div-mid: #f0efec;
+  --div-pos: #3987e5;
+  --div-neg: #e66767;
+  --div-mid: #383835;
 
   --status-good: #0ca30c;
   --status-warning: #fab219;
   --status-serious: #ec835a;
   --status-critical: #d03b3b;
-  --delta-good-text: #006300;
+  --delta-good-text: #0ca30c;
 
   /* sequential blue ramp (100 -> 700) for the IR-drop heatmap */
   --seq-100: #cde2fb;
@@ -35,26 +38,8 @@
   --seq-700: #0d366b;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #0d0d0d;
-    --surface-1: #1a1a19;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --grid-hairline: #2c2c2a;
-    --baseline: #383835;
-    --border: rgba(255, 255, 255, 0.1);
-
-    --series-1: #3987e5;
-    --series-2: #199e70;
-
-    --div-pos: #3987e5;
-    --div-neg: #e66767;
-    --div-mid: #383835;
-
-    --delta-good-text: #0ca30c;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
@@ -64,10 +49,24 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+::selection {
+  background: rgba(57, 135, 229, 0.35);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--baseline) transparent;
+}
+
 .card {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 14px;
+  transition: border-color 0.15s;
+}
+
+.card-hover:hover {
+  border-color: rgba(57, 135, 229, 0.45);
 }
 
 .hairline-t {
@@ -75,16 +74,40 @@ body {
 }
 
 .input {
-  background: var(--surface-1);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 13px;
   color: var(--text-primary);
   outline: none;
+  transition: border-color 0.15s;
 }
-.input:focus {
+.input::placeholder {
+  color: var(--text-muted);
+}
+.input:focus-visible {
   border-color: var(--series-1);
+  box-shadow: 0 0 0 3px rgba(57, 135, 229, 0.2);
+}
+
+.code-editor {
+  background: #141413;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.15s;
+}
+.code-editor:focus-visible {
+  border-color: var(--series-1);
+  box-shadow: 0 0 0 3px rgba(57, 135, 229, 0.18);
+  color: var(--text-primary);
 }
 
 .btn {
@@ -94,10 +117,14 @@ body {
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, border-color 0.15s, background 0.15s;
 }
 .btn:hover {
-  opacity: 0.85;
+  opacity: 0.88;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
 }
 .btn:disabled {
   opacity: 0.45;
@@ -112,15 +139,46 @@ body {
   color: var(--text-secondary);
   border-color: var(--border);
 }
+.btn-ghost:hover {
+  border-color: var(--baseline);
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+.nav-pill {
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color 0.15s, background 0.15s;
+}
+.nav-pill:hover {
+  color: var(--text-primary);
+}
+.nav-pill-active {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(13, 13, 13, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--grid-hairline);
+}
 
 .viz-tooltip {
   position: fixed;
   pointer-events: none;
   z-index: 50;
-  background: var(--surface-1);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
   padding: 6px 10px;
   font-size: 12px;
   color: var(--text-primary);

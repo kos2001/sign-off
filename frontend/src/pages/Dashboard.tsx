@@ -48,22 +48,34 @@ export default function Dashboard() {
             아직 프로젝트가 없습니다. 아래에서 첫 프로젝트를 등록하세요.
           </p>
         ) : (
-          <ul className="divide-y" style={{ borderColor: "var(--grid-hairline)" }}>
+          <ul className="grid gap-3 sm:grid-cols-2">
             {list.map((p) => (
               <li key={p.id}>
                 <Link
                   to={`/projects/${p.id}`}
-                  className="flex items-center justify-between py-3 hover:opacity-70"
+                  className="card card-hover block px-4 py-3.5"
+                  style={{ background: "var(--surface-2)" }}
                 >
-                  <div>
-                    <div className="text-sm font-semibold">{p.name}</div>
-                    <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                      {p.process_node} · {p.foundry}
-                    </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">{p.name}</span>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      #{p.id} →
+                    </span>
                   </div>
-                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                    #{p.id} →
-                  </span>
+                  <div className="mt-2 flex gap-1.5">
+                    {[p.process_node, p.foundry].map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full px-2 py-0.5 text-xs"
+                        style={{
+                          border: "1px solid var(--grid-hairline)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                 </Link>
               </li>
             ))}

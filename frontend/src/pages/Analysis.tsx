@@ -137,8 +137,8 @@ function RtlSignoffSection() {
       }
     >
       <textarea
-        className="input w-full font-mono"
-        style={{ minHeight: 200, fontSize: 12, lineHeight: 1.55 }}
+        className="code-editor w-full"
+        style={{ minHeight: 220 }}
         spellCheck={false}
         value={code}
         onChange={(e) => setCode(e.target.value)}

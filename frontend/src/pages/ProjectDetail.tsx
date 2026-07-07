@@ -53,24 +53,43 @@ export default function ProjectDetail() {
         title="Shift-left 스테이지 게이트"
         subtitle="단계별 필수 사인오프 도메인이 모두 통과해야 게이트가 열립니다"
       >
-        <div className="mb-4 flex flex-wrap gap-2">
-          {STAGES.map((s) => (
-            <button
-              key={s}
-              className="btn"
-              style={
-                s === stage
-                  ? { background: "var(--series-1)", color: "#fff" }
-                  : {
-                      background: "transparent",
-                      color: "var(--text-secondary)",
-                      border: "1px solid var(--border)",
-                    }
-              }
-              onClick={() => setStage(s)}
-            >
-              {STAGE_LABELS[s]}
-            </button>
+        <div className="mb-5 flex flex-wrap items-center gap-1">
+          {STAGES.map((s, i) => (
+            <div key={s} className="flex items-center gap-1">
+              {i > 0 && (
+                <span
+                  aria-hidden
+                  className="h-px w-4 sm:w-6"
+                  style={{ background: "var(--baseline)" }}
+                />
+              )}
+              <button
+                className="btn flex items-center gap-2"
+                style={
+                  s === stage
+                    ? { background: "var(--series-1)", color: "#fff" }
+                    : {
+                        background: "transparent",
+                        color: "var(--text-secondary)",
+                        border: "1px solid var(--border)",
+                      }
+                }
+                onClick={() => setStage(s)}
+              >
+                <span
+                  aria-hidden
+                  className="flex h-4.5 w-4.5 items-center justify-center rounded-full text-[10px] font-bold"
+                  style={
+                    s === stage
+                      ? { background: "rgba(255,255,255,0.25)" }
+                      : { border: "1px solid var(--baseline)", color: "var(--text-muted)" }
+                  }
+                >
+                  {i + 1}
+                </span>
+                {STAGE_LABELS[s]}
+              </button>
+            </div>
           ))}
         </div>
 
