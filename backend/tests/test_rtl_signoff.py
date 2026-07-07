@@ -152,6 +152,38 @@ class TestRtlSignoffApi:
         rtl_domain = next(d for d in gate["domains"] if d["domain"] == "rtl")
         assert rtl_domain["ready"] is False
 
+    def test_stream_endpoint_emits_stage_events_then_result(self, client):
+        import json
+
+        resp = client.post("/analysis/rtl-signoff/stream", json={"code": GOOD_RTL})
+        assert resp.status_code == 200
+        events = [json.loads(line) for line in resp.text.strip().splitlines()]
+
+        starts = [e["stage"] for e in events if e["event"] == "stage_start"]
+        dones = {e["stage"]: e["status"] for e in events if e["event"] == "stage_done"}
+        assert starts == ["lint", "design", "synthesize"]
+        assert dones["design"] == "pass"
+        assert dones["simulate"] == "skip"
+
+        final = events[-1]
+        assert final["event"] == "result"
+        assert final["result"]["verdict"] == "CONDITIONAL"
+        assert final["result"]["module"] == "ibex_pulse_sync"
+
+    def test_stream_endpoint_records_run(self, client):
+        import json
+
+        pid = client.post(
+            "/projects",
+            json={"name": "stream-chip", "process_node": "SKY130", "foundry": "SkyWater"},
+        ).json()["id"]
+        resp = client.post(
+            "/analysis/rtl-signoff/stream", json={"code": CDC_BAD_RTL, "project_id": pid}
+        )
+        final = json.loads(resp.text.strip().splitlines()[-1])
+        assert final["result"]["verdict"] == "REJECTED"
+        assert final["result"]["run_id"] is not None
+
     def test_endpoint_analysis_only(self, client):
         resp = client.post("/analysis/rtl-signoff", json={"code": GOOD_RTL})
         assert resp.status_code == 200
