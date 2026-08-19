@@ -42,3 +42,26 @@ uv pip install --python .venv/bin/python -r requirements.txt
 - `POST /analysis/ir-drop` · `POST /analysis/glitch-power` · `POST /analysis/timing-summary`
 
 DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).
+
+## hermes-agent 연동 ('sign-off' 프로파일)
+
+`weekly-report-harness`의 hermes 프로파일 구조(SOUL.md + 스킬 + api_server)를 참조해,
+이 앱의 도메인(RTL/타이밍/파워-IR/웨이버/게이트)에 맞춘 6개 역할의 LLM 분석 파이프라인을
+붙일 수 있습니다.
+
+| 역할 | 담당 |
+|---|---|
+| A1 RTL 리뷰어 | lint/CDC/리셋/FSM 위반의 근본 원인과 수정 방향 |
+| A2 타이밍 분석가 | MMMC WNS/TNS, 원인 코너·엔드포인트, PBA 회복 추정 해석 |
+| A3 파워/IR 무결성 분석가 | IR-drop 핫스팟, 글리치 파워 네트 분해 원인 설명 |
+| A4 웨이버 심사관 | 웨이버 사유의 타당성·잔여 리스크 심사 |
+| A5 사인오프 종합 판정관 | A1~A4 종합 → 판정 초안 + 우선순위 조치 목록 |
+| V 검증 에이전트 | A5 판정을 원본 데이터에서 독립 재검증 |
+
+- 역할 정의·클라이언트: `app/hermes.py` (`ROLES`, `HermesClient`)
+- 프로파일 소스: `profiles/sign-off/SOUL.md`, `profiles/sign-off/skills/sign-off-api/`
+- 셋업: `../scripts/setup_hermes_profile.sh [--apply]` (dry-run 기본, api_server 포트 8654)
+- 연결 설정: `.env.example` 참고 (`SIGNOFF_LLM_BASE_URL`/`_API_KEY`/`_MODEL`)
+
+api_server 경로는 도구/스킬을 실행하지 않으므로, 런/위반/게이트 데이터는 프롬프트에
+JSON으로 직접 넣어 호출합니다 (`sign-off-api` 스킬은 대화형 모드에서만 로드됨).
