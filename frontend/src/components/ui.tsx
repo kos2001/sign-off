@@ -1,18 +1,20 @@
 import type { ReactNode } from "react";
 
 export function Card({
+  id,
   title,
   subtitle,
   actions,
   children,
 }: {
+  id?: string;
   title?: string;
   subtitle?: string;
   actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="card p-5">
+    <section id={id} className="card p-5 scroll-mt-20">
       {(title || actions) && (
         <header className="mb-4 flex items-start justify-between gap-3">
           <div>
