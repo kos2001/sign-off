@@ -1,8 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 
+import type { SignoffRun } from "../api";
 import { api } from "../api";
+import { RunStatusBar } from "../components/charts";
 import { Card, Field, StatTile } from "../components/ui";
 
 export default function Dashboard() {
@@ -10,6 +12,15 @@ export default function Dashboard() {
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
   const [form, setForm] = useState({ name: "", process_node: "", foundry: "" });
   const [error, setError] = useState<string | null>(null);
+
+  const list0 = projects.data ?? [];
+  // one lightweight runs fetch per project — feeds the pass/fail glance bar below each card
+  const runQueries = useQueries({
+    queries: list0.map((p) => ({
+      queryKey: ["runs", p.id],
+      queryFn: () => api.listRuns(p.id),
+    })),
+  });
 
   const create = useMutation({
     mutationFn: api.createProject,
@@ -21,7 +32,11 @@ export default function Dashboard() {
     onError: (e: Error) => setError(e.message),
   });
 
-  const list = projects.data ?? [];
+  const list = list0;
+  const runsByProject = new Map(list.map((p, i) => [p.id, runQueries[i]?.data ?? []]));
+  const aggregateCounts = { passed: 0, failed: 0, running: 0 };
+  for (const runs of runsByProject.values())
+    for (const r of runs) aggregateCounts[r.status] += 1;
 
   return (
     <div className="space-y-6">
@@ -37,6 +52,12 @@ export default function Dashboard() {
           suffix="곳"
         />
       </div>
+
+      {list.length > 0 && (
+        <Card title="전체 런 현황" subtitle="모든 프로젝트의 사인오프 런 상태를 한눈에 봅니다">
+          <RunStatusBar counts={aggregateCounts} />
+        </Card>
+      )}
 
       <Card title="프로젝트" subtitle="칩 프로젝트별 사인오프 현황을 관리합니다">
         {projects.isLoading ? (
@@ -75,6 +96,9 @@ export default function Dashboard() {
                         {tag}
                       </span>
                     ))}
+                  </div>
+                  <div className="mt-3">
+                    <ProjectRunGlance runs={runsByProject.get(p.id) ?? []} />
                   </div>
                 </Link>
               </li>
@@ -128,6 +152,39 @@ export default function Dashboard() {
           )}
         </form>
       </Card>
+    </div>
+  );
+}
+
+/** Compact per-card glance: thin status bar, no legend, so the project grid stays scannable. */
+function ProjectRunGlance({ runs }: { runs: SignoffRun[] }) {
+  if (runs.length === 0) {
+    return (
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+        아직 런이 없습니다.
+      </p>
+    );
+  }
+  const counts = { passed: 0, failed: 0, running: 0 };
+  for (const r of runs) counts[r.status] += 1;
+  const total = runs.length;
+  const order: (keyof typeof counts)[] = ["passed", "failed", "running"];
+  const color = { passed: "var(--status-good)", failed: "var(--status-critical)", running: "var(--status-warning)" };
+
+  return (
+    <div>
+      <div className="flex h-1.5 w-full overflow-hidden rounded-full" style={{ background: "var(--seq-100)" }}>
+        {order.map(
+          (k) =>
+            counts[k] > 0 && (
+              <div key={k} style={{ width: `${(counts[k] / total) * 100}%`, background: color[k] }} />
+            ),
+        )}
+      </div>
+      <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+        런 {total}건 · 통과 {counts.passed} · 실패 {counts.failed}
+        {counts.running > 0 && ` · 진행 중 ${counts.running}`}
+      </p>
     </div>
   );
 }
