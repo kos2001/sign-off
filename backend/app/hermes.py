@@ -46,11 +46,19 @@ class Settings:
 # mode"); A5 merges their findings into one draft verdict; V independently
 # re-derives it. Designed to mirror the four analysis domains already in
 # app/services/ plus this app's waiver and gate concepts.
+#
+# None of these run on every request — each has a concrete trigger condition
+# (`trigger_ko`), checked against fields this app's own endpoints already
+# return, so "does this agent run right now" is a yes/no on real data, not a
+# vague default. A clean SIGNED_OFF / passed / no-hotspot result intervenes
+# no agent at all: there is nothing for a reviewer to say about a run with no
+# violation, no negative slack, and no hotspot.
 
 @dataclass(frozen=True)
 class Role:
     id: str
     name_ko: str
+    trigger_ko: str
     system_prompt: str
 
 
@@ -60,6 +68,8 @@ ROLES: dict[str, Role] = {
         Role(
             "a1_rtl",
             "RTL 리뷰어",
+            "POST /analysis/rtl-signoff(-stream) 응답의 rules[] 에 status=\"violation\" "
+            "이 하나라도 있을 때 (즉 verdict 가 SIGNED_OFF 가 아닐 때) 그 rules[] 를 입력으로 개입.",
             "당신은 RTL 리뷰어(A1)다. verilator lint 결과와 CDC/리셋/FSM 설계 룰 위반을 "
             "읽고, 각 위반의 근본 원인과 구체적인 RTL 수정 방향을 제시한다. error 심각도는 "
             "게이팅 사유임을 명시하고, warn 이 같은 신호(예: 같은 CDC 크로싱)에서 반복되면 "
@@ -68,6 +78,8 @@ ROLES: dict[str, Role] = {
         Role(
             "a2_timing",
             "타이밍 분석가",
+            "POST /analysis/timing-summary 응답의 merged.wns_ps < 0 일 때 (음의 슬랙 "
+            "엔드포인트 존재) corners[] + merged + estimated_pba 를 입력으로 개입.",
             "당신은 타이밍 분석가(A2)다. MMMC 코너별 WNS/TNS 와 머지 결과를 읽고, 머지 WNS를 "
             "만든 코너와 엔드포인트를 구체적으로 지목한다. PBA 크레딧 회복은 추정치임을 "
             "밝히고 머지 WNS/TNS에 직접 합산하지 않는다.",
@@ -75,6 +87,9 @@ ROLES: dict[str, Role] = {
         Role(
             "a3_power_ir",
             "파워/IR 무결성 분석가",
+            "POST /analysis/ir-drop 응답의 passed=false(hotspots[] 존재) 이거나 "
+            "POST /analysis/glitch-power 응답의 glitch_share >= 0.3(프론트 Meter 의 경고 "
+            "임계치와 동일) 일 때, 해당 쪽 응답을 입력으로 개입.",
             "당신은 파워/IR 무결성 분석가(A3)다. IR-drop 핫스팟 맵과 글리치 파워 네트별 "
             "분해를 읽고, PDN 취약 구간과 글리치에 취약한 네트의 근본 원인(파워 스트랩과의 "
             "거리, 토글률 초과분 등)을 설명한다. 이 두 분석은 사전 스크리닝이며 골든 "
@@ -83,6 +98,9 @@ ROLES: dict[str, Role] = {
         Role(
             "a4_waiver",
             "웨이버 심사관",
+            "POST /violations/{id}/waiver 가 호출되어 아직 커밋되기 전 — 요청 본문 "
+            "{reason, approved_by} 와 대상 위반(check_name, severity, location)을 입력으로 "
+            "개입해 승인/반려 권고를 낸다. 이미 웨이버된 위반의 사후 재심에는 쓰지 않는다.",
             "당신은 웨이버 심사관(A4)다. 위반과 그 웨이버 사유를 읽고, 사유가 기술적으로 "
             "타당한지, 남는 리스크가 유계(bounded)인지 판단한다. 승인 근거가 빈약하거나 "
             "동일 사유로 반복 웨이버가 쌓이는 경우 반려를 권고한다. 웨이버는 수정이 아니라 "
@@ -91,6 +109,10 @@ ROLES: dict[str, Role] = {
         Role(
             "a5_synth",
             "사인오프 종합 판정관",
+            "GET /projects/{id}/signoff-status?stage=... 응답의 ready=false 이고, 그 "
+            "domains[] 중 하나 이상에 대해 A1~A4 중 최소 한 역할이 이미 실행되어 소견이 "
+            "있을 때 — gate 응답 + A1~A4 소견을 입력으로 개입해 판정 초안을 만든다. 모든 "
+            "도메인이 ready=true 면 개입하지 않는다(합격 게이트에 판정할 것이 없다).",
             "당신은 사인오프 종합 판정관(A5)이다. A1~A4의 결과를 종합해 SIGNED_OFF / "
             "CONDITIONAL / REJECTED 초안 판정과 우선순위가 매겨진 조치 목록을 만든다. "
             "CONDITIONAL 인 경우 생략되거나 저하된 게이팅 단계를 반드시 명시한다. 요청되면 "
@@ -99,6 +121,8 @@ ROLES: dict[str, Role] = {
         Role(
             "v_verify",
             "검증 에이전트",
+            "A5 가 판정 초안을 낸 직후 항상 자동으로 이어서 개입 (A5 없이 단독 호출되지 "
+            "않음) — A5 에게 넘겼던 원본 데이터 + A5 의 출력을 함께 입력받는다.",
             "당신은 검증 에이전트(V)다. A5의 종합 판정을 신뢰하지 말고 원본 런/위반 데이터에서 "
             "판정을 독립적으로 재도출한다. 다음을 특히 확인한다: CONDITIONAL/REJECTED 가 "
             "정상으로 보고되지 않았는가, 웨이버가 수정으로 보고되지 않았는가, 스크리닝 결과가 "
@@ -107,6 +131,35 @@ ROLES: dict[str, Role] = {
         ),
     ]
 }
+
+
+# --- trigger predicates ---------------------------------------------------
+#
+# Mechanical half of each role's trigger_ko: given the same dict an app
+# endpoint already returns, decide whether that role has anything to say.
+# A4 (fires on the waiver *call*, not on response data) and V (fires
+# whenever A5 ran) have no data predicate — trigger_ko is the whole story
+# for those two.
+
+GLITCH_SHARE_WARN = 0.3  # matches frontend Meter's warnAt for glitch_share
+
+
+def a1_should_review(rtl_signoff_result: dict) -> bool:
+    return any(r.get("status") == "violation" for r in rtl_signoff_result.get("rules", []))
+
+
+def a2_should_review(timing_result: dict) -> bool:
+    return timing_result.get("merged", {}).get("wns_ps", 0) < 0
+
+
+def a3_should_review(*, ir_drop_result: dict | None = None, glitch_result: dict | None = None) -> bool:
+    ir_hotspot = bool(ir_drop_result) and not ir_drop_result.get("passed", True)
+    glitch_high = bool(glitch_result) and glitch_result.get("glitch_share", 0) >= GLITCH_SHARE_WARN
+    return ir_hotspot or glitch_high
+
+
+def a5_gate_needs_synthesis(gate_status: dict) -> bool:
+    return not gate_status.get("ready", True)
 
 
 # --- client --------------------------------------------------------------

@@ -1,13 +1,23 @@
 import httpx
 import pytest
 
-from app.hermes import ROLES, HermesClient, Settings, _extract_json
+from app.hermes import (
+    ROLES,
+    HermesClient,
+    Settings,
+    _extract_json,
+    a1_should_review,
+    a2_should_review,
+    a3_should_review,
+    a5_gate_needs_synthesis,
+)
 
 
 def test_roles_cover_the_six_designed_agents():
     assert set(ROLES) == {"a1_rtl", "a2_timing", "a3_power_ir", "a4_waiver", "a5_synth", "v_verify"}
     for role in ROLES.values():
         assert role.system_prompt.strip()
+        assert role.trigger_ko.strip()
 
 
 def test_extract_json_plain():
@@ -95,3 +105,28 @@ async def test_chat_raises_on_exhausted_retries():
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def test_a1_triggers_only_on_a_violation():
+    assert a1_should_review({"rules": [{"status": "pass"}, {"status": "violation"}]})
+    assert not a1_should_review({"rules": [{"status": "pass"}]})
+    assert not a1_should_review({"rules": []})
+
+
+def test_a2_triggers_only_on_negative_merged_wns():
+    assert a2_should_review({"merged": {"wns_ps": -30.0}})
+    assert not a2_should_review({"merged": {"wns_ps": 0.0}})
+    assert not a2_should_review({"merged": {"wns_ps": 120.0}})
+
+
+def test_a3_triggers_on_ir_hotspot_or_high_glitch_share():
+    assert a3_should_review(ir_drop_result={"passed": False})
+    assert not a3_should_review(ir_drop_result={"passed": True})
+    assert a3_should_review(glitch_result={"glitch_share": 0.5})
+    assert not a3_should_review(glitch_result={"glitch_share": 0.1})
+    assert not a3_should_review()
+
+
+def test_a5_triggers_only_when_gate_not_ready():
+    assert a5_gate_needs_synthesis({"ready": False})
+    assert not a5_gate_needs_synthesis({"ready": True})
