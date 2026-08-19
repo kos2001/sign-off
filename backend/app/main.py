@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from .db import Base, engine
-from .routers import analysis, projects, runs
+from .routers import agents, analysis, projects, runs
 
 
 def create_app() -> FastAPI:
@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(runs.router)
     app.include_router(analysis.router)
+    app.include_router(agents.router)
 
     @app.get("/health", tags=["meta"])
     def health():

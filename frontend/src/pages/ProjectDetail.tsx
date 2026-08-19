@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router";
 
 import type { Domain, Severity, SignoffRun, Stage } from "../api";
 import { api, DOMAIN_LABELS, STAGE_LABELS, STAGES } from "../api";
+import { AgentReviewPanel } from "../components/AgentReviewPanel";
 import { ReadyProgress, RunStatusBar } from "../components/charts";
 import { Card, Field, StatusBadge } from "../components/ui";
 
@@ -33,6 +34,14 @@ export default function ProjectDetail() {
     qc.invalidateQueries({ queryKey: ["runs", projectId] });
     qc.invalidateQueries({ queryKey: ["gate", projectId] });
   };
+
+  // A5 사인오프 종합 판정관 -> V 검증 에이전트: chained, only when the gate
+  // for this stage isn't ready (see backend/app/hermes.py trigger_ko).
+  const gateReview = useQuery({
+    queryKey: ["agent-review-gate", projectId, stage, gate.data?.ready],
+    queryFn: () => api.reviewGate({ gate_status: gate.data }),
+    enabled: !!gate.data,
+  });
 
   if (project.isLoading) return <p className="text-sm">불러오는 중…</p>;
   if (project.isError)
@@ -124,6 +133,8 @@ export default function ProjectDetail() {
                 </li>
               ))}
             </ul>
+            <AgentReviewPanel review={gateReview.data?.a5} loading={gateReview.isFetching} />
+            {gateReview.data?.v && <AgentReviewPanel review={gateReview.data.v} />}
           </div>
         )}
       </Card>
