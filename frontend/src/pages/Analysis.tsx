@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
 
 import type { RtlSignoffResult } from "../api";
 import { api } from "../api";
@@ -84,6 +85,16 @@ endmodule
 `;
 
 export default function Analysis() {
+  const { hash } = useLocation();
+
+  // client-side routing never triggers the browser's native hash scroll,
+  // and the target section doesn't exist in the DOM until React mounts it
+  useEffect(() => {
+    if (!hash) return;
+    const el = document.getElementById(hash.slice(1));
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [hash]);
+
   return (
     <div className="space-y-6">
       <RtlSignoffSection />
@@ -160,6 +171,7 @@ function RtlSignoffSection() {
 
   return (
     <Card
+      id="rtl-signoff"
       title="RTL 사인오프 래더"
       subtitle="verilator lint → 설계 룰(CDC/리셋/FSM) → yosys 합성 → 판정 · ai_driven_rtl에서 이식한 결정론적 래더"
       actions={
@@ -324,6 +336,7 @@ function IrDropSection() {
 
   return (
     <Card
+      id="ir-drop"
       title="IR-drop 사전 스크리닝 — Ibex @ SKY130"
       subtitle="물리 기반 서로게이트 (arXiv:2601.22707) · VDD 1.8V, 임계 5% (90mV) — 골든 EM/IR 사인오프 전 핫스팟 탐지"
       actions={
@@ -370,6 +383,7 @@ function TimingSection() {
 
   return (
     <Card
+      id="timing"
       title="MMMC 타이밍 요약 — Ibex @ SKY130, 100MHz"
       subtitle="SKY130 3코너(ss/tt/ff) WNS/TNS 집계 + 엔드포인트 머지 + GBA→PBA 비관성 크레딧 추정"
       actions={
@@ -472,6 +486,7 @@ function GlitchSection() {
 
   return (
     <Card
+      id="glitch-power"
       title="벡터리스 글리치 파워 추정 — Ibex ALU/MULTDIV"
       subtitle="토글률 초과분 기반 (Synopsys US 12,001,768 방식 단순화) · VDD 1.8V, clk 10ns — 깊은 연산 로직이 글리치에 취약"
       actions={
