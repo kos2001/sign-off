@@ -65,7 +65,7 @@ DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).
 
 - 역할 정의·클라이언트: `app/hermes.py` (`ROLES`, `HermesClient`)
 - 프로파일 소스: `profiles/sign-off/SOUL.md`, `profiles/sign-off/skills/sign-off-api/`
-- 셋업: `../scripts/setup_hermes_profile.sh [--apply]` (dry-run 기본, api_server 포트 8654)
+- 셋업: `../scripts/setup_hermes_profile.sh [--apply]` (dry-run 기본, api_server 포트 8657)
 - 연결 설정: `.env.example` 참고 (`SIGNOFF_LLM_BASE_URL`/`_API_KEY`/`_MODEL`)
 
 api_server 경로는 도구/스킬을 실행하지 않으므로, 런/위반/게이트 데이터는 프롬프트에

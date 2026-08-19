@@ -20,6 +20,16 @@ def test_roles_cover_the_six_designed_agents():
         assert role.trigger_ko.strip()
 
 
+def test_role_ids_are_long_enough_for_hermes_session_ids():
+    # app/routers/agents.py builds X-Hermes-Session-Id as f"{role.id}:...";
+    # hermes api_server rejects single-character session-id segments with
+    # 400 "Invalid session ID" (confirmed against a live profile) — a role
+    # id of "v" broke the verifier chain in practice before it was renamed
+    # "v_verify". Guard against reintroducing a short id.
+    for role_id in ROLES:
+        assert len(role_id) >= 2, role_id
+
+
 def test_extract_json_plain():
     assert _extract_json('{"verdict": "SIGNED_OFF"}') == {"verdict": "SIGNED_OFF"}
 
