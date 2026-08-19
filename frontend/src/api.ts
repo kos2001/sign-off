@@ -122,6 +122,21 @@ export interface TimingResult {
   };
 }
 
+export interface AgentReview {
+  role: string;
+  role_name: string;
+  triggered: boolean;
+  trigger: string;
+  available: boolean | null;
+  review: string | null;
+  error: string | null;
+}
+
+export interface GateAgentReview {
+  a5: AgentReview;
+  v: AgentReview | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -241,6 +256,26 @@ export const api = {
     pba_pessimism_credit_ps?: number;
   }) =>
     request<TimingResult>("/analysis/timing-summary", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  reviewRtl: (rtl_signoff_result: unknown) =>
+    request<AgentReview>("/agents/review/rtl", {
+      method: "POST",
+      body: JSON.stringify({ rtl_signoff_result }),
+    }),
+  reviewTiming: (timing_result: unknown) =>
+    request<AgentReview>("/agents/review/timing", {
+      method: "POST",
+      body: JSON.stringify({ timing_result }),
+    }),
+  reviewPowerIr: (payload: { ir_drop_result?: unknown; glitch_result?: unknown }) =>
+    request<AgentReview>("/agents/review/power-ir", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  reviewGate: (payload: { gate_status: unknown; findings?: unknown }) =>
+    request<GateAgentReview>("/agents/review/gate", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

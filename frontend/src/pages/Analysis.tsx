@@ -4,6 +4,7 @@ import { useLocation } from "react-router";
 
 import type { RtlSignoffResult } from "../api";
 import { api } from "../api";
+import { AgentReviewPanel } from "../components/AgentReviewPanel";
 import { IrDropHeatmap, PowerStackBars, SlackBars } from "../components/charts";
 import { Card, Field, Meter, StatTile, StatusBadge } from "../components/ui";
 
@@ -52,8 +53,77 @@ const IBEX_CORNERS = [
   { name: "ff_n40C_1v95", endpoint_slacks_ps: [120, 45, 380, 200, 550, 610, 85, 420, 770, 30, 300, 440] },
 ];
 
-// Ibex-style pulse synchronizer (clean 2-FF CDC) — default sample for the ladder
-const SAMPLE_RTL = `module ibex_pulse_sync (
+// Realistic buggy example (default): a fast-domain FSM's status bits read
+// straight into the APB clock domain with no 2-FF synchronizer — the
+// deterministic CDC/FSM checks below actually catch this, they aren't
+// staged. verilator lint and yosys synthesis both pass cleanly, so the
+// REJECTED verdict comes entirely from the design-rule stage (DRC-CDC-001 +
+// DRC-FSM-002), not tool noise.
+const BUGGY_RTL = `module cdc_status_bridge (
+  input  logic clk_fast,
+  input  logic clk_apb,
+  input  logic rst_n,
+  input  logic start_i,
+  output logic apb_busy_o,
+  output logic apb_error_o
+);
+  typedef enum logic [2:0] { IDLE, LOAD, PROCESS, DONE, ERROR } state_t;
+  state_t state_q, state_d;
+
+  reg legacy_error_latch;  // carried over from the old fixed-function block
+
+  logic busy_q, error_q;
+
+  // fast-domain FSM
+  always_ff @(posedge clk_fast or negedge rst_n) begin
+    if (!rst_n) state_q <= IDLE;
+    else        state_q <= state_d;
+  end
+
+  always_comb begin
+    state_d = state_q;
+    case (state_q)
+      default: state_d = IDLE;
+      IDLE:    if (start_i) state_d = LOAD;
+      LOAD:    state_d = PROCESS;
+      PROCESS: begin
+        if (start_i) state_d = ERROR;
+        else         state_d = DONE;
+      end
+      DONE:    state_d = IDLE;
+      ERROR:   ; // stuck once entered — requires an external reset, no recovery path
+    endcase
+  end
+
+  always_ff @(posedge clk_fast or negedge rst_n) begin
+    if (!rst_n) begin
+      busy_q  <= 1'b0;
+      error_q <= 1'b0;
+    end else begin
+      busy_q  <= (state_q == LOAD) || (state_q == PROCESS);
+      error_q <= (state_q == ERROR);
+    end
+  end
+
+  // BUG: the fast-domain status registers are read straight into the APB
+  // clock domain below with no 2-FF synchronizer.
+  always_ff @(posedge clk_apb or negedge rst_n) begin
+    if (!rst_n) begin
+      apb_busy_o         <= 1'b0;
+      apb_error_o        <= 1'b0;
+      legacy_error_latch <= 1'b0;
+    end else begin
+      apb_busy_o         <= busy_q;
+      apb_error_o        <= error_q;
+      legacy_error_latch <= error_q;
+    end
+  end
+endmodule
+`;
+
+// Ibex-style pulse synchronizer (clean 2-FF CDC) — contrast example: same
+// ladder, no violations, so the agent panel below explicitly shows "미개입".
+const CLEAN_RTL = `module ibex_pulse_sync (
   input  logic clk_src_i,
   input  logic clk_dst_i,
   input  logic rst_ni,
@@ -109,7 +179,7 @@ const LADDER = ["lint", "design", "synthesize", "simulate"] as const;
 type LiveStatus = "pending" | "running" | "pass" | "fail" | "skip";
 
 function RtlSignoffSection() {
-  const [code, setCode] = useState(SAMPLE_RTL);
+  const [code, setCode] = useState(BUGGY_RTL);
   const [projectId, setProjectId] = useState<number | "">("");
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
 
@@ -169,6 +239,14 @@ function RtlSignoffSection() {
     skip: { status: "neutral", label: "skip" },
   };
 
+  // A1 RTL 리뷰어: runs automatically once a ladder result lands, so
+  // "did an agent look at this" never depends on a second click.
+  const a1 = useQuery({
+    queryKey: ["agent-review-rtl", result?.run_id, result?.verdict, result?.score],
+    queryFn: () => api.reviewRtl(result),
+    enabled: !!result,
+  });
+
   return (
     <Card
       id="rtl-signoff"
@@ -196,6 +274,14 @@ function RtlSignoffSection() {
         </div>
       }
     >
+      <div className="mb-2 flex gap-2">
+        <button className="btn btn-ghost" onClick={() => setCode(BUGGY_RTL)}>
+          버그 있는 예제 (CDC 미동기화)
+        </button>
+        <button className="btn btn-ghost" onClick={() => setCode(CLEAN_RTL)}>
+          클린 예제 (2-FF 동기화)
+        </button>
+      </div>
       <textarea
         className="code-editor w-full"
         style={{ minHeight: 220 }}
@@ -323,6 +409,8 @@ function RtlSignoffSection() {
               </ul>
             </div>
           )}
+
+          <AgentReviewPanel review={a1.data} loading={a1.isFetching} />
         </div>
       )}
     </Card>
@@ -332,6 +420,11 @@ function RtlSignoffSection() {
 function IrDropSection() {
   const run = useMutation({
     mutationFn: () => api.irDrop({ ...ibexFloorplanGrids(), vdd: 1.8, scale: 0.06 }),
+  });
+  const a3 = useQuery({
+    queryKey: ["agent-review-power-ir", "ir", run.data?.hotspot_count, run.data?.worst_drop_mv],
+    queryFn: () => api.reviewPowerIr({ ir_drop_result: run.data }),
+    enabled: !!run.data,
   });
 
   return (
@@ -363,6 +456,7 @@ function IrDropSection() {
             label={run.data.passed ? "스크리닝 통과" : "핫스팟 검출 — 골든 사인오프 필요"}
           />
           <IrDropHeatmap map={run.data.drop_map_mv} thresholdMv={run.data.threshold_mv} />
+          <AgentReviewPanel review={a3.data} loading={a3.isFetching} />
         </div>
       ) : (
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
@@ -379,6 +473,11 @@ function TimingSection() {
   const run = useMutation({
     mutationFn: () =>
       api.timingSummary({ corners: IBEX_CORNERS, pba_pessimism_credit_ps: credit }),
+  });
+  const a2 = useQuery({
+    queryKey: ["agent-review-timing", run.data?.merged.wns_ps, run.data?.merged.tns_ps],
+    queryFn: () => api.reviewTiming(run.data),
+    enabled: !!run.data,
   });
 
   return (
@@ -468,6 +567,8 @@ function TimingSection() {
               )}
             />
           </div>
+
+          <AgentReviewPanel review={a2.data} loading={a2.isFetching} />
         </div>
       ) : (
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
@@ -482,6 +583,11 @@ function TimingSection() {
 function GlitchSection() {
   const run = useMutation({
     mutationFn: () => api.glitchPower({ nets: IBEX_NETS, vdd: 1.8, clock_period_ns: 10 }),
+  });
+  const a3 = useQuery({
+    queryKey: ["agent-review-power-ir", "glitch", run.data?.glitch_share],
+    queryFn: () => api.reviewPowerIr({ glitch_result: run.data }),
+    enabled: !!run.data,
   });
 
   return (
@@ -522,6 +628,7 @@ function GlitchSection() {
             <Meter ratio={run.data.glitch_share} />
           </div>
           <PowerStackBars nets={run.data.nets} />
+          <AgentReviewPanel review={a3.data} loading={a3.isFetching} />
         </div>
       ) : (
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
