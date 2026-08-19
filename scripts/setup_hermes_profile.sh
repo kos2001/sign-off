@@ -30,12 +30,13 @@ else
 fi
 
 # 2) SOUL.md + 스킬 복사
-#    sign-off-api : 사인오프 REST API 사용법 (프로젝트/런/위반/게이트/스크리닝 분석)
+#    sign-off-api        : 사인오프 REST API 사용법 (프로젝트/런/위반/게이트/스크리닝 분석)
+#    sign-off-drc-rules  : DRC-XXX 룰 카탈로그 + shift-left 스테이지 게이트 매트릭스
 #    스킬은 대화 모드에서만 로드된다 (api_server 경로는 도구·스킬을 실행하지 않는다).
 #    SOUL.md 가 파이프라인(A1~A5, V 역할) 쪽 규율을 담는다.
 run cp "$SOUL_SRC" "$HERMES_PROFILE_DIR/SOUL.md"
 run mkdir -p "$HERMES_PROFILE_DIR/skills"
-for skill in sign-off-api; do
+for skill in sign-off-api sign-off-drc-rules; do
   run cp -R "$REPO_DIR/backend/profiles/$PROFILE/skills/$skill" "$HERMES_PROFILE_DIR/skills/"
 done
 
