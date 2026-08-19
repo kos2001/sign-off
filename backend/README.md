@@ -64,9 +64,11 @@ DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).
 | V 검증 에이전트 | A5 판정을 원본 데이터에서 독립 재검증 | A5 가 판정을 낸 직후 항상 자동 이어서 실행 (단독 호출 없음) |
 
 - 역할 정의·클라이언트: `app/hermes.py` (`ROLES`, `HermesClient`)
-- 프로파일 소스: `profiles/sign-off/SOUL.md`, `profiles/sign-off/skills/sign-off-api/`
+- 프로파일 소스: `profiles/sign-off/SOUL.md`, `profiles/sign-off/skills/{sign-off-api,sign-off-drc-rules}/`
 - 셋업: `../scripts/setup_hermes_profile.sh [--apply]` (dry-run 기본, api_server 포트 8657)
 - 연결 설정: `.env.example` 참고 (`SIGNOFF_LLM_BASE_URL`/`_API_KEY`/`_MODEL`)
 
 api_server 경로는 도구/스킬을 실행하지 않으므로, 런/위반/게이트 데이터는 프롬프트에
-JSON으로 직접 넣어 호출합니다 (`sign-off-api` 스킬은 대화형 모드에서만 로드됨).
+JSON으로 직접 넣어 호출합니다 (`sign-off-api`/`sign-off-drc-rules` 스킬은 대화형 모드
+(`sign-off chat`)에서만 로드됨 — 사람이 직접 hermes와 대화하며 프로젝트를 조회하거나
+DRC 코드의 의미를 물어볼 때 쓰입니다).
