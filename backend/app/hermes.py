@@ -33,7 +33,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
-            base_url=os.environ.get("SIGNOFF_LLM_BASE_URL", "http://127.0.0.1:8654/v1").rstrip("/"),
+            base_url=os.environ.get("SIGNOFF_LLM_BASE_URL", "http://127.0.0.1:8657/v1").rstrip("/"),
             api_key=os.environ.get("SIGNOFF_LLM_API_KEY", ""),
             model=os.environ.get("SIGNOFF_LLM_MODEL", "sign-off"),
         )

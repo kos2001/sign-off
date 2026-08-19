@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hermes 'sign-off' 프로파일 셋업 (api_server :8654)
+# hermes 'sign-off' 프로파일 셋업 (api_server :8657)
 #
 # weekly-report-harness/scripts/setup_hermes_profile.sh 를 참조해 만들었다.
 # 기본은 dry-run: 수행할 작업만 출력한다. 실제 적용은 --apply.
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 PROFILE=sign-off
-PORT=8654
+PORT=8657
 HERMES_PROFILE_DIR="$HOME/.hermes/profiles/$PROFILE"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SOUL_SRC="$REPO_DIR/backend/profiles/$PROFILE/SOUL.md"

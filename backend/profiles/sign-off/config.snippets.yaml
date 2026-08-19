@@ -2,7 +2,7 @@
 # (~/.hermes/profiles/sign-off/config.yaml 의 platforms: 블록에 병합)
 #
 # 참고: 프로파일 .env 의 API_SERVER_KEY 가 이 token 보다 우선한다.
-# 포트 8654 는 이 머신의 다른 hermes 프로파일들(8642~8656, weekly-report 제외)과
+# 포트 8657 는 이 머신의 다른 hermes 프로파일들(8642~8656, weekly-report 제외)과
 # 겹치지 않게 골랐다 — scripts/setup_hermes_profile.sh 실행 전 `grep -rn "port:"
 # ~/.hermes/profiles/*/config.yaml` 로 재확인할 것.
 platforms:
@@ -10,5 +10,5 @@ platforms:
     enabled: true
     token: "<API_SERVER_KEY — scripts/setup_hermes_profile.sh 가 생성>"
     extra:
-      port: 8654
+      port: 8657
       host: 127.0.0.1
