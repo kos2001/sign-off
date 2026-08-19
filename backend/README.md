@@ -49,14 +49,19 @@ DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).
 이 앱의 도메인(RTL/타이밍/파워-IR/웨이버/게이트)에 맞춘 6개 역할의 LLM 분석 파이프라인을
 붙일 수 있습니다.
 
-| 역할 | 담당 |
-|---|---|
-| A1 RTL 리뷰어 | lint/CDC/리셋/FSM 위반의 근본 원인과 수정 방향 |
-| A2 타이밍 분석가 | MMMC WNS/TNS, 원인 코너·엔드포인트, PBA 회복 추정 해석 |
-| A3 파워/IR 무결성 분석가 | IR-drop 핫스팟, 글리치 파워 네트 분해 원인 설명 |
-| A4 웨이버 심사관 | 웨이버 사유의 타당성·잔여 리스크 심사 |
-| A5 사인오프 종합 판정관 | A1~A4 종합 → 판정 초안 + 우선순위 조치 목록 |
-| V 검증 에이전트 | A5 판정을 원본 데이터에서 독립 재검증 |
+각 역할은 상시 실행되지 않고, **아래 조건을 만족할 때만** 개입합니다 — 위반도 음의 슬랙도
+핫스팟도 없는 깨끗한 결과에는 어떤 역할도 개입하지 않습니다. A1/A2/A3/A5 의 조건은
+`app/hermes.py` 의 `a1_should_review` / `a2_should_review` / `a3_should_review` /
+`a5_gate_needs_synthesis` 로 기계적으로도 판별할 수 있습니다 (테스트: `tests/test_hermes.py`).
+
+| 역할 | 담당 | 개입 시점 (트리거) |
+|---|---|---|
+| A1 RTL 리뷰어 | lint/CDC/리셋/FSM 위반의 근본 원인과 수정 방향 | `rtl-signoff` 응답 `rules[]` 에 `status="violation"` 이 하나라도 있을 때 |
+| A2 타이밍 분석가 | MMMC WNS/TNS, 원인 코너·엔드포인트, PBA 회복 추정 해석 | `timing-summary` 응답 `merged.wns_ps < 0` 일 때 |
+| A3 파워/IR 무결성 분석가 | IR-drop 핫스팟, 글리치 파워 네트 분해 원인 설명 | `ir-drop` 응답 `passed=false` 이거나 `glitch-power` 응답 `glitch_share >= 0.3` 일 때 |
+| A4 웨이버 심사관 | 웨이버 사유의 타당성·잔여 리스크 심사 | `POST /violations/{id}/waiver` 호출 시점, 커밋 전에 개입 |
+| A5 사인오프 종합 판정관 | A1~A4 종합 → 판정 초안 + 우선순위 조치 목록 | `signoff-status` 응답 `ready=false` 이고 A1~A4 중 하나 이상 소견이 이미 있을 때 |
+| V 검증 에이전트 | A5 판정을 원본 데이터에서 독립 재검증 | A5 가 판정을 낸 직후 항상 자동 이어서 실행 (단독 호출 없음) |
 
 - 역할 정의·클라이언트: `app/hermes.py` (`ROLES`, `HermesClient`)
 - 프로파일 소스: `profiles/sign-off/SOUL.md`, `profiles/sign-off/skills/sign-off-api/`
