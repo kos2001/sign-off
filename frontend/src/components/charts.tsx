@@ -228,6 +228,99 @@ export function SlackBars({ slacks }: { slacks: number[] }) {
   );
 }
 
+/* ---------- run status distribution (stacked bar, single row) ---------- */
+
+const RUN_STATUS_COLOR: Record<"passed" | "failed" | "running", string> = {
+  passed: "var(--status-good)",
+  failed: "var(--status-critical)",
+  running: "var(--status-warning)",
+};
+const RUN_STATUS_LABEL: Record<"passed" | "failed" | "running", string> = {
+  passed: "통과",
+  failed: "실패",
+  running: "진행 중",
+};
+
+export function RunStatusBar({
+  counts,
+}: {
+  counts: Record<"passed" | "failed" | "running", number>;
+}) {
+  const { show, hide, node } = useTooltip();
+  const total = counts.passed + counts.failed + counts.running;
+  const order: ("passed" | "failed" | "running")[] = ["passed", "failed", "running"];
+
+  if (total === 0) {
+    return (
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+        아직 런이 없습니다.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        className="flex h-3 w-full overflow-hidden rounded-full"
+        style={{ background: "var(--seq-100)" }}
+        role="img"
+        aria-label={`런 상태: 통과 ${counts.passed}, 실패 ${counts.failed}, 진행 중 ${counts.running}`}
+      >
+        {order.map(
+          (k) =>
+            counts[k] > 0 && (
+              <div
+                key={k}
+                style={{ width: `${(counts[k] / total) * 100}%`, background: RUN_STATUS_COLOR[k] }}
+                onMouseMove={(e) =>
+                  show(e, `${RUN_STATUS_LABEL[k]} ${counts[k]}건 · ${((counts[k] / total) * 100).toFixed(0)}%`)
+                }
+                onMouseLeave={hide}
+              />
+            ),
+        )}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+        {order.map(
+          (k) =>
+            counts[k] > 0 && (
+              <span key={k} className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-sm" style={{ background: RUN_STATUS_COLOR[k] }} />
+                {RUN_STATUS_LABEL[k]} {counts[k]}
+              </span>
+            ),
+        )}
+      </div>
+      {node}
+    </div>
+  );
+}
+
+/* ---------- readiness progress: fraction of gate domains ready ---------- */
+
+export function ReadyProgress({ ready, total }: { ready: number; total: number }) {
+  const ratio = total > 0 ? ready / total : 0;
+  const fill = ratio >= 1 ? "var(--status-good)" : ratio > 0 ? "var(--status-warning)" : "var(--status-critical)";
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className="h-2 w-24 overflow-hidden rounded-full"
+        style={{ background: "var(--seq-100)" }}
+        role="meter"
+        aria-valuenow={ready}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-label="게이트 도메인 준비율"
+      >
+        <div className="h-full rounded-full" style={{ width: `${ratio * 100}%`, background: fill }} />
+      </div>
+      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+        {ready}/{total} 준비됨
+      </span>
+    </div>
+  );
+}
+
 /* ---------- stacked horizontal bars: functional vs glitch power ---------- */
 
 export function PowerStackBars({

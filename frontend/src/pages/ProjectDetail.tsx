@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router";
 
 import type { Domain, Severity, SignoffRun, Stage } from "../api";
 import { api, DOMAIN_LABELS, STAGE_LABELS, STAGES } from "../api";
+import { ReadyProgress, RunStatusBar } from "../components/charts";
 import { Card, Field, StatusBadge } from "../components/ui";
 
 export default function ProjectDetail() {
@@ -98,10 +99,16 @@ export default function ProjectDetail() {
 
         {gate.data && (
           <div className="space-y-3">
-            <StatusBadge
-              status={gate.data.ready ? "good" : "critical"}
-              label={gate.data.ready ? "게이트 통과 가능" : "게이트 차단됨"}
-            />
+            <div className="flex flex-wrap items-center gap-3">
+              <StatusBadge
+                status={gate.data.ready ? "good" : "critical"}
+                label={gate.data.ready ? "게이트 통과 가능" : "게이트 차단됨"}
+              />
+              <ReadyProgress
+                ready={gate.data.domains.filter((d) => d.ready).length}
+                total={gate.data.domains.length}
+              />
+            </div>
             <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {gate.data.domains.map((d) => (
                 <li
@@ -148,8 +155,14 @@ function RunsCard({
     },
   });
 
+  const statusCounts = { passed: 0, failed: 0, running: 0 };
+  for (const r of runs) statusCounts[r.status] += 1;
+
   return (
     <Card title="사인오프 런" subtitle="도메인별 런 생성 · 상태 갱신 · 위반/웨이버 관리">
+      <div className="mb-4">
+        <RunStatusBar counts={statusCounts} />
+      </div>
       <form
         className="mb-4 flex flex-wrap items-end gap-3"
         onSubmit={(e) => {
