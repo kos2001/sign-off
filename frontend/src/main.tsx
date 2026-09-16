@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 
+import { ScreenBoundary } from "./components/ScreenBoundary";
 import App from "./App";
 import "./index.css";
 
@@ -12,10 +13,10 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <ScreenBoundary><QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <App />
       </BrowserRouter>
-    </QueryClientProvider>
+    </QueryClientProvider></ScreenBoundary>
   </StrictMode>,
 );
