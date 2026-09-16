@@ -6,8 +6,11 @@ as skipped instead of failing, so the ladder still runs on boxes without an
 EDA toolchain.
 """
 
+import json
+import os
 import re
 import shutil
+import stat
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,9 +25,33 @@ MAX_OUTPUT_BYTES = 128 * 1024
 _MODULE_RE = re.compile(r"\bmodule\s+(\w+)\b")
 _FENCE_RE = re.compile(r"^```[\w-]*\n|\n?```$", re.M)
 
-_CELLS_RE = re.compile(r"^\s*(?:(\d+)\s+cells|Number of cells:\s*(\d+))\s*$", re.M)
-_DFF_RE = re.compile(r"^\s*(?:(\d+)\s+\$_S?DFF\w*|\$_S?DFF\w*\s+(\d+))\s*$", re.M)
-_LATCH_RE = re.compile(r"^\s*(?:(\d+)\s+\$_DLATCH\w*|\$_DLATCH\w*\s+(\d+))\s*$", re.M)
+
+def read_design_statistics(path: Path) -> tuple[int, int, int]:
+    """Read Yosys's expanded design totals, never sum module definitions.
+
+    tee also preserves the complete JSON in the bounded tool transcript.
+    Reject missing/invalid statistics instead of reporting a fabricated zero.
+    """
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError("statistics is not a regular file")
+        raw = stream.read(MAX_OUTPUT_BYTES + 1)
+    if len(raw) > MAX_OUTPUT_BYTES:
+        raise ValueError("statistics exceeds size limit")
+    data = json.loads(raw)
+    design = data["design"]
+    cells = design["num_cells"]
+    types = design["num_cells_by_type"]
+    if type(cells) is not int or cells < 0 or not isinstance(types, dict):
+        raise ValueError("invalid design counts")
+    if any(type(value) is not int or value < 0 for value in types.values()):
+        raise ValueError("invalid cell type count")
+    flops = sum(count for name, count in types.items() if re.fullmatch(r"\$_S?DFF\w*", name))
+    latches = sum(count for name, count in types.items() if re.fullmatch(r"\$_DLATCH\w*", name))
+    if flops + latches > cells:
+        raise ValueError("inconsistent design counts")
+    return cells, flops, latches
 
 
 def strip_fences(code: str) -> str:
@@ -59,9 +86,9 @@ class LintResult:
 class SynthResult:
     ok: bool
     available: bool
-    cells: int = 0
-    flops: int = 0
-    latches: int = 0
+    cells: int | None = None
+    flops: int | None = None
+    latches: int | None = None
     execution: dict | None = None
     issues: list[str] = field(default_factory=list)
 
@@ -127,9 +154,16 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
         src = Path(td) / "design.sv"
         src.write_text(code if code.endswith("\n") else code + "\n")
         hier = f"hierarchy -top {top}" if top else "hierarchy -auto-top"
-        script = f"read_verilog -sv design.sv; {hier}; proc; opt; techmap; opt; stat"
+        script = f"read_verilog -sv design.sv; {hier}; proc; opt; techmap; opt; tee -o stats.json stat -json"
         cmd = [YOSYS, '-p', script]
         proc = run_command(cmd, td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
+        counts = (None, None, None)
+        statistics_error = None
+        if proc['exit_code'] == 0 and proc['error'] is None:
+            try:
+                counts = read_design_statistics(Path(td) / "stats.json")
+            except (OSError, ValueError, KeyError, TypeError, RecursionError):
+                statistics_error = "yosys: design statistics unavailable or invalid"
 
     raw = proc['log']
     ok = proc['exit_code'] == 0 and proc['error'] is None
@@ -139,16 +173,16 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
     if proc['error']:
         issues.append(f"yosys: {proc['error']}")
 
-    def first_int(rx: re.Pattern) -> int:
-        m = rx.search(raw)
-        return int(next(value for value in m.groups() if value is not None)) if m else 0
+    if statistics_error:
+        ok = False
+        issues.append(statistics_error)
 
     return SynthResult(
         ok=ok,
         available=True,
-        cells=first_int(_CELLS_RE),
-        flops=sum(int(a or b) for a, b in _DFF_RE.findall(raw)),
-        latches=sum(int(a or b) for a, b in _LATCH_RE.findall(raw)),
+        cells=counts[0],
+        flops=counts[1],
+        latches=counts[2],
         issues=issues or ([] if ok else ["synthesis failed"]),
         execution={"command": cmd, **proc},
     )
