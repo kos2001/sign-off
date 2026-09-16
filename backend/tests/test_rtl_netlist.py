@@ -106,6 +106,7 @@ def test_artifact_body_excluded_from_gate_and_ai_inputs(client, monkeypatch):
     with SessionLocal() as db:
         _,data=snapshot(db.get(SignoffRun,rid))
         assert 'text' not in data['analysis']['netlist']
+        assert 'text' not in data['analysis']['structure']
     received=[]
     async def review(role,payload,**kwargs):
         received.append(payload)
@@ -115,6 +116,7 @@ def test_artifact_body_excluded_from_gate_and_ai_inputs(client, monkeypatch):
     response=client.post('/agents/review/rtl',json={'rtl_signoff_result':result})
     assert response.status_code==200 and response.json()['triggered']
     assert len(received)==1 and 'text' not in received[0]['netlist']
+    assert 'text' not in received[0]['structure']
     assert 'text' in client.get(f'/runs/{rid}/evidence').json()['result']['netlist']
 
 

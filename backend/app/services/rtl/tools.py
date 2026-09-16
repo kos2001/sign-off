@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .process import run_command
-from .artifacts import MAX_NETLIST_BYTES, NetlistArtifact
+from .artifacts import MAX_NETLIST_BYTES, NetlistArtifact, StructureArtifact
 
 VERILATOR = "verilator"
 YOSYS = "yosys"
@@ -93,6 +93,8 @@ class SynthResult:
     flops: int | None = None
     latches: int | None = None
     netlist: dict | None = None
+    structure: dict | None = None
+    structure_error: str | None = None
     execution: dict | None = None
     issues: list[str] = field(default_factory=list)
 
@@ -168,7 +170,7 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
         )
         script = (
             f"read_verilog -sv design.sv; {hier}; proc; {connection_check}; "
-            f"opt; techmap; opt; {connection_check}; tee -o stats.json stat -json; write_verilog -noattr netlist.v"
+            f"opt; techmap; opt; {connection_check}; tee -o stats.json stat -json; write_verilog -noattr netlist.v; write_json structure.json"
         )
         cmd = [YOSYS, '-p', script]
         proc = run_command(cmd, td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
@@ -184,6 +186,17 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
                                           byte_length=len(raw_netlist)).model_dump()
             except (OSError, ValueError, KeyError, TypeError, RecursionError):
                 statistics_error = "yosys: design statistics or netlist unavailable or invalid"
+        structure = None
+        structure_error = None
+        if netlist is not None:
+            try:
+                raw_structure = read_regular_output(Path(td) / "structure.json", MAX_NETLIST_BYTES)
+                structure = StructureArtifact(format='yosys-json/v1', text=raw_structure.decode('utf-8'),
+                                              sha256=hashlib.sha256(raw_structure).hexdigest(),
+                                              byte_length=len(raw_structure)).model_dump()
+            except (OSError, ValueError, KeyError, TypeError, RecursionError):
+                structure_error = "구조 파일을 보존하지 못했습니다. 1 MiB 크기 제한 또는 파일 형식을 확인하세요."
+
 
     raw = proc['log']
     ok = proc['exit_code'] == 0 and proc['error'] is None
@@ -205,6 +218,8 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
         flops=counts[1],
         latches=counts[2],
         netlist=netlist,
+        structure=structure,
+        structure_error=structure_error,
         issues=issues or ([] if ok else ["synthesis failed"]),
         execution={"command": cmd, **proc},
     )

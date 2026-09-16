@@ -290,6 +290,8 @@ def build_report(
         "score": score,
         "grade": _grade(score),
         "netlist": sr.netlist,
+        "structure": sr.structure,
+        "structure_error": sr.structure_error,
         "tool_runs": {"lint": lr.execution, "width": lr.strict_execution, "synthesize": sr.execution},
         "lint_tool": lint_tool,
         "lint_pass": lint_pass,

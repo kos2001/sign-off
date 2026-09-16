@@ -1,3 +1,4 @@
+import DesignStructure from "./pages/DesignStructure";
 import NotFound from "./pages/NotFound";
 import { RouteScreenBoundary } from "./components/ScreenBoundary";
 import { AuthProvider } from "./components/AuthProvider";
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/projects/:id/compare" element={<RunComparison />} />
           <Route path="/projects/:id/import" element={<ReportImport />} />
           <Route path="/projects/:id/import/klayout" element={<ReportImport klayout />} />
+          <Route path="/runs/:runId/structure" element={<DesignStructure />} />
           <Route path="/runs/:runId/paths" element={<TimingPaths />} />
           <Route path="/runs/:runId/markers" element={<Markers />} />
           <Route path="/projects/:id/members" element={<ProjectMembers />} />

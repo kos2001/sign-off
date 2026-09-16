@@ -21,7 +21,7 @@ from ..schemas import (
     WaiverCreate,
 )
 from ..services.stages import evaluate_gate
-from ..services.rtl.artifacts import NetlistArtifact, netlist_metadata_only
+from ..services.rtl.artifacts import NetlistArtifact, StructureArtifact, parse_structure, netlist_metadata_only
 from .projects import get_project_or_404
 
 router = APIRouter(tags=["signoff-runs"])
@@ -79,6 +79,31 @@ def run_evidence(run_id: int, db: Session = Depends(get_db)):
     if run.evidence is None:
         raise HTTPException(status_code=404, detail="no captured evidence for this legacy run")
     return run.evidence
+
+
+@router.get('/runs/{run_id}/evidence/structure')
+def run_structure(run_id: int, response: Response, db: Session = Depends(get_db)):
+    run = get_run_or_404(run_id, db)
+    evidence = run.evidence
+    if evidence is None:
+        raise HTTPException(404, 'no captured evidence for this legacy run')
+    result = evidence.result
+    if evidence.source != 'rtl_ladder' or not isinstance(result, dict) or result.get('structure') is None:
+        raise HTTPException(409, '이 런에는 보존된 합성 구조가 없습니다.')
+    try:
+        if evidence.source_text is None or hashlib.sha256(evidence.source_text.encode()).hexdigest() != evidence.source_sha256:
+            raise ValueError('source integrity mismatch')
+        artifact = StructureArtifact.model_validate(result['structure'])
+        design = parse_structure(artifact.text)
+        synthesis = [stage for stage in result.get('stages', []) if stage.get('name') == 'synthesize']
+        if len(synthesis) != 1 or synthesis[0].get('status') != 'pass' or result.get('structure_error') is not None or result.get('module') not in design['modules']:
+            raise ValueError('structure does not match synthesis')
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(409, '합성 구조의 무결성 또는 실행 결과를 확인할 수 없습니다.')
+    response.headers['Cache-Control'] = 'no-store'
+    return {'run_id': run.id, 'project_id': run.project_id, 'top_module': result['module'],
+            'source_sha256': evidence.source_sha256, 'structure_sha256': artifact.sha256,
+            'design': design}
 
 
 @router.get('/runs/{run_id}/evidence/netlist')
