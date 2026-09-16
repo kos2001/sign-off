@@ -65,8 +65,14 @@ def test_lint_and_synth_fail_on_limits_even_with_success_text(tmp_path, monkeypa
     assert any(('timed out' if failure == 'timeout' else 'output exceeded') in issue for issue in result.issues), result.issues
 
 
+def statistics_tool(tmp_path, monkeypatch, cells, types, log=''):
+    payload = json.dumps({'design': {'num_cells': cells, 'num_cells_by_type': types}})
+    fake_tool(tmp_path, monkeypatch, 'yosys',
+              f"from pathlib import Path; Path('stats.json').write_text({payload!r}); print({log!r})")
+
+
 def test_synthesis_stats_and_lint_diagnostics_survive_bounded_runner(tmp_path, monkeypatch):
-    fake_tool(tmp_path, monkeypatch, 'yosys', "print('  3 cells\\n  2 $_DFF_P_\\n  1 $_DLATCH_P_')")
+    statistics_tool(tmp_path, monkeypatch, 3, {'$_DFF_P_': 2, '$_DLATCH_P_': 1}, '$_DLATCH_P_')
     result = tools.synthesize('module top; endmodule')
     assert result.ok and result.cells == 3 and result.flops == 2 and result.latches == 1
     assert result.execution['exit_code'] == 0
@@ -138,7 +144,66 @@ def test_resource_setup_failure_does_not_execute_tool(monkeypatch, tmp_path, cap
     assert 'resource setup failed' in capsys.readouterr().err
 
 
-def test_yosys_legacy_statistics_format_preserves_nonzero_counts(tmp_path, monkeypatch):
-    fake_tool(tmp_path, monkeypatch, 'yosys', "print('   Number of cells: 7\\n   $_DFF_P_ 3\\n   $_SDFFE_PP0P_ 2\\n   $_DLATCH_P_ 1\\n   $_NOT_ 1')")
+def test_yosys_design_json_counts_ignore_text_statistics(tmp_path, monkeypatch):
+    statistics_tool(tmp_path, monkeypatch, 7, {'$_DFF_P_': 3, '$_SDFFE_PP0P_': 2, '$_DLATCH_P_': 1, '$_NOT_': 1}, 'Number of cells: 999')
     result = tools.synthesize('module top; endmodule')
     assert result.ok and result.cells == 7 and result.flops == 5 and result.latches == 1
+
+
+@pytest.mark.parametrize('body', [
+    "pass",
+    "from pathlib import Path; Path('stats.json').write_text('{}')",
+    "from pathlib import Path; Path('stats.json').write_text('{')",
+    "from pathlib import Path; Path('stats.json').write_text('x' * 131073)",
+    "from pathlib import Path; Path('stats.json').symlink_to('design.sv')",
+    "import os; os.mkfifo('stats.json')",
+])
+def test_successful_process_without_valid_statistics_fails(tmp_path, monkeypatch, body):
+    fake_tool(tmp_path, monkeypatch, 'yosys', body)
+    result = tools.synthesize('module top; endmodule')
+    assert not result.ok and result.execution['exit_code'] == 0
+    assert result.cells is result.flops is result.latches is None
+    assert 'statistics unavailable or invalid' in result.issues[0]
+    from app.services.rtl.signoff import _synth_stage
+    stage = _synth_stage(result)
+    assert stage.status == 'fail' and 'cells=unknown' in stage.detail
+
+
+@pytest.mark.parametrize('cells,types', [
+    (True, {}), (-1, {}), (1, {'$_DFF_P_': -1}),
+    (1, {'$_DFF_P_': True}), (1, {'$_DFF_P_': 2}), (1, []),
+])
+def test_invalid_statistics_counts_are_rejected(tmp_path, monkeypatch, cells, types):
+    statistics_tool(tmp_path, monkeypatch, cells, types)
+    assert not tools.synthesize('module top; endmodule').ok
+
+
+def test_valid_zero_statistics_are_distinct_from_missing(tmp_path, monkeypatch):
+    statistics_tool(tmp_path, monkeypatch, 0, {})
+    result = tools.synthesize('module top; endmodule')
+    assert result.ok and result.cells == result.flops == result.latches == 0
+
+
+HIERARCHY_RTL = """
+module leaf #(parameter W=2)(input clk, input [W-1:0] d, output reg [W-1:0] q);
+  always @(posedge clk) q <= d;
+endmodule
+module branch(input clk, input [4:0] d, output [4:0] q);
+  leaf #(.W(2)) a(clk,d[1:0],q[1:0]);
+  leaf #(.W(3)) b(clk,d[4:2],q[4:2]);
+endmodule
+module chip(input clk, input [9:0] d, output [9:0] q);
+  branch a(clk,d[4:0],q[4:0]);
+  branch b(clk,d[9:5],q[9:5]);
+endmodule
+"""
+
+@pytest.mark.skipif(not tools.yosys_available(), reason='requires Yosys')
+def test_real_yosys_expands_repeated_nested_parameterized_modules():
+    result = tools.synthesize(HIERARCHY_RTL, top_module='chip')
+    assert result.ok, result.issues
+    assert result.cells == result.flops == 10
+    assert result.latches == 0
+    assert '"modules"' in result.execution['log'] and '"design"' in result.execution['log']
+    leaf = tools.synthesize(HIERARCHY_RTL, top_module='leaf')
+    assert leaf.ok and leaf.cells == leaf.flops == 2

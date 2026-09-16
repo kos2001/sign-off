@@ -126,7 +126,10 @@ def _synth_stage(sr: tools.SynthResult) -> LadderStage:
         return LadderStage("synthesize", "skip", gating=True, detail="yosys not installed")
     return LadderStage(
         "synthesize", "pass" if sr.ok else "fail", gating=True,
-        detail=f"cells={sr.cells} flops={sr.flops} latches={sr.latches}" + ("; " + "; ".join(sr.issues[:8]) if sr.issues else ""),
+        detail="scope=selected design hierarchy; " + " ".join(
+            f"{name}={value if value is not None else 'unknown'}"
+            for name, value in (("cells", sr.cells), ("flops", sr.flops), ("latches", sr.latches))
+        ) + ("; " + "; ".join(sr.issues[:8]) if sr.issues else ""),
     )
 
 
