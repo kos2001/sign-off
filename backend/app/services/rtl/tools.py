@@ -22,9 +22,9 @@ MAX_OUTPUT_BYTES = 128 * 1024
 _MODULE_RE = re.compile(r"\bmodule\s+(\w+)\b")
 _FENCE_RE = re.compile(r"^```[\w-]*\n|\n?```$", re.M)
 
-_CELLS_RE = re.compile(r"^\s*(\d+)\s+cells\s*$", re.M)
-_DFF_RE = re.compile(r"^\s*(\d+)\s+\$_S?DFF\w*", re.M)
-_LATCH_RE = re.compile(r"^\s*(\d+)\s+\$_DLATCH\w*", re.M)
+_CELLS_RE = re.compile(r"^\s*(?:(\d+)\s+cells|Number of cells:\s*(\d+))\s*$", re.M)
+_DFF_RE = re.compile(r"^\s*(?:(\d+)\s+\$_S?DFF\w*|\$_S?DFF\w*\s+(\d+))\s*$", re.M)
+_LATCH_RE = re.compile(r"^\s*(?:(\d+)\s+\$_DLATCH\w*|\$_DLATCH\w*\s+(\d+))\s*$", re.M)
 
 
 def strip_fences(code: str) -> str:
@@ -42,6 +42,8 @@ class LintResult:
     available: bool
     issues: list[str] = field(default_factory=list)
     top: str | None = None
+    execution: dict | None = None
+    strict_execution: dict | None = None
 
 
 @dataclass
@@ -51,6 +53,7 @@ class SynthResult:
     cells: int = 0
     flops: int = 0
     latches: int = 0
+    execution: dict | None = None
     issues: list[str] = field(default_factory=list)
 
 
@@ -87,7 +90,7 @@ def lint(code: str, strict: bool = False) -> LintResult:
         ]
         if not strict:
             cmd += ["-Wno-WIDTHEXPAND", "-Wno-WIDTHTRUNC"]
-        cmd += ["--timing", str(src)]
+        cmd += ["--timing", "design.sv"]
         if top:
             cmd += ["--top-module", top]
         proc = run_command(cmd, td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
@@ -99,7 +102,7 @@ def lint(code: str, strict: bool = False) -> LintResult:
     ok = proc['exit_code'] == 0 and proc['error'] is None
     if not ok and not issues:
         issues = [f"verilator failed (exit code {proc['exit_code']})"]
-    return LintResult(ok=ok, available=True, issues=issues, top=top)
+    return LintResult(ok=ok, available=True, issues=issues, top=top, execution={"command": cmd, **proc})
 
 
 def synthesize(code: str) -> SynthResult:
@@ -116,7 +119,8 @@ def synthesize(code: str) -> SynthResult:
         src.write_text(code if code.endswith("\n") else code + "\n")
         hier = f"hierarchy -top {top}" if top else "hierarchy -auto-top"
         script = f"read_verilog -sv design.sv; {hier}; proc; opt; techmap; opt; stat"
-        proc = run_command([YOSYS, '-p', script], td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
+        cmd = [YOSYS, '-p', script]
+        proc = run_command(cmd, td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
 
     raw = proc['log']
     ok = proc['exit_code'] == 0 and proc['error'] is None
@@ -128,13 +132,14 @@ def synthesize(code: str) -> SynthResult:
 
     def first_int(rx: re.Pattern) -> int:
         m = rx.search(raw)
-        return int(m.group(1)) if m else 0
+        return int(next(value for value in m.groups() if value is not None)) if m else 0
 
     return SynthResult(
         ok=ok,
         available=True,
         cells=first_int(_CELLS_RE),
-        flops=sum(int(n) for n in _DFF_RE.findall(raw)),
-        latches=sum(int(n) for n in _LATCH_RE.findall(raw)),
+        flops=sum(int(a or b) for a, b in _DFF_RE.findall(raw)),
+        latches=sum(int(a or b) for a, b in _LATCH_RE.findall(raw)),
         issues=issues or ([] if ok else ["synthesis failed"]),
+        execution={"command": cmd, **proc},
     )

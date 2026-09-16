@@ -45,6 +45,18 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
             evidence = client.get(f"/runs/{result['run_id']}/evidence").json()
             assert evidence['result']['execution']['backend'] == 'container'
             assert evidence['result']['execution']['image_id'].startswith('sha256:')
+            records = evidence['result']['tool_runs']
+            assert set(records) == {'lint', 'width', 'synthesize'}
+            assert records == result['tool_runs']
+            for name, record in records.items():
+                assert record['exit_code'] == 0 and record['error'] is None, (name, record)
+                assert len(record['log'].encode()) <= 128 * 1024
+                assert record['command'][0] == ('yosys' if name == 'synthesize' else 'verilator')
+            assert 'Yosys' in records['synthesize']['log']
+            synth = next(stage for stage in result['stages'] if stage['name'] == 'synthesize')
+            assert 'flops=4' in synth['detail'] and 'latches=0' in synth['detail'], synth
+            assert not synth['detail'].startswith('cells=0 '), synth
+            assert '-Wno-WIDTHTRUNC' not in records['width']['command']
         image = os.environ.get('SIGNOFF_RTL_WORKER_IMAGE')
         os.environ['SIGNOFF_RTL_WORKER_IMAGE'] = 'signoff-missing:' + uuid.uuid4().hex
         try:

@@ -258,6 +258,7 @@ export interface SimulationEvidence {
 }
 
 export interface RtlSignoffResult {
+  tool_runs?: Partial<Record<'lint' | 'width' | 'synthesize', { command: string[]; exit_code: number | null; error: string | null; log: string } | null>>;
   execution?: { backend: 'container'; image_id: string };
   simulation?: SimulationEvidence;
   verdict: "SIGNED_OFF" | "CONDITIONAL" | "REJECTED";

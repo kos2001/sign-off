@@ -158,3 +158,30 @@ def test_api_saves_verified_worker_evidence(client, docker, streaming):
     evidence = client.get(f"/runs/{result['run_id']}/evidence").json()
     assert evidence['result']['execution']['image_id'] == 'sha256:' + 'a' * 64
     assert_removed(docker)
+
+
+@pytest.mark.parametrize('transcripts', [
+    {'lint': {'command': ['verilator'], 'exit_code': 0, 'error': None, 'log': 'x' * (128 * 1024 + 1)}},
+    {'lint': {'command': 'verilator', 'exit_code': 0, 'error': None, 'log': ''}},
+    {'lint': {'command': ['verilator'], 'exit_code': True, 'error': None, 'log': ''}},
+    {'other': None},
+])
+def test_worker_rejects_invalid_transcripts(transcripts):
+    rows = events()
+    rows[-1]['result']['tool_runs'] = transcripts
+    sequence = worker.EventSequence()
+    for row in rows[:-1]:
+        sequence.accept(json.dumps(row).encode())
+    with pytest.raises(worker.WorkerError):
+        sequence.accept(json.dumps(rows[-1]).encode())
+
+
+def test_worker_accepts_bounded_transcripts_and_legacy_missing_records():
+    for records in [{}, {'lint': None, 'width': None, 'synthesize': {
+        'command': ['yosys', '-p', 'stat'], 'exit_code': 0, 'error': None, 'log': 'reported output'}}]:
+        rows = events()
+        rows[-1]['result']['tool_runs'] = records
+        sequence = worker.EventSequence()
+        for row in rows:
+            sequence.accept(json.dumps(row).encode())
+        assert sequence.result['tool_runs'] == records

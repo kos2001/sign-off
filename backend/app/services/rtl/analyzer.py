@@ -212,6 +212,7 @@ def strict_width_findings(code: str, lint_result: tools.LintResult) -> int:
     if not lint_result.available:
         return 0
     wr = tools.lint(code, strict=True)
+    lint_result.strict_execution = wr.execution
     return sum(1 for i in wr.issues if "WIDTH" in i.upper())
 
 
@@ -287,6 +288,7 @@ def build_report(
         "checks": checks,
         "score": score,
         "grade": _grade(score),
+        "tool_runs": {"lint": lr.execution, "width": lr.strict_execution, "synthesize": sr.execution},
         "lint_tool": lint_tool,
         "lint_pass": lint_pass,
         "lint_available": lr.available,
