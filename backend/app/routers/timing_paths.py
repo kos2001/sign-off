@@ -31,6 +31,7 @@ def outcome(path):
 
 def timing_filters(
     q: str = Query(default='', max_length=200),
+    path_group: str | None = Query(default=None, max_length=200),
     path_type: Literal['min', 'max'] | None = None,
     status: Literal['all', 'violated', 'met', 'unconstrained'] = 'all',
     slack_min_ps: float | None = Query(default=None, allow_inf_nan=False),
@@ -39,13 +40,14 @@ def timing_filters(
 ):
     if slack_min_ps is not None and slack_max_ps is not None and slack_min_ps > slack_max_ps:
         raise HTTPException(422, 'slack_min_ps must be less than or equal to slack_max_ps')
-    return dict(q=q, path_type=path_type, status=status, slack_min_ps=slack_min_ps,
+    return dict(q=q, path_group=path_group, path_type=path_type, status=status, slack_min_ps=slack_min_ps,
                 slack_max_ps=slack_max_ps, sort=sort)
 
 
-def matching_paths(result, *, q, path_type, status, slack_min_ps, slack_max_ps, sort):
+def matching_paths(result, *, q, path_type, status, slack_min_ps, slack_max_ps, sort, path_group=None):
     query = q.casefold()
     paths = [path for path in result['paths'] if
+             (path_group is None or path['path_group'] == path_group) and
              (path_type is None or path['path_type'] == path_type) and
              (status == 'all' or outcome(path) == status) and
              (slack_min_ps is None or (path['slack_ps'] is not None and path['slack_ps'] >= slack_min_ps)) and
@@ -65,6 +67,15 @@ def path_summary(paths):
             'worst_slack_ps': min(slacks, default=None)}
 
 
+def group_summary(paths):
+    """Report-wide groups, with min/max kept separate and duplicates retained."""
+    groups = {}
+    for path in paths:
+        groups.setdefault((path['path_group'], path['path_type']), []).append(path)
+    return [{'path_group': group, 'path_type': kind, 'total': len(items), **path_summary(items)}
+            for (group, kind), items in sorted(groups.items())]
+
+
 @router.get('/runs/{run_id}/timing-paths')
 def list_paths(
     run_id: int, filters: dict = Depends(timing_filters),
@@ -77,7 +88,8 @@ def list_paths(
     return {'run': RunOut.model_validate(run), 'metadata': result.get('metadata', {}),
             'design_revision': run.evidence.design_revision, 'source_sha256': run.evidence.source_sha256,
             'reported_total': len(result['paths']), 'total': len(paths), 'offset': offset, 'limit': limit,
-            'summary': path_summary(paths), 'items': paths[offset:offset + limit]}
+            'summary': path_summary(paths), 'groups': group_summary(result['paths']),
+            'items': paths[offset:offset + limit]}
 
 
 @router.get('/runs/{run_id}/timing-paths/export')

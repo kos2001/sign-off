@@ -142,7 +142,7 @@ def test_export_matches_filtered_paths_and_preserves_provenance(client):
     assert bundle['report']['coverage'] == 'reported_paths_only'
     assert bundle['report']['parser'] == evidence['result']['parser']
     assert bundle['report']['metadata'] == evidence['result']['metadata']
-    assert bundle['filters'] == {'q': 'CAP_', 'path_type': None, 'status': 'all', 'slack_min_ps': -10, 'slack_max_ps': 0, 'sort': 'slack_desc'}
+    assert bundle['filters'] == {'q': 'CAP_', 'path_group': None, 'path_type': None, 'status': 'all', 'slack_min_ps': -10, 'slack_max_ps': 0, 'sort': 'slack_desc'}
     assert bundle['units'] == {'slack_ps': 'ps'}
     assert bundle['run']['id'] == run
     assert 'source_text' not in bundle['report']
@@ -329,3 +329,46 @@ def test_arrival_differences_rank_ties_by_report_order_and_keep_zero_negative():
     assert summary['reported_pairs'] == 4
     assert arrival_deltas([{'arrival': 0}, {'arrival': -1e-25}])[0][1] < 0
     assert arrival_deltas([]) == ([], {'total_pairs': 0, 'reported_pairs': 0, 'largest_increases': []})
+
+
+def test_exact_group_filter_summary_and_exports(client):
+    doc = report()
+    base = doc['checks'][0]
+    doc['checks'] = []
+    for group, kind, slack in [('clk', 'max', -10e-12), ('clk', 'max', -10e-12),
+                               ('clk', 'min', 20e-12), ('clk_aux', 'max', -90e-12),
+                               ('CLK', 'max', 0), ('%_한글', 'min', None)]:
+        item = copy.deepcopy(base)
+        item.update(path_group=group, path_type=kind)
+        if slack is None:
+            item.update(type='unconstrained')
+            item.pop('slack')
+        else:
+            item['slack'] = slack
+        doc['checks'].append(item)
+    run = client.post(f'/projects/{project(client)}/imports/opensta', json=payload(doc)).json()['id']
+    route = f'/runs/{run}/timing-paths'
+    before = client.get(f'/runs/{run}/evidence').json()
+    result = client.get(route, params={'path_group': 'clk', 'limit': 1}).json()
+    assert result['total'] == 3 and len(result['items']) == 1
+    groups = {(x['path_group'], x['path_type']): x for x in result['groups']}
+    assert groups['clk', 'max'] == dict(path_group='clk', path_type='max', total=2,
+        violated_paths=2, met_paths=0, unconstrained_paths=0, worst_slack_ps=-10)
+    assert groups['clk', 'min']['worst_slack_ps'] == 20
+    assert groups['%_한글', 'min']['worst_slack_ps'] is None
+    for group, total in [('CLK', 1), ('clk_aux', 1), ('%_한글', 1), ('%', 0), ('', 0), ('cl', 0)]:
+        data = client.get(route, params={'path_group': group}).json()
+        assert data['total'] == total
+        assert data['groups'] == result['groups']
+    filters = {'path_group': 'clk', 'path_type': 'max', 'slack_max_ps': 0}
+    expected = client.get(route, params=filters).json()
+    assert [p['index'] for p in expected['items']] == [1, 2]
+    bundle = client.get(route + '/export', params=filters).json()
+    assert bundle['items'] == expected['items']
+    assert bundle['filters']['path_group'] == 'clk'
+    rows = csv_rows(client.get(route + '/export', params={**filters, 'format': 'csv'}))
+    assert len(rows) == 2 and all(row['path_group'] == 'clk' for row in rows)
+    assert all(json.loads(row['filters_json'])['path_group'] == 'clk' for row in rows)
+    for suffix in ['', '/export']:
+        assert client.get(route + suffix, params={'path_group': 'a' * 201}).status_code == 422
+    assert client.get(f'/runs/{run}/evidence').json() == before

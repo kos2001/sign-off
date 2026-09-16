@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { api, STAGE_LABELS, type TimingPath } from '../api';
+import { TimingGroups } from '../components/TimingGroups';
 import { RunEvidencePanel } from '../components/RunEvidencePanel';
 
 const outcomes = { all: '모든 경로', violated: '음수 슬랙', met: '0 이상 슬랙', unconstrained: '제약 없음' };
@@ -27,8 +28,9 @@ export default function TimingPaths() {
   const selected = numberParam(params.get('selected'), 1000);
   const pointOffset = numberParam(params.get('point_offset'), 10000);
   const offset = numberParam(params.get('offset'), 1000);
+  const pathGroup = params.get('path_group');
   const pathType = validOption(params.get('path_type'), { min: true, max: true }, '');
-  const filters: Record<string, string> = { q, status: validOption(params.get('status'), outcomes, 'all'), sort: validOption(params.get('sort'), sorts, 'slack_asc'), offset: String(offset), limit: '25', ...(pathType ? { path_type: pathType } : {}), ...(slackMin ? { slack_min_ps: slackMin } : {}), ...(slackMax ? { slack_max_ps: slackMax } : {}) };
+  const filters: Record<string, string> = { q, ...(pathGroup !== null ? { path_group: pathGroup } : {}), status: validOption(params.get('status'), outcomes, 'all'), sort: validOption(params.get('sort'), sorts, 'slack_asc'), offset: String(offset), limit: '25', ...(pathType ? { path_type: pathType } : {}), ...(slackMin ? { slack_min_ps: slackMin } : {}), ...(slackMax ? { slack_max_ps: slackMax } : {}) };
   const paths = useQuery({ queryKey: ['timing-paths', runId, filters], queryFn: () => api.timingPaths(runId, filters) });
   const download = useMutation({
     mutationFn: async ({ id, applied, format, total }: { id: number; applied: Record<string, string>; format: 'json' | 'csv'; total: number }) => {
@@ -94,6 +96,7 @@ export default function TimingPaths() {
       <p className="text-sm text-[var(--text-secondary)]">보고서에 포함된 경로를 탐색합니다. 슬랙이 0 이상인 경로가 있어도 전체 STA 검증 통과를 의미하지 않습니다.</p>
       <RunEvidencePanel run={data.run} />
     </header>
+    <TimingGroups key={runId} groups={data.groups} onSelect={(group, kind) => setParams({ path_group: group, path_type: kind })} />
     <section aria-label="경로 검색" className="rounded-xl border border-[var(--border)] p-4 space-y-4">
       <form className="space-y-3" onSubmit={e => { e.preventDefault(); applySearch(); }}>
         <label className="block min-w-0 text-sm">시작점 · 끝점 · 그룹 검색<input className="input mt-1 w-full" value={search} maxLength={200} onChange={e => setSearch(e.target.value)} /></label>
@@ -110,6 +113,15 @@ export default function TimingPaths() {
         <label className="text-sm">슬랙 조건<select aria-label="슬랙 조건" className="input mt-1 w-full" value={filters.status} onChange={e => change('status', e.target.value)}>{Object.entries(outcomes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="text-sm">정렬<select aria-label="정렬" className="input mt-1 w-full" value={filters.sort} onChange={e => change('sort', e.target.value)}>{Object.entries(sorts).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       </div>
+      <label className="block text-sm">정확한 경로 그룹<select aria-label="정확한 경로 그룹" className="input mt-1 w-full" value={pathGroup === null ? '' : JSON.stringify(pathGroup)} onChange={e => {
+        setParams(previous => {
+          const next = new URLSearchParams(previous);
+          if (e.target.value) next.set('path_group', JSON.parse(e.target.value)); else next.delete('path_group');
+          for (const key of ['offset', 'selected', 'point_offset']) next.delete(key);
+          return next;
+        });
+      }}><option value="">모든 그룹</option>{[...new Set([...data.groups.map(group => group.path_group), ...(pathGroup !== null ? [pathGroup] : [])])].sort().map(group => <option key={group} value={JSON.stringify(group)}>{group || '(빈 그룹 이름)'}</option>)}</select></label>
+      <p className="text-xs text-[var(--text-secondary)]">그룹은 대소문자를 포함해 정확히 일치하며 다른 검색 조건과 함께 적용됩니다.</p>
       <button className="btn btn-ghost" onClick={resetSearch}>검색 초기화</button>
     </section>
     <section aria-label="타이밍 경로 목록" className="space-y-3">
