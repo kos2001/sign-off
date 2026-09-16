@@ -1,0 +1,60 @@
+// Disposable authenticated API; actual KLayout-generated fixture, advisory calls mocked.
+import assert from 'node:assert/strict';
+import { readFile, mkdir } from 'node:fs/promises';
+const { chromium } = await import(process.env.SIGNOFF_PLAYWRIGHT_MODULE);
+const fixture = JSON.parse(await readFile(process.env.SIGNOFF_AUTH_FIXTURE, 'utf8'));
+const base = process.env.SIGNOFF_TEST_UI;
+assert.equal(base, 'http://127.0.0.1:15174');
+const source = await readFile(new URL('../backend/tests/fixtures/klayout-width.lyrdb', import.meta.url));
+const output = '/private/tmp/signoff-klayout-import-check';
+await mkdir(output, { recursive: true });
+const browser = await chromium.launch({ headless: true });
+try {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  assert.equal((await context.request.post(`${base}/api/auth/login`, { headers: { 'X-Signoff-Client': '1' }, data: { username: 'qa-editor', password: fixture.password } })).status(), 200);
+  const page = await context.newPage();
+  page.setDefaultTimeout(10000);
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.route('**/api/agents/review/gate', route => route.fulfill({ json: { a5: { role: 'a5_synth', role_name: 'QA', triggered: true, available: false, review: null, error: 'review_unavailable' }, v: null } }));
+  await page.goto(`${base}/projects/${fixture.project}/import`);
+  await page.getByRole('link', { name: 'KLayout DRC 보고서 가져오기', exact: true }).click();
+  await page.getByRole('heading', { name: 'KLayout DRC 보고서 가져오기', exact: true }).waitFor();
+  await page.getByLabel('KLayout 버전', { exact: true }).fill('0.30.12');
+  await page.getByLabel('설계 리비전', { exact: true }).fill('width-fixture');
+  await page.getByLabel('룰덱 / 실행 조건', { exact: true }).fill('Synthetic width check 0.15 um');
+  await page.getByRole('textbox', { name: '보고서 XML', exact: true }).fill('<invalid/>');
+  await page.getByRole('button', { name: '가져오기 미리보기', exact: true }).click();
+  await page.getByRole('alert').waitFor();
+  assert.equal(await page.getByRole('button', { name: '런으로 저장', exact: true }).count(), 0);
+  await page.getByLabel('LYRDB 파일 선택', { exact: true }).setInputFiles({ name: 'width.lyrdb', mimeType: 'application/xml', buffer: source });
+  await page.getByRole('button', { name: '가져오기 미리보기', exact: true }).click();
+  await page.getByText('마커 2개 · 보고된 중복 발생 수 합계 2', { exact: true }).waitFor();
+  await page.getByText('PV 보고서 수집에는 에이전트가 개입하지 않습니다.', { exact: false }).waitFor();
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    if (width === 390) await page.screenshot({ path: `${output}/preview.png`, fullPage: true });
+  }
+  const savedEvent = page.waitForResponse(r => r.url().endsWith('/imports/klayout') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: '런으로 저장', exact: true }).click();
+  const savedResponse = await savedEvent;
+  assert.equal(savedResponse.status(), 201);
+  const run = await savedResponse.json();
+  assert.equal(run.domain, 'pv');
+  await page.getByRole('link', { name: '저장한 런 보기', exact: true }).click();
+  const row = page.getByRole('listitem', { name: `런 #${run.id}`, exact: true });
+  assert.ok(await row.getByRole('button', { name: 'Pass', exact: true }).isDisabled());
+  await row.getByRole('button', { name: '실행 근거 보기', exact: true }).click();
+  await row.getByText('보고된 마커 2개', { exact: false }).waitFor();
+  await page.getByText('DRC 전체 검증 범위 미확인', { exact: false }).waitFor();
+  const downloadEvent = page.waitForEvent('download');
+  await row.getByRole('button', { name: '원본 파일 다운로드', exact: true }).click();
+  const download = await downloadEvent;
+  assert.equal(download.suggestedFilename(), `run-${run.id}-source.lyrdb`);
+  assert.ok((await readFile(await download.path())).equals(source));
+  await page.setViewportSize({ width: 390, height: 900 });
+  await row.screenshot({ path: `${output}/evidence.png` });
+  assert.deepEqual(errors, []);
+  console.log('PASS: KLayout preview/save, malformed XML, real markers, locked results, source bytes, gate coverage, responsive layout');
+} finally { await browser.close(); }

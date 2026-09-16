@@ -42,8 +42,9 @@ def screen_ir_drop(
     if vdd <= 0:
         raise ValueError("vdd must be positive")
 
-    drop_v = np.clip(vdd * scale * density * activity / strength, 0.0, vdd)
-    drop_mv = drop_v * 1000.0
+    with np.errstate(over='raise', divide='raise', invalid='raise'):
+        drop_v = np.clip(vdd * scale * density * activity / strength, 0.0, vdd)
+        drop_mv = drop_v * 1000.0
     threshold_mv = vdd * hotspot_threshold_ratio * 1000.0
 
     hotspot_indices = np.argwhere(drop_mv > threshold_mv)

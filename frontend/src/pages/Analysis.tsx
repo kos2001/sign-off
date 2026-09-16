@@ -1,9 +1,13 @@
+import { useAuth } from "../components/AuthProvider";
+import { PULSE_TESTBENCH } from "./pulseTestbench";
+import { SimulationDetails } from "../components/SimulationDetails";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router";
+import { Link, useLocation } from "react-router";
 
 import type { RtlSignoffResult } from "../api";
 import { api } from "../api";
+import { AGENT_ROLES, type AgentRoleId } from "../agentRoles";
 import { AgentReviewPanel } from "../components/AgentReviewPanel";
 import { IrDropHeatmap, PowerStackBars, SlackBars } from "../components/charts";
 import { Card, Field, Meter, StatTile, StatusBadge } from "../components/ui";
@@ -176,10 +180,22 @@ export default function Analysis() {
 }
 
 const LADDER = ["lint", "design", "synthesize", "simulate"] as const;
-type LiveStatus = "pending" | "running" | "pass" | "fail" | "skip";
+type LiveStatus = "pending" | "running" | "pass" | "fail" | "skip" | "interrupted";
+
+function AgentEntry({ role }: { role: AgentRoleId }) {
+  const info = AGENT_ROLES[role];
+  return <p className="mb-4 rounded-lg border border-[var(--border)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+    <strong className="text-[var(--series-1)]">{info.code} 자동 검토</strong> · {info.condition} 개입합니다.
+    {' '}<Link className="underline" to={`/agents#${role}`}>자세히 보기</Link>
+  </p>;
+}
 
 function RtlSignoffSection() {
+  const auth = useAuth();
   const [code, setCode] = useState(BUGGY_RTL);
+  const [testbench, setTestbench] = useState("");
+  const [testbenchTop, setTestbenchTop] = useState("tb");
+  const [designRevision, setDesignRevision] = useState("");
   const [projectId, setProjectId] = useState<number | "">("");
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
 
@@ -198,10 +214,10 @@ function RtlSignoffSection() {
     setError(null);
     setLog([]);
     setLive(Object.fromEntries(LADDER.map((s) => [s, { status: "pending" as LiveStatus }])));
-    appendLog("▸ 사인오프 래더 시작");
+    appendLog("▸ 사인오프 래더 실행 요청");
     try {
       await api.rtlSignoffStream(
-        { code, ...(projectId !== "" ? { project_id: projectId } : {}) },
+        { code, ...(testbench.trim() ? { testbench, testbench_top: testbenchTop.trim() } : {}), ...(designRevision.trim() ? { design_revision: designRevision.trim() } : {}), ...(projectId !== "" ? { project_id: projectId } : {}) },
         (ev) => {
           if (ev.event === "stage_start") {
             setLive((p) => ({ ...p, [ev.stage]: { status: "running" } }));
@@ -219,6 +235,9 @@ function RtlSignoffSection() {
       );
     } catch (e) {
       setError((e as Error).message);
+      setLive(previous => Object.fromEntries(Object.entries(previous).map(([name, stage]) => [
+        name, stage.status === "running" ? { status: "interrupted", detail: "최종 결과 확인 불가" } : stage,
+      ])));
       appendLog(`✕ 오류: ${(e as Error).message}`);
     } finally {
       setRunning(false);
@@ -234,6 +253,7 @@ function RtlSignoffSection() {
   const liveStatusBadge: Record<LiveStatus, { status: "good" | "critical" | "warning" | "neutral"; label: string }> = {
     pending: { status: "neutral", label: "대기" },
     running: { status: "warning", label: "실행 중" },
+    interrupted: { status: "warning", label: "중단" },
     pass: { status: "good", label: "pass" },
     fail: { status: "critical", label: "fail" },
     skip: { status: "neutral", label: "skip" },
@@ -242,43 +262,46 @@ function RtlSignoffSection() {
   // A1 RTL 리뷰어: runs automatically once a ladder result lands, so
   // "did an agent look at this" never depends on a second click.
   const a1 = useQuery({
-    queryKey: ["agent-review-rtl", result?.run_id, result?.verdict, result?.score],
+    queryKey: ["agent-review-rtl", result],
     queryFn: () => api.reviewRtl(result),
     enabled: !!result,
+    staleTime: Infinity, refetchOnWindowFocus: false, retry: false,
   });
 
   return (
     <Card
       id="rtl-signoff"
       title="RTL 사인오프 래더"
-      subtitle="verilator lint → 설계 룰(CDC/리셋/FSM) → yosys 합성 → 판정 · ai_driven_rtl에서 이식한 결정론적 래더"
+      subtitle="verilator lint → 설계 룰(CDC/리셋/FSM) → yosys 합성 → 테스트벤치 시뮬레이션 → 판정"
       actions={
-        <div className="flex items-end gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-end gap-2 sm:w-auto">
           <Field label="프로젝트에 기록 (선택)">
             <select
-              className="input"
+              className="input max-w-[16rem]"
               value={projectId}
               onChange={(e) => setProjectId(e.target.value === "" ? "" : Number(e.target.value))}
             >
+      <AgentEntry role="a1_rtl" />
               <option value="">기록 안 함</option>
-              {(projects.data ?? []).map((p) => (
+              {(projects.data ?? []).filter(p => auth.can(p.id, "editor")).map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
             </select>
           </Field>
-          <button className="btn btn-primary" onClick={runLadder} disabled={running}>
+          <button className="btn btn-primary whitespace-nowrap" onClick={runLadder} disabled={running || (!!testbench.trim() && !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(testbenchTop.trim()))}>
             {running ? "래더 실행 중…" : "사인오프 래더 실행"}
           </button>
         </div>
       }
     >
-      <div className="mb-2 flex gap-2">
-        <button className="btn btn-ghost" onClick={() => setCode(BUGGY_RTL)}>
+      <div className="mb-3"><Field label="설계 리비전 (선택)"><input className="input w-full" value={designRevision} maxLength={160} disabled={running} onChange={e => setDesignRevision(e.target.value)} placeholder="예: Git 커밋 SHA 또는 검토용 리비전" /></Field></div>
+      <div className="mb-2 flex flex-wrap gap-2">
+        <button className="btn btn-ghost" disabled={running} onClick={() => setCode(BUGGY_RTL)}>
           버그 있는 예제 (CDC 미동기화)
         </button>
-        <button className="btn btn-ghost" onClick={() => setCode(CLEAN_RTL)}>
+        <button className="btn btn-ghost" disabled={running} onClick={() => setCode(CLEAN_RTL)}>
           클린 예제 (2-FF 동기화)
         </button>
       </div>
@@ -289,10 +312,21 @@ function RtlSignoffSection() {
         value={code}
         onChange={(e) => setCode(e.target.value)}
         aria-label="SystemVerilog 소스"
+        disabled={running}
+        maxLength={500000}
       />
 
+      <details className="mt-3">
+        <summary className="cursor-pointer font-semibold text-sm">테스트벤치 (선택)</summary>
+        <p className="my-2 text-xs text-[var(--text-secondary)]">자체 검사 테스트벤치를 입력하세요. 실패 시 $fatal(1, …)을 호출하고, 모든 검사 후 $display("SIGNOFF_TEST_PASS"); $finish;로 종료합니다. 미제공 또는 서버 실행 비활성 시 필수 시뮬레이션 단계는 미완료로 남습니다.</p>
+        <button className="btn btn-ghost mb-2" disabled={running} onClick={() => { setCode(CLEAN_RTL); setTestbench(PULSE_TESTBENCH); setTestbenchTop("tb"); }}>펄스 동기화 검증 예제 불러오기</button>
+        <Field label="테스트벤치 최상위 모듈"><input className="input" value={testbenchTop} maxLength={120} disabled={running} onChange={e => setTestbenchTop(e.target.value)} /></Field>
+        <textarea aria-label="테스트벤치 SystemVerilog" className="code-editor w-full mt-2" rows={10} spellCheck={false} maxLength={500000} disabled={running} value={testbench} onChange={e => setTestbench(e.target.value)} />
+      </details>
+      {result?.simulation && <SimulationDetails simulation={result.simulation} />}
+
       {error && (
-        <p className="mt-3 text-sm" style={{ color: "var(--status-critical)" }}>
+        <p role="alert" className="mt-3 text-sm" style={{ color: "var(--status-critical)" }}>
           {error}
         </p>
       )}
@@ -410,9 +444,10 @@ function RtlSignoffSection() {
             </div>
           )}
 
-          <AgentReviewPanel review={a1.data} loading={a1.isFetching} />
+
         </div>
       )}
+      <AgentReviewPanel role="a1_rtl" scope={result ? `${result.run_id ? `런 #${result.run_id} · ` : ''}규칙 위반 ${result.rules.filter(rule => rule.status === 'violation').length}건` : undefined} review={a1.data} loading={a1.isFetching} failed={a1.isError} onRetry={() => void a1.refetch()} />
     </Card>
   );
 }
@@ -422,9 +457,10 @@ function IrDropSection() {
     mutationFn: () => api.irDrop({ ...ibexFloorplanGrids(), vdd: 1.8, scale: 0.06 }),
   });
   const a3 = useQuery({
-    queryKey: ["agent-review-power-ir", "ir", run.data?.hotspot_count, run.data?.worst_drop_mv],
+    queryKey: ["agent-review-power-ir", "ir", run.data],
     queryFn: () => api.reviewPowerIr({ ir_drop_result: run.data }),
     enabled: !!run.data,
+    staleTime: Infinity, refetchOnWindowFocus: false, retry: false,
   });
 
   return (
@@ -438,6 +474,7 @@ function IrDropSection() {
         </button>
       }
     >
+      <AgentEntry role="a3_power_ir" />
       {run.data ? (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -456,7 +493,7 @@ function IrDropSection() {
             label={run.data.passed ? "스크리닝 통과" : "핫스팟 검출 — 골든 사인오프 필요"}
           />
           <IrDropHeatmap map={run.data.drop_map_mv} thresholdMv={run.data.threshold_mv} />
-          <AgentReviewPanel review={a3.data} loading={a3.isFetching} />
+
         </div>
       ) : (
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
@@ -464,29 +501,35 @@ function IrDropSection() {
           파워 스트랩에서 먼 레지스터 파일 코너(취약 PDN)를 포함합니다.
         </p>
       )}
+      <AgentReviewPanel role="a3_power_ir" scope={run.data ? `최악 IR-drop ${run.data.worst_drop_mv.toFixed(1)} mV / 임계 ${run.data.threshold_mv.toFixed(1)} mV` : undefined} review={a3.data} loading={a3.isFetching} failed={a3.isError} onRetry={() => void a3.refetch()} />
     </Card>
   );
 }
 
 function TimingSection() {
+  const [cornersText, setCornersText] = useState(JSON.stringify(IBEX_CORNERS, null, 2));
   const [credit, setCredit] = useState(15);
   const run = useMutation({
-    mutationFn: () =>
-      api.timingSummary({ corners: IBEX_CORNERS, pba_pessimism_credit_ps: credit }),
+    mutationFn: () => {
+      const corners = JSON.parse(cornersText);
+      if (!Array.isArray(corners)) throw new Error('코너 JSON은 배열이어야 합니다.');
+      return api.timingSummary({ corners, pba_pessimism_credit_ps: credit });
+    },
   });
   const a2 = useQuery({
-    queryKey: ["agent-review-timing", run.data?.merged.wns_ps, run.data?.merged.tns_ps],
+    queryKey: ["agent-review-timing", run.data],
     queryFn: () => api.reviewTiming(run.data),
     enabled: !!run.data,
+    staleTime: Infinity, refetchOnWindowFocus: false, retry: false,
   });
 
   return (
     <Card
       id="timing"
-      title="MMMC 타이밍 요약 — Ibex @ SKY130, 100MHz"
-      subtitle="SKY130 3코너(ss/tt/ff) WNS/TNS 집계 + 엔드포인트 머지 + GBA→PBA 비관성 크레딧 추정"
+      title="MMMC 타이밍 요약"
+      subtitle="코너별 WNS/TNS 집계 · 종점 대응 확인 · PBA 크레딧 추정"
       actions={
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs" style={{ color: "var(--text-secondary)" }}>
             PBA 크레딧 (ps)
             <input
@@ -494,25 +537,34 @@ function TimingSection() {
               className="input ml-2 w-20"
               value={credit}
               min={0}
-              onChange={(e) => setCredit(Number(e.target.value))}
+              disabled={run.isPending}
+              onChange={(e) => { setCredit(Number(e.target.value)); run.reset(); }}
             />
           </label>
-          <button className="btn btn-primary" onClick={() => run.mutate()} disabled={run.isPending}>
-            3코너 분석
+          <button className="btn btn-primary shrink-0 whitespace-nowrap" onClick={() => run.mutate()} disabled={run.isPending}>
+            코너 분석
           </button>
         </div>
       }
     >
+      <AgentEntry role="a2_timing" />
+      <details className="mb-4"><summary className="cursor-pointer text-sm font-semibold">분석 데이터 편집</summary>
+        <p className="my-2 text-xs text-[var(--text-secondary)]">각 코너에 name, endpoint_slacks_ps와 선택 사항인 endpoint_ids를 입력하세요. ID를 사용하면 모든 코너에 같은 종점 집합을 제공해야 합니다.</p>
+        <textarea aria-label="코너 JSON" className="input w-full font-mono text-xs" rows={10} maxLength={2000000} spellCheck={false} disabled={run.isPending} value={cornersText} onChange={e => { setCornersText(e.target.value); run.reset(); }} />
+        <button className="btn btn-ghost mt-2" disabled={run.isPending} onClick={() => { setCornersText(JSON.stringify(IBEX_CORNERS, null, 2)); run.reset(); }}>Ibex 예제 불러오기</button>
+      </details>
+      {run.isError && <p role="alert" className="mb-3 text-sm text-[var(--status-critical)]">{run.error.message}</p>}
       {run.data ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <p role="status" className="text-sm">{run.data.endpoint_alignment === 'by_id' ? '종점 ID 기준으로 코너를 대응했습니다.' : '종점 ID가 없어 입력 순서대로 대응했습니다. 같은 위치가 같은 종점인지 확인하세요.'}</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatTile
               label="머지 WNS"
-              value={run.data.merged.wns_ps.toFixed(1)}
+              value={run.data.merged.wns_ps}
               suffix="ps"
               tone={run.data.merged.wns_ps < 0 ? "critical" : "good"}
             />
-            <StatTile label="머지 TNS" value={run.data.merged.tns_ps.toFixed(1)} suffix="ps" />
+            <StatTile label="머지 TNS" value={run.data.merged.tns_ps} suffix="ps" />
             <StatTile
               label="위반 엔드포인트"
               value={`${run.data.merged.violating_endpoints}/${run.data.merged.total_endpoints}`}
@@ -528,7 +580,7 @@ function TimingSection() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <table className="w-full text-sm [&_th]:px-2 [&_td]:px-2 [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap" style={{ fontVariantNumeric: "tabular-nums" }}>
               <thead>
                 <tr className="text-left text-xs" style={{ color: "var(--text-muted)" }}>
                   <th className="py-1.5 font-medium">코너</th>
@@ -545,9 +597,9 @@ function TimingSection() {
                       className="py-1.5 text-right"
                       style={{ color: c.wns_ps < 0 ? "var(--status-critical)" : "var(--delta-good-text)" }}
                     >
-                      {c.wns_ps.toFixed(1)}
+                      {c.wns_ps}
                     </td>
-                    <td className="py-1.5 text-right">{c.tns_ps.toFixed(1)}</td>
+                    <td className="py-1.5 text-right">{c.tns_ps}</td>
                     <td className="py-1.5 text-right">
                       {c.violating_endpoints}/{c.total_endpoints}
                     </td>
@@ -559,23 +611,29 @@ function TimingSection() {
 
           <div>
             <h3 className="mb-2 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-              머지 엔드포인트 슬랙 (코너별 최악값)
+              머지 엔드포인트 슬랙 (입력 순서, 최대 50개)
             </h3>
             <SlackBars
-              slacks={IBEX_CORNERS[0].endpoint_slacks_ps.map((_, i) =>
-                Math.min(...IBEX_CORNERS.map((c) => c.endpoint_slacks_ps[i])),
-              )}
+              slacks={run.data.merged_slacks_ps.slice(0, 50)}
+              endpointIds={run.data.endpoint_ids?.slice(0, 50)}
             />
           </div>
 
-          <AgentReviewPanel review={a2.data} loading={a2.isFetching} />
+          <section aria-label="최악 종점과 코너" className="space-y-2">
+            <h3 className="font-semibold text-sm">최악 종점과 제한 코너 (최대 20개)</h3>
+            <ul className="space-y-2">{run.data.worst_endpoints.map(endpoint => <li key={endpoint.index} className="rounded-lg border border-[var(--border)] p-3 text-xs break-all">
+              <strong>EP{endpoint.index} · {endpoint.endpoint_id ?? 'ID 미제공'}</strong><p>{endpoint.slack_ps} ps · {endpoint.limiting_corners.join(', ')}</p>
+            </li>)}</ul>
+            <p className="text-xs text-[var(--text-muted)]">제공된 종점·코너의 요약입니다. 입력 ID의 일치는 실제 설계나 전체 코너 검증의 완료를 증명하지 않습니다.</p>
+          </section>
+
         </div>
       ) : (
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          SKY130 리버티 코너 ss_100C_1v60 / tt_025C_1v80 / ff_n40C_1v95, ID→EX 스테이지 최악
-          셋업 엔드포인트 12개로 MMMC 머지를 실행합니다.
+          기본 입력은 Ibex / SKY130의 종점 12개를 사용하는 설명용 예제입니다. 분석 데이터 편집에서 실제 코너 데이터를 입력한 뒤 분석하세요.
         </p>
       )}
+      <AgentReviewPanel role="a2_timing" scope={run.data ? `머지 WNS ${run.data.merged.wns_ps} ps` : undefined} review={a2.data} loading={a2.isFetching} failed={a2.isError} onRetry={() => void a2.refetch()} />
     </Card>
   );
 }
@@ -585,9 +643,10 @@ function GlitchSection() {
     mutationFn: () => api.glitchPower({ nets: IBEX_NETS, vdd: 1.8, clock_period_ns: 10 }),
   });
   const a3 = useQuery({
-    queryKey: ["agent-review-power-ir", "glitch", run.data?.glitch_share],
+    queryKey: ["agent-review-power-ir", "glitch", run.data],
     queryFn: () => api.reviewPowerIr({ glitch_result: run.data }),
     enabled: !!run.data,
+    staleTime: Infinity, refetchOnWindowFocus: false, retry: false,
   });
 
   return (
@@ -601,6 +660,7 @@ function GlitchSection() {
         </button>
       }
     >
+      <AgentEntry role="a3_power_ir" />
       {run.data ? (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -628,7 +688,7 @@ function GlitchSection() {
             <Meter ratio={run.data.glitch_share} />
           </div>
           <PowerStackBars nets={run.data.nets} />
-          <AgentReviewPanel review={a3.data} loading={a3.isFetching} />
+
         </div>
       ) : (
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
@@ -636,6 +696,7 @@ function GlitchSection() {
           레지스터 입력 등)로 추정을 실행합니다.
         </p>
       )}
+      <AgentReviewPanel role="a3_power_ir" scope={run.data ? `글리치 비중 ${(run.data.glitch_share * 100).toFixed(1)}%` : undefined} review={a3.data} loading={a3.isFetching} failed={a3.isError} onRetry={() => void a3.refetch()} />
     </Card>
   );
 }

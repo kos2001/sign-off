@@ -36,7 +36,7 @@ fi
 #    SOUL.md 가 파이프라인(A1~A5, V 역할) 쪽 규율을 담는다.
 run cp "$SOUL_SRC" "$HERMES_PROFILE_DIR/SOUL.md"
 run mkdir -p "$HERMES_PROFILE_DIR/skills"
-for skill in sign-off-api sign-off-drc-rules; do
+for skill in sign-off-api sign-off-drc-rules sign-off-evidence-review; do
   run cp -R "$REPO_DIR/backend/profiles/$PROFILE/skills/$skill" "$HERMES_PROFILE_DIR/skills/"
 done
 

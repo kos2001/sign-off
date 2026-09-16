@@ -3,6 +3,7 @@ import pytest
 
 from app.hermes import (
     ROLES,
+    REVIEW_GUIDANCE,
     HermesClient,
     Settings,
     _extract_json,
@@ -45,7 +46,7 @@ def test_extract_json_no_object_raises():
 
 
 @pytest.mark.anyio
-async def test_chat_posts_role_prompt_and_session_header():
+async def test_chat_posts_review_contract_without_session_continuity():
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -60,21 +61,25 @@ async def test_chat_posts_role_prompt_and_session_header():
     result = await client.chat(ROLES["a5_synth"], "hello", session_id="s1")
 
     assert result == "ok"
-    assert seen["headers"]["x-hermes-session-id"] == "s1"
+    assert "x-hermes-session-id" not in seen["headers"]
+    assert "x-hermes-session-key" not in seen["headers"]
+    assert len(seen["headers"]["idempotency-key"]) == 32
     assert seen["headers"]["authorization"] == "Bearer k"
     import json as _json
 
     body = _json.loads(seen["body"])
-    assert body["messages"][0]["content"] == ROLES["a5_synth"].system_prompt
+    assert body["messages"][0]["content"] == REVIEW_GUIDANCE + "\n" + ROLES["a5_synth"].system_prompt
     assert body["messages"][1]["content"] == "hello"
 
 
 @pytest.mark.anyio
 async def test_chat_retries_on_429_then_succeeds():
     calls = {"n": 0}
+    keys = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
+        keys.append(request.headers['idempotency-key'])
         if calls["n"] == 1:
             return httpx.Response(429, json={"error": {"message": "slow down"}})
         return httpx.Response(200, json={"choices": [{"message": {"content": "done"}}]})
@@ -96,6 +101,36 @@ async def test_chat_retries_on_429_then_succeeds():
 
     assert result == "done"
     assert calls["n"] == 2
+    assert keys[0] == keys[1]
+
+
+@pytest.mark.anyio
+async def test_repeated_reviews_with_same_logical_session_are_isolated():
+    keys = []
+    def handler(request):
+        assert 'x-hermes-session-id' not in request.headers
+        keys.append(request.headers['idempotency-key'])
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'review'}, 'finish_reason': 'stop'}]})
+    client = HermesClient(Settings('http://test/v1', 'k', 'sign-off'), transport=httpx.MockTransport(handler))
+    try:
+        for _ in range(2):
+            await client.chat(ROLES['a1_rtl'], 'snapshot', session_id='local:a1_rtl:adhoc')
+    finally:
+        await client.aclose()
+    assert len(set(keys)) == 2
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('finish_reason', ['length', 'error', 'tool_calls', 'content_filter'])
+async def test_incomplete_outputs_are_not_successful_reviews(finish_reason):
+    def handler(request):
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'partial verdict'}, 'finish_reason': finish_reason}]})
+    client = HermesClient(Settings('http://test/v1', 'k', 'sign-off'), transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(RuntimeError, match='incomplete review'):
+            await client.chat(ROLES['a1_rtl'], 'snapshot', session_id='test')
+    finally:
+        await client.aclose()
 
 
 @pytest.mark.anyio

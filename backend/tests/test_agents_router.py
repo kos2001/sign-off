@@ -1,4 +1,12 @@
 """app/routers/agents.py — trigger gating and graceful hermes-unreachable degrade."""
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def unavailable_provider(monkeypatch):
+    async def unavailable(self, *args, **kwargs):
+        raise ConnectionError('synthetic provider unavailable')
+    monkeypatch.setattr('app.hermes.HermesClient.chat', unavailable)
 
 
 def test_rtl_review_not_triggered_on_clean_result(client):
@@ -19,7 +27,7 @@ def test_rtl_review_triggers_and_degrades_when_hermes_unreachable(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["triggered"] is True
-    assert body["available"] is False  # nothing listening on the default hermes port in tests
+    assert body["available"] is False
     assert body["review"] is None
     assert body["error"]
 
@@ -56,7 +64,10 @@ def test_gate_review_not_triggered_when_ready(client):
     assert body["v"] is None
 
 
-def test_gate_review_chains_a5_then_v_when_not_ready(client):
+def test_gate_review_chains_a5_then_v_when_not_ready(client, monkeypatch):
+    async def available(self, *args, **kwargs):
+        return 'synthetic review'
+    monkeypatch.setattr('app.hermes.HermesClient.chat', available)
     resp = client.post("/agents/review/gate", json={"gate_status": {"ready": False}})
     body = resp.json()
     assert body["a5"]["triggered"] is True

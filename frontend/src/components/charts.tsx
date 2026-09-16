@@ -150,105 +150,73 @@ function ScaleLegend({ max, unit }: { max: number; unit: string }) {
 
 /* ---------- diverging bars around a zero baseline (slack polarity) ---------- */
 
-export function SlackBars({ slacks }: { slacks: number[] }) {
-  const { show, hide, node } = useTooltip();
-  const width = 640;
-  const barH = 14; // thin marks
-  const gap = 6;
-  const labelW = 70;
-  const height = slacks.length * (barH + gap);
-  const maxAbs = Math.max(...slacks.map(Math.abs), 1);
-  const plotW = width - labelW - 60;
-  const zeroX = labelW + plotW / 2;
-  const scale = plotW / 2 / maxAbs;
-  const wnsIndex = slacks.indexOf(Math.min(...slacks));
-
-  return (
-    <div className="overflow-x-auto">
-      <svg width={width} height={height + 22} role="img" aria-label="엔드포인트 슬랙">
-        {/* zero baseline — solid hairline */}
-        <line
-          x1={zeroX}
-          y1={0}
-          x2={zeroX}
-          y2={height}
-          stroke="var(--baseline)"
-          strokeWidth={1}
-        />
-        {slacks.map((s, i) => {
-          const w = Math.abs(s) * scale;
-          const x = s < 0 ? zeroX - w : zeroX;
-          const y = i * (barH + gap);
-          const isWns = i === wnsIndex;
-          return (
-            <g key={i}>
-              <text
-                x={labelW - 8}
-                y={y + barH - 3}
-                textAnchor="end"
-                fontSize={11}
-                fill="var(--text-muted)"
-              >
-                EP{i}
-              </text>
-              <rect
-                x={x}
-                y={y}
-                width={Math.max(w, 1)}
-                height={barH}
-                fill={s < 0 ? "var(--div-neg)" : "var(--div-pos)"}
-                rx={3}
-                onMouseMove={(e) =>
-                  show(e, `엔드포인트 ${i} · 슬랙 ${s.toFixed(1)} ps${isWns ? " · WNS" : ""}`)
-                }
-                onMouseLeave={hide}
-              />
-              {/* selective direct label: the WNS endpoint only */}
-              {isWns && (
-                <text
-                  x={x - 6}
-                  y={y + barH - 3}
-                  textAnchor="end"
-                  fontSize={11}
-                  fontWeight={600}
-                  fill="var(--text-primary)"
-                >
-                  {s.toFixed(1)} ps (WNS)
-                </text>
-              )}
-            </g>
-          );
+export function SlackBars({ slacks, endpointIds }: { slacks: number[]; endpointIds?: string[] | null }) {
+  const [selected, setSelected] = useState<number | null>(null);
+  const valid = slacks.every(Number.isFinite);
+  const maxAbs = Math.max(...slacks.map(Math.abs), Number.MIN_VALUE);
+  const minimum = Math.min(...slacks);
+  const format = (value: number) => {
+    const scientific = Math.abs(value) >= 1e6 || (value !== 0 && Math.abs(value) < 0.001);
+    return new Intl.NumberFormat(undefined, {
+      maximumSignificantDigits: scientific ? 4 : 6,
+      notation: scientific ? 'scientific' : 'standard',
+    }).format(value === 0 ? 0 : value);
+  };
+  return <figure aria-label="엔드포인트 슬랙" className="space-y-3">
+    <figcaption className="text-xs text-[var(--text-muted)]">왼쪽은 음수, 오른쪽은 0 이상입니다. 종점을 선택하면 ID와 값을 확인할 수 있습니다.</figcaption>
+    {!slacks.length || !valid ? <p role="status" className="text-sm">차트로 표시할 유효한 슬랙이 없습니다.</p> : <>
+      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] gap-2 text-xs text-[var(--text-muted)]" aria-hidden="true"><span>종점</span><span className="text-center">0 ps</span><span className="text-right">슬랙 (ps)</span></div>
+      <ol className="space-y-1">
+        {slacks.map((slack, index) => {
+          const width = Math.abs(slack) / maxAbs * 50;
+          const isMinimum = slack === minimum;
+          const id = endpointIds?.[index];
+          return <li key={index}>
+            <button type="button" aria-expanded={selected === index}
+              aria-label={`EP${index}${id ? ` · ${id}` : ''} · 슬랙 ${slack} ps${isMinimum ? ' · 표시된 종점 중 최소 슬랙' : ''}`}
+              className="grid w-full grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] items-center gap-2 rounded-md px-1 py-2 text-left focus-visible:outline-2 focus-visible:outline-[var(--series-1)] hover:bg-[var(--surface-2)]"
+              onClick={() => setSelected(selected === index ? null : index)}>
+              <span className="text-xs text-[var(--text-secondary)]">EP{index}</span>
+              <span className="relative block h-4" aria-hidden="true">
+                <span className="absolute inset-y-0 left-1/2 border-l border-[var(--baseline)]" />
+                <span className="absolute inset-y-0 rounded-sm" style={{ left: `${slack < 0 ? 50 - width : 50}%`, width: `${width}%`, minWidth: 1, background: slack < 0 ? 'var(--div-neg)' : 'var(--div-pos)' }} />
+              </span>
+              <span className={`min-w-0 break-all text-right text-xs tabular-nums ${isMinimum ? 'font-bold' : ''}`} style={{ color: slack < 0 ? 'var(--status-critical)' : 'var(--text-primary)' }}>{format(slack)}</span>
+            </button>
+            {selected === index && <div role="region" aria-label={`EP${index} 슬랙 상세`} className="mb-2 rounded-lg border border-[var(--border)] p-3 text-xs space-y-1 break-all">
+              <p className="font-semibold">EP{index} · {id ?? '종점 ID 미제공'}</p>
+              <p>슬랙 {slack} ps{isMinimum ? ' · 표시된 종점 중 최소 슬랙' : ''}</p>
+            </div>}
+          </li>;
         })}
-        <text x={zeroX} y={height + 16} textAnchor="middle" fontSize={11} fill="var(--text-muted)">
-          0 ps
-        </text>
-      </svg>
-      {node}
-    </div>
-  );
+      </ol>
+    </>}
+  </figure>;
 }
 
 /* ---------- run status distribution (stacked bar, single row) ---------- */
 
-const RUN_STATUS_COLOR: Record<"passed" | "failed" | "running", string> = {
+const RUN_STATUS_COLOR: Record<"passed" | "failed" | "running" | "incomplete", string> = {
   passed: "var(--status-good)",
   failed: "var(--status-critical)",
   running: "var(--status-warning)",
+  incomplete: "var(--text-muted)",
 };
-const RUN_STATUS_LABEL: Record<"passed" | "failed" | "running", string> = {
+const RUN_STATUS_LABEL: Record<"passed" | "failed" | "running" | "incomplete", string> = {
   passed: "통과",
   failed: "실패",
   running: "진행 중",
+  incomplete: "검증 미완료",
 };
 
 export function RunStatusBar({
   counts,
 }: {
-  counts: Record<"passed" | "failed" | "running", number>;
+  counts: Record<"passed" | "failed" | "running" | "incomplete", number>;
 }) {
   const { show, hide, node } = useTooltip();
-  const total = counts.passed + counts.failed + counts.running;
-  const order: ("passed" | "failed" | "running")[] = ["passed", "failed", "running"];
+  const total = counts.passed + counts.failed + counts.running + counts.incomplete;
+  const order: ("passed" | "failed" | "running" | "incomplete")[] = ["passed", "failed", "running", "incomplete"];
 
   if (total === 0) {
     return (
@@ -264,7 +232,7 @@ export function RunStatusBar({
         className="flex h-3 w-full overflow-hidden rounded-full"
         style={{ background: "var(--seq-100)" }}
         role="img"
-        aria-label={`런 상태: 통과 ${counts.passed}, 실패 ${counts.failed}, 진행 중 ${counts.running}`}
+        aria-label={`런 상태: 통과 ${counts.passed}, 실패 ${counts.failed}, 진행 중 ${counts.running}, 검증 미완료 ${counts.incomplete}`}
       >
         {order.map(
           (k) =>
