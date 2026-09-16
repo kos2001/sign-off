@@ -98,6 +98,7 @@ def test_http_readiness_reports_worker_failure_without_leaking_details(client, m
     assert response.headers['cache-control'] == 'no-store'
     assert response.headers['x-request-id'] in caplog.text
     assert 'secret Docker' not in caplog.text + response.text
+    assert 'component=rtl_worker' in caplog.text
     assert client.get('/health').json() == {'status': 'ok'}
 
 

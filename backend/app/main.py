@@ -10,8 +10,7 @@ from sqlalchemy import select
 
 from .auth import authorize, auth_required
 
-from .db import engine, SessionLocal
-from .models import Project, SignoffRun, User
+from .db import Base, engine, SessionLocal
 from .migrations import initialize_schema
 from .worker_maintenance import worker_lifespan
 from .worker_readiness import WorkerReadiness
@@ -89,14 +88,19 @@ def create_app() -> FastAPI:
 
     @app.get('/ready', tags=['meta'])
     def readiness(request: Request):
+        component = 'database'
         try:
             with SessionLocal() as db:
-                for model in [Project, SignoffRun, User]:
-                    db.execute(select(model.id).limit(1)).all()
+                # Resolve every required column, without fetching design data or
+                # large report payloads. Metadata tracks future model additions.
+                for table in Base.metadata.sorted_tables:
+                    db.execute(select(table).limit(0)).close()
+            component = 'rtl_worker'
             if not app.state.worker_readiness.ready():
                 raise WorkerError('RTL worker prerequisite is unavailable.')
         except Exception as error:
-            logger.warning('readiness_failed request_id=%s failure=%s', request.state.request_id, type(error).__name__)
+            logger.warning('readiness_failed request_id=%s component=%s failure=%s',
+                           request.state.request_id, component, type(error).__name__)
             return JSONResponse(status_code=503, content={'status': 'not_ready'}, headers={'Cache-Control': 'no-store', 'Retry-After': '5'})
         return JSONResponse(content={'status': 'ready'}, headers={'Cache-Control': 'no-store'})
 

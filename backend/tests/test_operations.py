@@ -1,7 +1,11 @@
 import logging
 import re
 
-from sqlalchemy import create_engine
+import pytest
+
+from app.db import Base
+
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 
@@ -28,6 +32,7 @@ def test_readiness_queries_db_but_health_does_not(client, monkeypatch, caplog):
     assert client.get('/health').json() == {'status': 'ok'}
     assert response.headers['x-request-id'] in caplog.text
     assert secret not in response.text and secret not in caplog.text
+    assert 'component=database' in caplog.text
 
 
 def test_readiness_requires_application_tables(client, monkeypatch, tmp_path):
@@ -69,3 +74,52 @@ def test_expected_validation_error_keeps_status_and_request_id(client):
     assert response.status_code == 422
     assert isinstance(response.json()['detail'], list)
     assert re.fullmatch('[a-f0-9]{32}', response.headers['x-request-id'])
+
+
+@pytest.mark.parametrize('table_name', sorted(Base.metadata.tables))
+def test_ready_rejects_each_missing_table_and_recovers(client, monkeypatch, tmp_path, table_name):
+    engine = create_engine('sqlite:///' + str(tmp_path / 'schema.db'))
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr('app.main.SessionLocal', sessionmaker(bind=engine))
+    try:
+        assert client.get('/ready').status_code == 200
+        table = Base.metadata.tables[table_name]
+        table.drop(engine)
+        response = client.get('/ready')
+        assert response.status_code == 503 and response.json() == {'status': 'not_ready'}
+        assert table_name not in response.text
+        assert client.get('/health').status_code == 200
+        table.create(engine)
+        assert client.get('/ready').status_code == 200
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize('table_name', sorted(Base.metadata.tables))
+def test_ready_rejects_missing_non_id_column_without_reading_rows(client, monkeypatch, tmp_path, table_name):
+    engine = create_engine('sqlite:///' + str(tmp_path / 'columns.db'))
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr('app.main.SessionLocal', sessionmaker(bind=engine))
+    table = Base.metadata.tables[table_name]
+    column = next(column for column in table.columns if not column.primary_key)
+    preparer = engine.dialect.identifier_preparer
+    try:
+        # Retain an ID and the table name, reproducing a partial/old schema that
+        # the former ID-only readiness probe accepted. No user DB is modified.
+        with engine.begin() as connection:
+            connection.execute(text(f'ALTER TABLE {preparer.quote(table_name)} RENAME COLUMN '
+                                    f'{preparer.quote(column.name)} TO missing_required_column'))
+        assert client.get('/ready').status_code == 503
+        with engine.begin() as connection:
+            connection.execute(text(f'ALTER TABLE {preparer.quote(table_name)} RENAME COLUMN '
+                                    f'missing_required_column TO {preparer.quote(column.name)}'))
+        statements = []
+        @event.listens_for(engine, 'before_cursor_execute')
+        def capture(connection, cursor, statement, parameters, context, executemany):
+            statements.append((statement, parameters))
+        assert client.get('/ready').status_code == 200
+        assert len(statements) == len(Base.metadata.tables)
+        assert all(statement.lstrip().startswith('SELECT ') and params == (0, 0)
+                   for statement, params in statements)
+    finally:
+        engine.dispose()
