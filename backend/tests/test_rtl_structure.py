@@ -46,3 +46,51 @@ def test_failed_structure_is_saved_as_failed_synthesis_evidence(client, streamin
     assert evidence['result']['stages'] == result['stages']
     assert evidence['result']['tool_runs'] == result['tool_runs']
     assert 'no driver' in evidence['result']['tool_runs']['synthesize']['log']
+
+
+CROSS_HIERARCHY_LOOP = """
+module inv(input a,output y); assign y=~a; endmodule
+module gate(input a,input b,output y); assign y=a&b; endmodule
+module top(input en,output y);
+  wire x;
+  inv u(y,x);
+  gate v(x,en,y);
+endmodule
+"""
+
+
+@pytest.mark.skipif(not tools.yosys_available(), reason='requires Yosys')
+@pytest.mark.parametrize('keep', ['none', 'module', 'cell', 'both'])
+def test_cross_hierarchy_loop_cannot_be_hidden_by_keep_hierarchy(keep):
+    code = CROSS_HIERARCHY_LOOP
+    if keep in ('module', 'both'):
+        code = code.replace('module inv', '(* keep_hierarchy *) module inv').replace('module gate', '(* keep_hierarchy *) module gate')
+    if keep in ('cell', 'both'):
+        code = code.replace('inv u', '(* keep_hierarchy *) inv u').replace('gate v', '(* keep_hierarchy *) gate v')
+    result = tools.synthesize(code, top_module='top')
+    assert not result.ok and result.execution['exit_code'] != 0
+    assert 'logic loop' in result.execution['log']
+    assert result.cells is None
+
+
+@pytest.mark.skipif(not tools.yosys_available(), reason='requires Yosys')
+def test_registered_feedback_is_allowed_and_hierarchy_restored():
+    code = """
+(* keep_hierarchy *) module invert(input a,output y); assign y=~a; endmodule
+(* keep_hierarchy *) module register(input clk,input d,output reg q);
+ always @(posedge clk) q<=d;
+endmodule
+module top(input clk,output q);
+ wire d;
+ (* keep_hierarchy *) invert u(q,d);
+ (* keep_hierarchy *) register v(clk,d,q);
+endmodule
+"""
+    result = tools.synthesize(code, top_module='top')
+    assert result.ok, result.issues
+    assert result.cells == 2 and result.flops == 1 and result.latches == 0
+    # Read the preserved JSON, not the temporary flattened check's module list.
+    log = result.execution['log']
+    statistics, _ = json.JSONDecoder().raw_decode(log[log.index('{\n   "creator"'):])
+    assert set(statistics['modules']) == {'\\top', '\\invert', '\\register'}
+    assert statistics['modules']['\\top']['num_cells_by_type'] == {'invert': 1, 'register': 1}

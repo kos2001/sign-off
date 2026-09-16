@@ -72,6 +72,13 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
             assert '"modules"' in result['tool_runs']['synthesize']['log']
             assert '"design"' in result['tool_runs']['synthesize']['log']
         invalid = fixture('test_rtl_structure.py', 'INVALID_DESIGNS')
+        loop = fixture('test_rtl_structure.py', 'CROSS_HIERARCHY_LOOP')
+        invalid['cross_hierarchy_loop'] = (loop, 'logic loop')
+        invalid['kept_cross_hierarchy_loop'] = (
+            loop.replace('module inv', '(* keep_hierarchy *) module inv')
+                .replace('module gate', '(* keep_hierarchy *) module gate')
+                .replace('inv u', '(* keep_hierarchy *) inv u')
+                .replace('gate v', '(* keep_hierarchy *) gate v'), 'logic loop')
         for case, (invalid_code, diagnostic) in invalid.items():
             for streaming in [False, True]:
                 response = client.post('/analysis/rtl-signoff' + ('/stream' if streaming else ''),
