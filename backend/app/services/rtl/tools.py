@@ -154,7 +154,18 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
         src = Path(td) / "design.sv"
         src.write_text(code if code.endswith("\n") else code + "\n")
         hier = f"hierarchy -simcheck -top {top}" if top else "hierarchy -simcheck -auto-top"
-        script = f"read_verilog -sv design.sv; {hier}; proc; check -assert; opt; techmap; opt; check -assert; tee -o stats.json stat -json"
+        # Inspect a fully expanded copy: check alone cannot see a loop that
+        # crosses module ports. Restore the hierarchy for synthesis/statistics.
+        # keep_hierarchy is an optimization preference, not a validation waiver.
+        connection_check = (
+            "check -assert; design -push-copy; "
+            "setattr -mod -unset keep_hierarchy; setattr -unset keep_hierarchy; "
+            "flatten -wb; check -assert; design -pop"
+        )
+        script = (
+            f"read_verilog -sv design.sv; {hier}; proc; {connection_check}; "
+            f"opt; techmap; opt; {connection_check}; tee -o stats.json stat -json"
+        )
         cmd = [YOSYS, '-p', script]
         proc = run_command(cmd, td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
         counts = (None, None, None)
