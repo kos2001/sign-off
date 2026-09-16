@@ -71,6 +71,7 @@ export interface TimingPathSummary {
   violated_paths: number; met_paths: number; unconstrained_paths: number; worst_slack_ps: number | null;
 }
 export interface TimingPathPage {
+  groups: (TimingPathSummary & { path_group: string; path_type: 'min' | 'max'; total: number })[];
   run: SignoffRun; metadata: { filename?: string; tool_version?: string; scenario?: string };
   design_revision: string | null; source_sha256: string; reported_total: number; total: number;
   offset: number; limit: number; items: TimingPath[]; summary: TimingPathSummary;
@@ -79,7 +80,7 @@ export interface TimingPathExport {
   format: 'signoff/timing-path-export/v1'; exported_at: string; run: SignoffRun;
   report: { source: string; parser: string; source_sha256: string; design_revision: string | null;
     metadata: TimingPathPage['metadata']; coverage: string; coverage_note: string };
-  filters: { q: string; path_type: string | null; status: string; slack_min_ps: number | null; slack_max_ps: number | null; sort: string };
+  filters: { q: string; path_group: string | null; path_type: string | null; status: string; slack_min_ps: number | null; slack_max_ps: number | null; sort: string };
   units: { slack_ps: 'ps' }; reported_total: number; total: number; items: TimingPath[]; summary: TimingPathSummary;
 }
 export interface TimingPathDetail {
