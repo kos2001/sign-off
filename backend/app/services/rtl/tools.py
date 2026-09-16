@@ -153,8 +153,8 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
     with tempfile.TemporaryDirectory() as td:
         src = Path(td) / "design.sv"
         src.write_text(code if code.endswith("\n") else code + "\n")
-        hier = f"hierarchy -top {top}" if top else "hierarchy -auto-top"
-        script = f"read_verilog -sv design.sv; {hier}; proc; opt; techmap; opt; tee -o stats.json stat -json"
+        hier = f"hierarchy -simcheck -top {top}" if top else "hierarchy -simcheck -auto-top"
+        script = f"read_verilog -sv design.sv; {hier}; proc; check -assert; opt; techmap; opt; check -assert; tee -o stats.json stat -json"
         cmd = [YOSYS, '-p', script]
         proc = run_command(cmd, td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
         counts = (None, None, None)
@@ -169,7 +169,7 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
     ok = proc['exit_code'] == 0 and proc['error'] is None
     issues = []
     if not ok:
-        issues = [line.strip() for line in raw.splitlines() if line.startswith('ERROR') or '%Error' in line][:8]
+        issues = [line.strip() for line in raw.splitlines() if line.startswith(('ERROR', 'Warning:')) or '%Error' in line][:8]
     if proc['error']:
         issues.append(f"yosys: {proc['error']}")
 

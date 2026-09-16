@@ -217,7 +217,7 @@ JSON이 없거나 잘못되었거나 128 KiB를 초과하면 수치는 unknown/n
 flops/latches는 Yosys의 일반 DFF/SDFF 및 DLATCH 셀 종류만 센다. 블랙박스 내부나
 라이브러리 매크로 내부 소자 수, 물리 면적·타이밍을 의미하지 않는다. 기존 결과를
 다시 계산하지 않으며 새 집계를 사용하려면 워커 이미지를 갱신해야 한다.
-명령 옵션은 [Yosys 공식 명령 참조](https://yosyshq.readthedocs.io/projects/yosys/en/latest/cmd/stat.html)를 따른다.
+명령 옵션은 [Yosys 공식 명령 참조](https://yosyshq.readthedocs.io/projects/yosys/en/v0.65/cmd/index_passes_status.html)를 따른다.
 
 ## 린트·합성 최상위 모듈 선택
 
@@ -238,3 +238,21 @@ RTL 래더의 선택 입력 `top_module`은 Verilator 기본/폭 검사와 Yosys
 컨테이너 요청에도 같은 값을 전달하며 결과의 선택 값/대상이 요청과 다르면 저장 전에
 거절한다. 이 검사는 컨테이너 정리 이후에 수행한다. 새 top 입력을 지원하려면 워커 이미지를
 함께 갱신해야 한다. 이전 워커는 명시적 top 입력을 무시하고 실행하지 않고 실패로 처리된다.
+
+## RTL 계층과 구조 검증
+
+현재 단일 파일 RTL 래더는 하위 모듈의 구현이 모두 제공되는 설계를 대상으로 한다.
+`hierarchy -simcheck`로 선택 계층의 미정의 모듈과 인스턴스화된 블랙박스를 거절한다.
+사용하지 않는 블랙박스 선언만 있는 경우에는 선택 계층의 검증을 차단하지 않는다.
+외부 Liberty/매크로 모델을 연결하는 기능은 아직 없으므로 블랙박스를 검증된 것으로
+간주하지 않는다. 이 제한은 RTL 입력 화면에도 표시한다.
+
+`proc` 직후와 일반 셀 매핑·최적화 후에 `check -assert`를 실행한다. Yosys가 발견한
+구동되지 않는 신호, 충돌하는 다중 드라이버, 조합 논리 루프는 합성 단계 실패로 기록한다.
+최적화 전에 검사하여 문제가 단순화 과정에서 사라지는 것을 방지한다. 실패 시 수치는
+unknown이며 경고·오류와 전체 제한된 실행 로그가 저장된다. 별도 AI 호출은 추가하지 않는다.
+이는 Yosys의 구조 검사 범위이며 공식 동등성 검증, 전체 CDC 검증이나 물리 검증을 대체하지 않는다.
+기존 저장 결과는 다시 판정하지 않으며 워커 이미지 갱신 이후 실행부터 적용한다.
+
+참조: [Yosys 계층 검사](https://yosyshq.readthedocs.io/projects/yosys/en/stable/cmd/index_passes_hierarchy.html),
+[Yosys 구조 검사](https://yosyshq.readthedocs.io/projects/yosys/en/v0.65/cmd/index_passes_status.html).
