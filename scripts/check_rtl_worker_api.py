@@ -55,8 +55,22 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
             assert 'Yosys' in records['synthesize']['log']
             synth = next(stage for stage in result['stages'] if stage['name'] == 'synthesize')
             assert 'flops=4' in synth['detail'] and 'latches=0' in synth['detail'], synth
-            assert not synth['detail'].startswith('cells=0 '), synth
+            assert 'cells=0 ' not in synth['detail'], synth
             assert '-Wno-WIDTHTRUNC' not in records['width']['command']
+        hierarchy_code = fixture('test_rtl_process.py', 'HIERARCHY_RTL')
+        for streaming in [False, True]:
+            response = client.post('/analysis/rtl-signoff' + ('/stream' if streaming else ''),
+                                   json={'code': hierarchy_code, 'top_module': 'chip', 'project_id': project})
+            assert response.status_code == 200, response.text
+            result = json.loads(response.text.splitlines()[-1])['result'] if streaming else response.json()
+            synth = next(stage for stage in result['stages'] if stage['name'] == 'synthesize')
+            assert synth['status'] == 'pass' and 'cells=10 flops=10 latches=0' in synth['detail'], synth
+            assert 'scope=selected design hierarchy' in synth['detail']
+            evidence = client.get(f"/runs/{result['run_id']}/evidence").json()
+            assert evidence['result']['stages'] == result['stages']
+            assert evidence['result']['tool_runs'] == result['tool_runs']
+            assert '"modules"' in result['tool_runs']['synthesize']['log']
+            assert '"design"' in result['tool_runs']['synthesize']['log']
         image = os.environ.get('SIGNOFF_RTL_WORKER_IMAGE')
         os.environ['SIGNOFF_RTL_WORKER_IMAGE'] = 'signoff-missing:' + uuid.uuid4().hex
         try:
@@ -68,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
                 del os.environ['SIGNOFF_RTL_WORKER_IMAGE']
             else:
                 os.environ['SIGNOFF_RTL_WORKER_IMAGE'] = image
-        assert len(client.get(f'/projects/{project}/runs').json()) == 2
+        assert len(client.get(f'/projects/{project}/runs').json()) == 4
         cancel = threading.Event()
         running = worker.stream_worker(code, testbench, 'tb', cancel=cancel)
         assert next(running)['event'] == 'stage_start'
