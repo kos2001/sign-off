@@ -72,6 +72,20 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
             <div className="flex flex-wrap items-center gap-2"><strong>{stage.name}</strong><StatusBadge status={stage.status === "pass" ? "good" : stage.status === "fail" ? "critical" : "warning"} label={stage.status} /><span>{stage.gating ? "필수 단계" : "참고 단계"}</span></div>
             <p className="mt-1 whitespace-pre-wrap break-words">{stage.detail}</p>
           </li>)}</ul>
+          <section aria-label="RTL 도구 실행 로그" className="space-y-2">
+            <h3 className="font-semibold">도구 명령과 실행 로그</h3>
+            <p>서버가 실행한 기본 린트·폭 검사·합성 기록입니다. 로그는 도구별 최대 128 KiB이며 출력 한도 초과는 실행 오류로 기록합니다. 조회에는 AI가 개입하지 않습니다.</p>
+            {(['lint', 'width', 'synthesize'] as const).map(name => {
+              const record = evidence.data.result.tool_runs?.[name];
+              const label = { lint: '기본 린트', width: '폭 검사 린트', synthesize: '합성' }[name];
+              return record ? <details key={name}><summary className="cursor-pointer font-semibold">{label} · 종료 코드 {record.exit_code ?? '없음'}</summary>
+                <p className="mt-2 whitespace-pre-wrap break-words">실행 제한 또는 시작 오류: {record.error ?? '없음'}</p>
+                <p className="text-xs">명령 인수 배열 (실행 기능 없음)</p>
+                <pre className="whitespace-pre-wrap break-words">{JSON.stringify(record.command)}</pre>
+                <pre tabIndex={0} aria-label={`${label} 실행 로그`} className="mt-2 max-h-80 overflow-auto rounded-lg bg-[var(--surface-2)] p-3">{record.log || '출력 없음'}</pre>
+              </details> : <p key={name}>{label}: 실행 로그 미보관 · 미실행 또는 이전 결과</p>;
+            })}
+          </section>
           {evidence.data.result.simulation && <SimulationDetails simulation={evidence.data.result.simulation} />}
           <details><summary className="cursor-pointer font-semibold">실행한 RTL 소스</summary><pre tabIndex={0} aria-label="실행한 RTL 코드" className="mt-2 max-h-80 overflow-auto rounded-lg bg-[var(--surface-2)] p-3">{evidence.data.source_text}</pre></details>
         </>}
