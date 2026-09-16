@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<report-database>
+ <description>DRC fixture · 한글</description><top-cell>TOP</top-cell>
+ <categories><category><name>M1</name><categories><category><name>spacing</name></category></categories></category></categories>
+ <cells><cell><name>BLOCK</name><variant>1</variant></cell></cells>
+ <items><item><category>M1.spacing</category><cell>BLOCK:1</cell><visited>true</visited>
+ <multiplicity>3</multiplicity><tags>waived,important</tags><comment>review only</comment>
+ <values><value>box: (1.5,2;3,4)</value><value>text: 'spacing &lt; 0.1'</value></values>
+ </item></items>
+</report-database>

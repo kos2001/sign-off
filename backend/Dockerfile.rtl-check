@@ -1,0 +1,17 @@
+# Validation environment, not a production worker image.
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y iverilog verilator yosys procps \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace/backend
+COPY requirements.in requirements.txt ./
+COPY scripts/check_dependencies.py ./scripts/check_dependencies.py
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
+    && pip check && python scripts/check_dependencies.py
+COPY app ./app
+COPY tests ./tests
+COPY scripts/check_rtl_runtime.py ./scripts/check_rtl_runtime.py
+ENV PYTHONDONTWRITEBYTECODE=1
+USER 65534:65534
+ENTRYPOINT ["python", "scripts/check_rtl_runtime.py"]

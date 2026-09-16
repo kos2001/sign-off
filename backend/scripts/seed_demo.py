@@ -62,7 +62,7 @@ def seed() -> None:
         Domain.rtl,
         Stage.rtl,
         "rtl-signoff-ladder (lint=verilator)",
-        RunStatus.passed,
+        RunStatus.incomplete,
         {"verdict": "CONDITIONAL", "score": 96, "grade": "A", "module": "ibex_pulse_sync"},
     )
     run(

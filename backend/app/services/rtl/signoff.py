@@ -17,7 +17,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 from . import tools
+from .simulation import simulate
 from .analyzer import build_report, design_checks, strict_width_findings
+from ..evidence import rtl_result_status
 
 DRC_RULES = {
     "module_present":     ("DRC-STRUCT-001", "Module declaration present"),
@@ -55,6 +57,7 @@ class SignoffResult:
     rules: list[dict] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
     report: dict = field(default_factory=dict)
+    simulation: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -68,16 +71,13 @@ class SignoffResult:
             ],
             "rules": self.rules,
             "suggestions": self.suggestions,
+            "simulation": self.simulation,
         }
 
 
 def _verdict(stages: list[LadderStage]) -> str:
-    gating = [s for s in stages if s.gating]
-    if any(s.status == "fail" for s in gating):
-        return "REJECTED"
-    if any(s.status == "skip" for s in gating):
-        return "CONDITIONAL"
-    return "SIGNED_OFF"
+    status = rtl_result_status({"verdict": "SIGNED_OFF", "stages": [vars(stage) for stage in stages]})
+    return {"passed": "SIGNED_OFF", "failed": "REJECTED", "incomplete": "CONDITIONAL"}[status.value]
 
 
 def _suggestions(stages: list[LadderStage]) -> list[str]:
@@ -91,6 +91,8 @@ def _suggestions(stages: list[LadderStage]) -> list[str]:
         elif s.name == "synthesize" and s.status == "fail":
             out.append("RTL does not synthesize — remove unsynthesizable constructs and check for "
                        "inferred latches (drive every output on every path).")
+        elif s.name == "simulate" and s.status == "fail":
+            out.append("Review the testbench compile/runtime logs, fix the failure, and re-run all checks.")
         elif s.gating and s.status == "skip":
             out.append(f"Stage '{s.name}' was skipped ({s.detail}) — provide it to make the "
                        "verdict unconditional.")
@@ -102,7 +104,7 @@ def _lint_stage(lr: tools.LintResult) -> LadderStage:
         return LadderStage("lint", "skip", gating=True, detail="verilator not installed")
     return LadderStage(
         "lint", "pass" if lr.ok else "fail", gating=True,
-        detail=f"verilator: {len(lr.issues)} finding(s)",
+        detail=f"verilator: {len(lr.issues)} finding(s)" + ("; " + "; ".join(lr.issues[:8]) if lr.issues else ""),
     )
 
 
@@ -121,11 +123,9 @@ def _synth_stage(sr: tools.SynthResult) -> LadderStage:
         return LadderStage("synthesize", "skip", gating=True, detail="yosys not installed")
     return LadderStage(
         "synthesize", "pass" if sr.ok else "fail", gating=True,
-        detail=f"cells={sr.cells} flops={sr.flops} latches={sr.latches}",
+        detail=f"cells={sr.cells} flops={sr.flops} latches={sr.latches}" + ("; " + "; ".join(sr.issues[:8]) if sr.issues else ""),
     )
 
-
-_SIMULATE_SKIP = LadderStage("simulate", "skip", gating=True, detail="no testbench available")
 
 
 def _build_result(report: dict, stages: list[LadderStage]) -> SignoffResult:
@@ -153,23 +153,26 @@ def _build_result(report: dict, stages: list[LadderStage]) -> SignoffResult:
     )
 
 
-def run_signoff(rtl_code: str) -> SignoffResult:
+def run_signoff(rtl_code: str, testbench: str | None = None, testbench_top: str | None = None) -> SignoffResult:
     """Run the full ladder at once and return the consolidated result."""
     code = tools.strip_fences(rtl_code)
     lr = tools.lint(code)
     width = strict_width_findings(code, lr)
     sr = tools.synthesize(code)
     report = build_report(code, lr, width, sr)
+    simulation = simulate(code, testbench, testbench_top)
     stages = [
         _lint_stage(lr),
         _design_stage(report["checks"]),
         _synth_stage(sr),
-        _SIMULATE_SKIP,
+        LadderStage("simulate", simulation["status"], True, simulation["detail"]),
     ]
-    return _build_result(report, stages)
+    result = _build_result(report, stages)
+    result.simulation = simulation
+    return result
 
 
-def stream_signoff(rtl_code: str) -> Iterator[dict]:
+def stream_signoff(rtl_code: str, testbench: str | None = None, testbench_top: str | None = None) -> Iterator[dict]:
     """Run the ladder stage by stage, yielding progress events as each real
     tool executes, ending with the consolidated result:
 
@@ -199,9 +202,13 @@ def stream_signoff(rtl_code: str) -> Iterator[dict]:
     yield {"event": "stage_done", "stage": "synthesize",
            "status": synth_stage.status, "detail": synth_stage.detail}
 
+    yield {"event": "stage_start", "stage": "simulate"}
+    simulation = simulate(code, testbench, testbench_top)
+    simulation_stage = LadderStage("simulate", simulation["status"], True, simulation["detail"])
     yield {"event": "stage_done", "stage": "simulate",
-           "status": _SIMULATE_SKIP.status, "detail": _SIMULATE_SKIP.detail}
+           "status": simulation_stage.status, "detail": simulation_stage.detail}
 
     report = build_report(code, lr, width, sr)
-    result = _build_result(report, [lint_stage, design_stage, synth_stage, _SIMULATE_SKIP])
+    result = _build_result(report, [lint_stage, design_stage, synth_stage, simulation_stage])
+    result.simulation = simulation
     yield {"event": "result", "result": result.to_dict()}

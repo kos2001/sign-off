@@ -1,11 +1,14 @@
 import json
+import hashlib
+import math
+import threading
+from contextlib import closing
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..db import SessionLocal, get_db
-from ..models import Domain, Project, RunStatus, Severity, SignoffRun, Stage, Violation
+from ..models import Domain, Project, RunEvidence, Severity, SignoffRun, Stage, Violation
 from ..schemas import (
     GlitchPowerRequest,
     IrDropRequest,
@@ -13,8 +16,12 @@ from ..schemas import (
     TimingSummaryRequest,
 )
 from ..services.glitch import estimate_glitch_power
+from ..services.evidence import rtl_result_status
 from ..services.irdrop import screen_ir_drop
 from ..services.rtl.signoff import run_signoff, stream_signoff
+from ..services.rtl.tools import strip_fences
+from ..services.rtl.admission import acquire_slot, AdmittedStreamingResponse
+from ..services.rtl.worker_client import container_mode, stream_worker, WorkerError
 from ..services.timing import summarize_corners
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -22,34 +29,44 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 _RULE_SEVERITY = {"error": Severity.error, "warn": Severity.warning, "info": Severity.info}
 
 
-@router.post("/ir-drop")
+def screening_result(function, **kwargs):
+    def check(value):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ArithmeticError('non-finite result')
+        if isinstance(value, dict):
+            for child in value.values():
+                check(child)
+        elif isinstance(value, list):
+            for child in value:
+                check(child)
+    try:
+        result = function(**kwargs)
+        check(result)
+        return result
+    except ArithmeticError:
+        raise HTTPException(422, 'inputs exceed the supported numerical range') from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+
+
+@router.post('/ir-drop')
 def ir_drop(payload: IrDropRequest):
-    try:
-        return screen_ir_drop(**payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return screening_result(screen_ir_drop, **payload.model_dump())
 
 
-@router.post("/glitch-power")
+@router.post('/glitch-power')
 def glitch_power(payload: GlitchPowerRequest):
-    try:
-        return estimate_glitch_power(
-            nets=[n.model_dump() for n in payload.nets],
-            vdd=payload.vdd,
-            clock_period_ns=payload.clock_period_ns,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return screening_result(estimate_glitch_power, **payload.model_dump())
 
 
-def _record_rtl_run(db: Session, project_id: int, result: dict) -> int:
+def _record_rtl_run(db: Session, project_id: int, result: dict, code: str, design_revision: str | None = None) -> int:
     """File a ladder result as a signoff run + violations (drives the RTL gate)."""
     run = SignoffRun(
         project_id=project_id,
         domain=Domain.rtl,
         stage=Stage.rtl,
         tool="rtl-signoff-ladder",
-        status=RunStatus.failed if result["verdict"] == "REJECTED" else RunStatus.passed,
+        status=rtl_result_status(result),
         metrics={
             "verdict": result["verdict"],
             "score": result["score"],
@@ -57,6 +74,14 @@ def _record_rtl_run(db: Session, project_id: int, result: dict) -> int:
             "module": result["module"],
             "stages": result["stages"],
         },
+    )
+    source = strip_fences(code)
+    if source:
+        source += "\n"  # Match the design.sv bytes written by both tool wrappers.
+    run.evidence = RunEvidence(
+        source="rtl_ladder", source_text=source,
+        source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
+        design_revision=design_revision, result=result,
     )
     db.add(run)
     db.flush()
@@ -80,13 +105,25 @@ def rtl_signoff(payload: RtlSignoffRequest, db: Session = Depends(get_db)):
     """Run the RTL sign-off ladder (verilator lint -> design rules -> yosys
     synth -> verdict). With `project_id`, the result is recorded as a signoff
     run and failing checks are filed as violations, driving the RTL stage gate."""
-    result = run_signoff(payload.code).to_dict()
+    if payload.project_id is not None and db.get(Project, payload.project_id) is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    with acquire_slot():
+        try:
+            if container_mode():
+                result = None
+                for event in stream_worker(payload.code, payload.testbench, payload.testbench_top):
+                    if event['event'] == 'result':
+                        result = event['result']
+                if result is None:
+                    raise WorkerError('RTL worker returned no result.')
+            else:
+                result = run_signoff(payload.code, payload.testbench, payload.testbench_top).to_dict()
+        except WorkerError as error:
+            raise HTTPException(503, str(error)) from None
 
-    run_id = None
-    if payload.project_id is not None:
-        if db.get(Project, payload.project_id) is None:
-            raise HTTPException(status_code=404, detail="project not found")
-        run_id = _record_rtl_run(db, payload.project_id, result)
+        run_id = None
+        if payload.project_id is not None:
+            run_id = _record_rtl_run(db, payload.project_id, result, payload.code, payload.design_revision)
 
     return {**result, "run_id": run_id}
 
@@ -98,27 +135,34 @@ def rtl_signoff_stream(payload: RtlSignoffRequest, db: Session = Depends(get_db)
     if payload.project_id is not None and db.get(Project, payload.project_id) is None:
         raise HTTPException(status_code=404, detail="project not found")
 
-    def gen():
-        for event in stream_signoff(payload.code):
-            if event["event"] == "result" and payload.project_id is not None:
-                session = SessionLocal()
-                try:
-                    event["result"]["run_id"] = _record_rtl_run(
-                        session, payload.project_id, event["result"]
-                    )
-                finally:
-                    session.close()
-            yield json.dumps(event) + "\n"
-
-    return StreamingResponse(gen(), media_type="application/x-ndjson")
-
-
-@router.post("/timing-summary")
-def timing_summary(payload: TimingSummaryRequest):
     try:
-        return summarize_corners(
-            corners=[c.model_dump() for c in payload.corners],
-            pba_pessimism_credit_ps=payload.pba_pessimism_credit_ps,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        isolated = container_mode()
+    except WorkerError as error:
+        raise HTTPException(503, str(error)) from None
+    cancel = threading.Event()
+    def gen():
+        events = stream_worker(payload.code, payload.testbench, payload.testbench_top, cancel=cancel) if isolated else stream_signoff(payload.code, payload.testbench, payload.testbench_top)
+        try:
+            with closing(events):
+                for event in events:
+                    if cancel.is_set():
+                        return
+                    if event["event"] == "result" and payload.project_id is not None:
+                        session = SessionLocal()
+                        try:
+                            event["result"]["run_id"] = _record_rtl_run(
+                                session, payload.project_id, event["result"], payload.code, payload.design_revision
+                            )
+                        finally:
+                            session.close()
+                    yield json.dumps(event) + "\n"
+        except WorkerError as error:
+            if not cancel.is_set():
+                yield json.dumps({'event': 'error', 'detail': str(error)}) + '\n'
+
+    return AdmittedStreamingResponse(gen(), acquire_slot(), on_close=cancel.set)
+
+
+@router.post('/timing-summary')
+def timing_summary(payload: TimingSummaryRequest):
+    return screening_result(summarize_corners, **payload.model_dump())

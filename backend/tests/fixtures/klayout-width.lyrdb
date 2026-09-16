@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<report-database>
+ <description/>
+ <original-file/>
+ <generator>KLayout 0.30.12; width_check(150), dbu=0.001 um</generator>
+ <top-cell>TOP</top-cell>
+ <tags>
+ </tags>
+ <categories>
+  <category>
+   <name>M1.width</name>
+   <description>Minimum width 0.15 um; synthetic fixture, not a foundry rule deck</description>
+   <categories>
+   </categories>
+  </category>
+ </categories>
+ <cells>
+  <cell>
+   <name>TOP</name>
+   <variant/>
+   <layout-name/>
+   <references>
+   </references>
+  </cell>
+ </cells>
+ <items>
+  <item>
+   <tags/>
+   <category>'M1.width'</category>
+   <cell>TOP</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (0,0;0,0.1)/(0.1,0.1;0.1,0)</value>
+   </values>
+  </item>
+  <item>
+   <tags/>
+   <category>'M1.width'</category>
+   <cell>TOP</cell>
+   <visited>false</visited>
+   <multiplicity>1</multiplicity>
+   <comment/>
+   <image/>
+   <values>
+    <value>edge-pair: (0,0.1;0.1,0.1)/(0.1,0;0,0)</value>
+   </values>
+  </item>
+ </items>
+</report-database>
