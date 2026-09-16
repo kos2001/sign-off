@@ -36,6 +36,14 @@ def detect_top_module(code: str) -> str | None:
     return m.group(1) if m else None
 
 
+def selected_top(code: str, requested: str | None):
+    if requested is not None:
+        if not isinstance(requested, str) or re.fullmatch(r'[A-Za-z_][A-Za-z0-9_$]{0,119}', requested) is None:
+            raise ValueError('invalid RTL top module')
+        return requested
+    return detect_top_module(code)
+
+
 @dataclass
 class LintResult:
     ok: bool
@@ -44,6 +52,7 @@ class LintResult:
     top: str | None = None
     execution: dict | None = None
     strict_execution: dict | None = None
+    requested_top: str | None = None
 
 
 @dataclass
@@ -65,18 +74,18 @@ def yosys_available() -> bool:
     return shutil.which(YOSYS) is not None
 
 
-def lint(code: str, strict: bool = False) -> LintResult:
+def lint(code: str, strict: bool = False, *, top_module: str | None = None) -> LintResult:
     """`verilator --lint-only -Wall` on a single-file SystemVerilog source.
 
     strict=True keeps the WIDTH truncation/expansion warnings that the default
     pass suppresses (surfaced by the analyzer as a graded finding).
     """
     code = strip_fences(code)
-    top = detect_top_module(code)
+    top = selected_top(code, top_module)
     if not verilator_available():
-        return LintResult(ok=False, available=False, issues=["verilator not installed"], top=top)
+        return LintResult(ok=False, available=False, issues=["verilator not installed"], top=top, requested_top=top_module)
     if not code:
-        return LintResult(ok=False, available=True, issues=["empty source"], top=top)
+        return LintResult(ok=False, available=True, issues=["empty source"], top=top, requested_top=top_module)
 
     with tempfile.TemporaryDirectory() as td:
         src = Path(td) / "design.sv"
@@ -102,13 +111,13 @@ def lint(code: str, strict: bool = False) -> LintResult:
     ok = proc['exit_code'] == 0 and proc['error'] is None
     if not ok and not issues:
         issues = [f"verilator failed (exit code {proc['exit_code']})"]
-    return LintResult(ok=ok, available=True, issues=issues, top=top, execution={"command": cmd, **proc})
+    return LintResult(ok=ok, available=True, issues=issues, top=top, execution={"command": cmd, **proc}, requested_top=top_module)
 
 
-def synthesize(code: str) -> SynthResult:
+def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
     """Generic yosys synthesis pass with gate-level stats (cells/flops/latches)."""
     code = strip_fences(code)
-    top = detect_top_module(code)
+    top = selected_top(code, top_module)
     if not yosys_available():
         return SynthResult(ok=False, available=False, issues=["yosys not installed"])
     if not code:

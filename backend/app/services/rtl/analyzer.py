@@ -211,7 +211,8 @@ def strict_width_findings(code: str, lint_result: tools.LintResult) -> int:
     """Count WIDTH truncation/expansion findings from the strict lint pass."""
     if not lint_result.available:
         return 0
-    wr = tools.lint(code, strict=True)
+    options = {'top_module': lint_result.requested_top} if lint_result.requested_top is not None else {}
+    wr = tools.lint(code, strict=True, **options)
     lint_result.strict_execution = wr.execution
     return sum(1 for i in wr.issues if "WIDTH" in i.upper())
 
@@ -283,7 +284,7 @@ def build_report(
     score = max(0, 100 - penalty)
 
     return {
-        "module": tools.detect_top_module(code),
+        "module": lr.top or tools.detect_top_module(code),
         "ports": extract_ports(code),
         "checks": checks,
         "score": score,

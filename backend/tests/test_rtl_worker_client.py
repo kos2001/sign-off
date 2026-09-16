@@ -185,3 +185,9 @@ def test_worker_accepts_bounded_transcripts_and_legacy_missing_records():
         for row in rows:
             sequence.accept(json.dumps(row).encode())
         assert sequence.result['tool_runs'] == records
+
+
+def test_worker_cannot_silently_ignore_explicit_top(docker):
+    with pytest.raises(worker.WorkerError, match='top module did not match'):
+        list(worker.stream_worker('module top; endmodule', top_module='top'))
+    assert 'removed ' in docker.read_text()

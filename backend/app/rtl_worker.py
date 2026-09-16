@@ -25,7 +25,7 @@ def read_request(stream):
     if not isinstance(value, dict) or set(value) != {'protocol', 'request'} or value['protocol'] != PROTOCOL:
         raise ValueError('invalid protocol')
     request = value['request']
-    if not isinstance(request, dict) or set(request) - {'code', 'testbench', 'testbench_top'}:
+    if not isinstance(request, dict) or set(request) - {'code', 'testbench', 'testbench_top', 'top_module'}:
         raise ValueError('unsupported fields')
     return RtlSignoffRequest.model_validate(request)
 
@@ -44,7 +44,8 @@ def main(input_stream=None, output_stream=None, error_stream=None):
     failure = json.dumps({'protocol': PROTOCOL, 'event': 'error', 'detail': 'RTL worker execution failed.'}) + '\n'
     failure_bytes = len(failure.encode('utf-8'))
     try:
-        for event in stream_signoff(request.code, request.testbench, request.testbench_top):
+        options = {'top_module': request.top_module} if request.top_module is not None else {}
+        for event in stream_signoff(request.code, request.testbench, request.testbench_top, **options):
             if finished:
                 raise ValueError('events after final result')
             line = json.dumps({'protocol': PROTOCOL, **event}, ensure_ascii=False, allow_nan=False) + '\n'

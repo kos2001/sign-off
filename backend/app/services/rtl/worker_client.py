@@ -57,6 +57,7 @@ class WorkerResult(BaseModel):
     score: int = Field(ge=0, le=100)
     grade: str
     module: str | None
+    top_module_requested: str | None = Field(default=None, max_length=120, pattern=r"^[A-Za-z_][A-Za-z0-9_$]*$")
     stages: list[WorkerStage]
     rules: list[WorkerRule]
     suggestions: list[str]
@@ -153,10 +154,10 @@ class EventSequence:
             raise WorkerError('Invalid or incomplete RTL worker response.') from error
 
 
-def stream_worker(code, testbench=None, testbench_top=None, *, cancel=None):
+def stream_worker(code, testbench=None, testbench_top=None, *, cancel=None, top_module=None):
     cancel = cancel if cancel is not None else threading.Event()
     payload = json.dumps({'protocol': PROTOCOL, 'request': {'code': code, 'testbench': testbench,
-                         'testbench_top': testbench_top}}, ensure_ascii=False).encode('utf-8')
+                         'testbench_top': testbench_top, **({'top_module': top_module} if top_module is not None else {})}}, ensure_ascii=False).encode('utf-8')
     if len(payload) > MAX_INPUT_BYTES:
         raise WorkerError('RTL worker input limit exceeded.')
     image = configured_image()
@@ -241,5 +242,7 @@ def stream_worker(code, testbench=None, testbench_top=None, *, cancel=None):
             raise
     if cancel.is_set():
         raise WorkerError('RTL worker cancelled.')
+    if top_module is not None and (sequence.result['module'] != top_module or sequence.result['top_module_requested'] != top_module):
+        raise WorkerError('RTL worker top module did not match the request.')
     sequence.result['execution'] = {'backend': 'container', 'image_id': image_id}
     yield {'event': 'result', 'result': sequence.result}

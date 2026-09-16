@@ -193,6 +193,7 @@ function AgentEntry({ role }: { role: AgentRoleId }) {
 function RtlSignoffSection() {
   const auth = useAuth();
   const [code, setCode] = useState(BUGGY_RTL);
+  const [topModule, setTopModule] = useState("");
   const [testbench, setTestbench] = useState("");
   const [testbenchTop, setTestbenchTop] = useState("tb");
   const [designRevision, setDesignRevision] = useState("");
@@ -217,7 +218,7 @@ function RtlSignoffSection() {
     appendLog("▸ 사인오프 래더 실행 요청");
     try {
       await api.rtlSignoffStream(
-        { code, ...(testbench.trim() ? { testbench, testbench_top: testbenchTop.trim() } : {}), ...(designRevision.trim() ? { design_revision: designRevision.trim() } : {}), ...(projectId !== "" ? { project_id: projectId } : {}) },
+        { code, ...(topModule.trim() ? { top_module: topModule.trim() } : {}), ...(testbench.trim() ? { testbench, testbench_top: testbenchTop.trim() } : {}), ...(designRevision.trim() ? { design_revision: designRevision.trim() } : {}), ...(projectId !== "" ? { project_id: projectId } : {}) },
         (ev) => {
           if (ev.event === "stage_start") {
             setLive((p) => ({ ...p, [ev.stage]: { status: "running" } }));
@@ -277,11 +278,11 @@ function RtlSignoffSection() {
         <div className="flex w-full min-w-0 flex-wrap items-end gap-2 sm:w-auto">
           <Field label="프로젝트에 기록 (선택)">
             <select
+              aria-label="프로젝트에 기록 (선택)"
               className="input max-w-[16rem]"
               value={projectId}
               onChange={(e) => setProjectId(e.target.value === "" ? "" : Number(e.target.value))}
             >
-      <AgentEntry role="a1_rtl" />
               <option value="">기록 안 함</option>
               {(projects.data ?? []).filter(p => auth.can(p.id, "editor")).map((p) => (
                 <option key={p.id} value={p.id}>
@@ -290,12 +291,17 @@ function RtlSignoffSection() {
               ))}
             </select>
           </Field>
-          <button className="btn btn-primary whitespace-nowrap" onClick={runLadder} disabled={running || (!!testbench.trim() && !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(testbenchTop.trim()))}>
+          <button className="btn btn-primary whitespace-nowrap" onClick={runLadder} disabled={running || (!!topModule.trim() && !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(topModule.trim())) || (!!testbench.trim() && !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(testbenchTop.trim()))}>
             {running ? "래더 실행 중…" : "사인오프 래더 실행"}
           </button>
         </div>
       }
     >
+      <AgentEntry role="a1_rtl" />
+      <div className="mb-3 space-y-2"><Field label="린트·합성 최상위 모듈 (선택)"><input className="input w-full" value={topModule} maxLength={120} disabled={running} onChange={e => setTopModule(e.target.value)} placeholder="예: chip_top" /></Field>
+        <p className="text-xs text-[var(--text-secondary)]">비워 두면 첫 모듈 선언을 선택합니다. 정적 설계 규칙은 전체 입력을 검사하며, 시뮬레이션은 아래 테스트벤치 최상위를 사용합니다.</p>
+        {!!topModule.trim() && !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(topModule.trim()) && <p role="alert" className="text-xs">모듈 이름은 영문자 또는 밑줄로 시작하고 영문자·숫자·밑줄·$만 사용할 수 있습니다.</p>}
+      </div>
       <div className="mb-3"><Field label="설계 리비전 (선택)"><input className="input w-full" value={designRevision} maxLength={160} disabled={running} onChange={e => setDesignRevision(e.target.value)} placeholder="예: Git 커밋 SHA 또는 검토용 리비전" /></Field></div>
       <div className="mb-2 flex flex-wrap gap-2">
         <button className="btn btn-ghost" disabled={running} onClick={() => setCode(BUGGY_RTL)}>

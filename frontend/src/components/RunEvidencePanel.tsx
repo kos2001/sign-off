@@ -66,6 +66,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
           <div className="flex flex-wrap justify-between gap-2"><p className="font-semibold">원래 판정: {evidence.data.result.verdict}</p><button className="btn btn-ghost" onClick={download}>근거 JSON 다운로드</button></div>
           <p>설계 리비전: {evidence.data.design_revision ?? "미등록"} (입력된 식별자)</p>
           {evidence.data.result.execution?.backend === 'container' && <p className="break-all">실행 환경: 컨테이너 워커 · 이미지 {evidence.data.result.execution.image_id}</p>}
+          <p className="break-all">린트·합성 최상위: {evidence.data.result.module ?? '미확인'} · {evidence.data.result.top_module_requested === undefined ? '선택 방식 미보관' : evidence.data.result.top_module_requested === null ? '첫 모듈 자동 선택' : '사용자 지정'}</p>
           <p className="break-all">실행 소스 SHA-256: {evidence.data.source_sha256}</p>
           <p>원래 결과는 읽기 전용입니다. 위반 처리 이력은 원래 분석 결과와 별도로 기록합니다.</p>
           <ul className="space-y-2">{evidence.data.result.stages?.map(stage => <li key={stage.name} className="rounded-lg bg-[var(--surface-2)] p-2">

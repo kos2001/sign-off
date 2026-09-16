@@ -58,6 +58,7 @@ class SignoffResult:
     suggestions: list[str] = field(default_factory=list)
     report: dict = field(default_factory=dict)
     simulation: dict = field(default_factory=dict)
+    top_module_requested: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +66,7 @@ class SignoffResult:
             "score": self.score,
             "grade": self.grade,
             "module": self.module,
+            "top_module_requested": self.top_module_requested,
             "stages": [
                 {"name": s.name, "status": s.status, "gating": s.gating, "detail": s.detail}
                 for s in self.stages
@@ -154,12 +156,13 @@ def _build_result(report: dict, stages: list[LadderStage]) -> SignoffResult:
     )
 
 
-def run_signoff(rtl_code: str, testbench: str | None = None, testbench_top: str | None = None) -> SignoffResult:
+def run_signoff(rtl_code: str, testbench: str | None = None, testbench_top: str | None = None, *, top_module: str | None = None) -> SignoffResult:
     """Run the full ladder at once and return the consolidated result."""
+    options = {"top_module": top_module} if top_module is not None else {}
     code = tools.strip_fences(rtl_code)
-    lr = tools.lint(code)
+    lr = tools.lint(code, **options)
     width = strict_width_findings(code, lr)
-    sr = tools.synthesize(code)
+    sr = tools.synthesize(code, **options)
     report = build_report(code, lr, width, sr)
     simulation = simulate(code, testbench, testbench_top)
     stages = [
@@ -170,10 +173,11 @@ def run_signoff(rtl_code: str, testbench: str | None = None, testbench_top: str 
     ]
     result = _build_result(report, stages)
     result.simulation = simulation
+    result.top_module_requested = top_module
     return result
 
 
-def stream_signoff(rtl_code: str, testbench: str | None = None, testbench_top: str | None = None) -> Iterator[dict]:
+def stream_signoff(rtl_code: str, testbench: str | None = None, testbench_top: str | None = None, *, top_module: str | None = None) -> Iterator[dict]:
     """Run the ladder stage by stage, yielding progress events as each real
     tool executes, ending with the consolidated result:
 
@@ -182,10 +186,11 @@ def stream_signoff(rtl_code: str, testbench: str | None = None, testbench_top: s
       ...
       {"event": "result", "result": {<SignoffResult.to_dict()>}}
     """
+    options = {"top_module": top_module} if top_module is not None else {}
     code = tools.strip_fences(rtl_code)
 
     yield {"event": "stage_start", "stage": "lint"}
-    lr = tools.lint(code)
+    lr = tools.lint(code, **options)
     width = strict_width_findings(code, lr)
     lint_stage = _lint_stage(lr)
     yield {"event": "stage_done", "stage": "lint",
@@ -198,7 +203,7 @@ def stream_signoff(rtl_code: str, testbench: str | None = None, testbench_top: s
            "status": design_stage.status, "detail": design_stage.detail}
 
     yield {"event": "stage_start", "stage": "synthesize"}
-    sr = tools.synthesize(code)
+    sr = tools.synthesize(code, **options)
     synth_stage = _synth_stage(sr)
     yield {"event": "stage_done", "stage": "synthesize",
            "status": synth_stage.status, "detail": synth_stage.detail}
@@ -212,4 +217,5 @@ def stream_signoff(rtl_code: str, testbench: str | None = None, testbench_top: s
     report = build_report(code, lr, width, sr)
     result = _build_result(report, [lint_stage, design_stage, synth_stage, simulation_stage])
     result.simulation = simulation
+    result.top_module_requested = top_module
     yield {"event": "result", "result": result.to_dict()}
