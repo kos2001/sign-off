@@ -300,7 +300,7 @@ function RtlSignoffSection() {
       <AgentEntry role="a1_rtl" />
       <div className="mb-3 space-y-2"><Field label="린트·합성 최상위 모듈 (선택)"><input className="input w-full" value={topModule} maxLength={120} disabled={running} onChange={e => setTopModule(e.target.value)} placeholder="예: chip_top" /></Field>
         <p className="text-xs text-[var(--text-secondary)]">비워 두면 첫 모듈 선언을 선택합니다. 정적 설계 규칙은 전체 입력을 검사하며, 시뮬레이션은 아래 테스트벤치 최상위를 사용합니다.</p>
-        <p className="text-xs text-[var(--text-secondary)]">합성은 하위 모듈의 RTL 정의가 모두 필요합니다. 블랙박스는 지원하지 않으며, 구동되지 않는 신호·다중 드라이버·조합 논리 루프가 발견되면 실패합니다.</p>
+        <p className="text-xs text-[var(--text-secondary)]">합성은 하위 모듈의 RTL 정의가 모두 필요합니다. 블랙박스는 지원하지 않습니다. 모듈 간 연결을 포함해 구동되지 않는 신호·다중 드라이버·조합 논리 루프가 발견되면 실패합니다.</p>
         {!!topModule.trim() && !/^[A-Za-z_][A-Za-z0-9_$]*$/.test(topModule.trim()) && <p role="alert" className="text-xs">모듈 이름은 영문자 또는 밑줄로 시작하고 영문자·숫자·밑줄·$만 사용할 수 있습니다.</p>}
       </div>
       <div className="mb-3"><Field label="설계 리비전 (선택)"><input className="input w-full" value={designRevision} maxLength={160} disabled={running} onChange={e => setDesignRevision(e.target.value)} placeholder="예: Git 커밋 SHA 또는 검토용 리비전" /></Field></div>
