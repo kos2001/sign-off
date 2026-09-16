@@ -258,6 +258,7 @@ export interface SimulationEvidence {
 }
 
 export interface RtlSignoffResult {
+  top_module_requested?: string | null;
   tool_runs?: Partial<Record<'lint' | 'width' | 'synthesize', { command: string[]; exit_code: number | null; error: string | null; log: string } | null>>;
   execution?: { backend: 'container'; image_id: string };
   simulation?: SimulationEvidence;
@@ -512,13 +513,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  rtlSignoff: (payload: { code: string; project_id?: number; design_revision?: string; testbench?: string; testbench_top?: string }) =>
+  rtlSignoff: (payload: { code: string; top_module?: string; project_id?: number; design_revision?: string; testbench?: string; testbench_top?: string }) =>
     request<RtlSignoffResult>("/analysis/rtl-signoff", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   rtlSignoffStream: async (
-    payload: { code: string; project_id?: number; design_revision?: string; testbench?: string; testbench_top?: string },
+    payload: { code: string; top_module?: string; project_id?: number; design_revision?: string; testbench?: string; testbench_top?: string },
     onEvent: (event: RtlStreamEvent) => void,
   ) => {
     const res = await fetch("/api/analysis/rtl-signoff/stream", {

@@ -107,17 +107,18 @@ def rtl_signoff(payload: RtlSignoffRequest, db: Session = Depends(get_db)):
     run and failing checks are filed as violations, driving the RTL stage gate."""
     if payload.project_id is not None and db.get(Project, payload.project_id) is None:
         raise HTTPException(status_code=404, detail="project not found")
+    options = {'top_module': payload.top_module} if payload.top_module is not None else {}
     with acquire_slot():
         try:
             if container_mode():
                 result = None
-                for event in stream_worker(payload.code, payload.testbench, payload.testbench_top):
+                for event in stream_worker(payload.code, payload.testbench, payload.testbench_top, **options):
                     if event['event'] == 'result':
                         result = event['result']
                 if result is None:
                     raise WorkerError('RTL worker returned no result.')
             else:
-                result = run_signoff(payload.code, payload.testbench, payload.testbench_top).to_dict()
+                result = run_signoff(payload.code, payload.testbench, payload.testbench_top, **options).to_dict()
         except WorkerError as error:
             raise HTTPException(503, str(error)) from None
 
@@ -139,9 +140,10 @@ def rtl_signoff_stream(payload: RtlSignoffRequest, db: Session = Depends(get_db)
         isolated = container_mode()
     except WorkerError as error:
         raise HTTPException(503, str(error)) from None
+    options = {'top_module': payload.top_module} if payload.top_module is not None else {}
     cancel = threading.Event()
     def gen():
-        events = stream_worker(payload.code, payload.testbench, payload.testbench_top, cancel=cancel) if isolated else stream_signoff(payload.code, payload.testbench, payload.testbench_top)
+        events = stream_worker(payload.code, payload.testbench, payload.testbench_top, cancel=cancel, **options) if isolated else stream_signoff(payload.code, payload.testbench, payload.testbench_top, **options)
         try:
             with closing(events):
                 for event in events:
