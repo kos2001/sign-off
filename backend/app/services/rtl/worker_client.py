@@ -10,13 +10,14 @@ import threading
 import time
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Literal
 
 from ...rtl_worker import PROTOCOL, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES
 from ..report_import import unique_object, reject_constant, finite_json_float
 from ..evidence import rtl_result_status
 from .lifecycle import lifecycle_labels
+from .artifacts import NetlistArtifact
 
 TIMEOUT_SECONDS = 240
 STAGES = ['lint', 'design', 'synthesize', 'simulate']
@@ -62,7 +63,14 @@ class WorkerResult(BaseModel):
     rules: list[WorkerRule]
     suggestions: list[str]
     simulation: dict
+    netlist: NetlistArtifact | None = None
     tool_runs: dict[Literal['lint', 'width', 'synthesize'], WorkerToolRun | None] = Field(default_factory=dict)
+
+    @model_validator(mode='after')
+    def netlist_requires_successful_synthesis(self):
+        if self.netlist is not None and not any(stage.name == 'synthesize' and stage.status == 'pass' for stage in self.stages):
+            raise ValueError('netlist requires successful synthesis')
+        return self
 
 
 def container_mode():

@@ -21,6 +21,7 @@ from ..schemas import (
     WaiverCreate,
 )
 from ..services.stages import evaluate_gate
+from ..services.rtl.artifacts import NetlistArtifact, netlist_metadata_only
 from .projects import get_project_or_404
 
 router = APIRouter(tags=["signoff-runs"])
@@ -78,6 +79,31 @@ def run_evidence(run_id: int, db: Session = Depends(get_db)):
     if run.evidence is None:
         raise HTTPException(status_code=404, detail="no captured evidence for this legacy run")
     return run.evidence
+
+
+@router.get('/runs/{run_id}/evidence/netlist')
+def export_netlist(run_id: int, db: Session = Depends(get_db)):
+    run = get_run_or_404(run_id, db)
+    evidence = run.evidence
+    if evidence is None:
+        raise HTTPException(404, 'no captured evidence for this legacy run')
+    result = evidence.result
+    if evidence.source != 'rtl_ladder' or not isinstance(result, dict) or result.get('netlist') is None:
+        raise HTTPException(409, '이 런에는 보존된 합성 넷리스트가 없습니다.')
+    try:
+        if evidence.source_text is None or hashlib.sha256(evidence.source_text.encode('utf-8')).hexdigest() != evidence.source_sha256:
+            raise ValueError('source integrity mismatch')
+        artifact = NetlistArtifact.model_validate(result['netlist'])
+        synthesis = [stage for stage in result.get('stages', []) if stage.get('name') == 'synthesize']
+        if len(synthesis) != 1 or synthesis[0].get('status') != 'pass':
+            raise ValueError('synthesis did not pass')
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(409, '넷리스트의 무결성 또는 합성 결과를 확인할 수 없습니다.')
+    return Response(artifact.text.encode('utf-8'), media_type='application/octet-stream', headers={
+        'Content-Disposition': f'attachment; filename="run-{run_id}-netlist.v"',
+        'X-Artifact-SHA256': artifact.sha256, 'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+    })
 
 
 @router.get('/runs/{run_id}/evidence/source')
@@ -309,7 +335,7 @@ def export_gate(project_id: int, stage: Stage, db: Session = Depends(get_db)):
             'status': run.status.value, 'created_at': utc(run.created_at), 'metrics': run.metrics,
             'evidence': None if evidence is None else {
                 'source': evidence.source, 'source_sha256': evidence.source_sha256,
-                'design_revision': evidence.design_revision, 'result': evidence.result,
+                'design_revision': evidence.design_revision, 'result': netlist_metadata_only(evidence.result),
             },
             'violations': [{
                 'id': violation.id, 'check_name': violation.check_name, 'severity': violation.severity.value,
@@ -324,7 +350,7 @@ def export_gate(project_id: int, stage: Stage, db: Session = Depends(get_db)):
         })
     bundle = {'format': 'signoff/stage-gate-export/v1', 'project_id': project_id,
               'exported_at': datetime.now(timezone.utc).isoformat(), 'gate': gate, 'runs': records,
-              'scope_note': 'Current stage gate and selected latest runs captured together. Includes stored results and current violation/waiver states. Excludes raw source files, change history and AI opinions. Not an approval, tool authenticity proof or immutable audit record.'}
+              'scope_note': 'Current stage gate and selected latest runs captured together. Includes stored results and current violation/waiver states. Excludes raw source/netlist files, change history and AI opinions. Not an approval, tool authenticity proof or immutable audit record.'}
     content = json.dumps(jsonable_encoder(bundle), ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode('utf-8')
     if len(content) > MAX_GATE_EXPORT_BYTES:
         raise HTTPException(413, '게이트 근거 내보내기가 8 MiB를 초과합니다.')

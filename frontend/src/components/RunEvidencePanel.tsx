@@ -22,6 +22,15 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   });
+  const netlistDownload = useMutation({
+    mutationFn: (runId: number) => api.runNetlist(runId),
+    onSuccess: (blob, runId) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = `run-${runId}-netlist.v`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  });
   function download() {
     if (!evidence.data) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify(evidence.data, null, 2)], { type: "application/json" }));
@@ -74,6 +83,17 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
             <div className="flex flex-wrap items-center gap-2"><strong>{stage.name}</strong><StatusBadge status={stage.status === "pass" ? "good" : stage.status === "fail" ? "critical" : "warning"} label={stage.status} /><span>{stage.gating ? "필수 단계" : "참고 단계"}</span></div>
             <p className="mt-1 whitespace-pre-wrap break-words">{stage.detail}</p>
           </li>)}</ul>
+          <section aria-label="합성 넷리스트" className="space-y-2">
+            <h4 className="font-semibold">합성 넷리스트</h4>
+            {evidence.data.result.netlist ? <>
+              <p>일반 Verilog · {evidence.data.result.netlist.byte_length.toLocaleString()} bytes</p>
+              <p className="break-all">SHA-256: {evidence.data.result.netlist.sha256}</p>
+              <button className="btn btn-ghost" disabled={netlistDownload.isPending} onClick={() => netlistDownload.mutate(run.id)}>{netlistDownload.isPending ? '넷리스트 확인 중…' : '합성 넷리스트 다운로드'}</button>
+              {netlistDownload.variables === run.id && netlistDownload.isError && <p role="alert">{netlistDownload.error.message}</p>}
+              {netlistDownload.variables === run.id && netlistDownload.isSuccess && <p role="status">넷리스트 일치 확인 · 다운로드를 시작했습니다.</p>}
+            </> : <p>넷리스트 미보관 · 합성 미완료 또는 이전 실행입니다.</p>}
+            <p className="text-[var(--text-muted)]">Yosys가 생성한 합성 결과입니다. 라이브러리 매핑·배치배선·타이밍 검증 전이며, 다운로드는 전체 사인오프 통과를 의미하지 않습니다. 조회에는 AI가 개입하지 않습니다.</p>
+          </section>
           <RtlSourceInspector key={run.id} evidence={evidence.data} />
           <section aria-label="RTL 도구 실행 로그" className="space-y-2">
             <h3 className="font-semibold">도구 명령과 실행 로그</h3>

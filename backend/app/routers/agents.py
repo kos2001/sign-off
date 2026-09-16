@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, Request
 
 from .. import hermes
+from ..services.rtl.artifacts import netlist_metadata_only
 from ..review_capacity import acquire, ReviewCapacityFull
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -75,7 +76,7 @@ async def review_rtl(request: Request, rtl_signoff_result: dict = Body(embed=Tru
     role = hermes.ROLES["a1_rtl"]
     if not hermes.a1_should_review(rtl_signoff_result):
         return _not_triggered(role)
-    outcome = await _run_role(role, rtl_signoff_result, session_id=f"{getattr(request.state, 'user_id', 'local')}:{role.id}:{rtl_signoff_result.get('run_id') or 'adhoc'}")
+    outcome = await _run_role(role, netlist_metadata_only(rtl_signoff_result), session_id=f"{getattr(request.state, 'user_id', 'local')}:{role.id}:{rtl_signoff_result.get('run_id') or 'adhoc'}")
     return {"role": role.id, "role_name": role.name_ko, "triggered": True, "trigger": role.trigger_ko, **outcome}
 
 
