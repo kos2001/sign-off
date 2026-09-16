@@ -17,7 +17,7 @@ from ...rtl_worker import PROTOCOL, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES
 from ..report_import import unique_object, reject_constant, finite_json_float
 from ..evidence import rtl_result_status
 from .lifecycle import lifecycle_labels
-from .artifacts import NetlistArtifact
+from .artifacts import NetlistArtifact, StructureArtifact, parse_structure
 
 TIMEOUT_SECONDS = 240
 STAGES = ['lint', 'design', 'synthesize', 'simulate']
@@ -64,12 +64,16 @@ class WorkerResult(BaseModel):
     suggestions: list[str]
     simulation: dict
     netlist: NetlistArtifact | None = None
+    structure: StructureArtifact | None = None
+    structure_error: str | None = Field(default=None, max_length=1024)
     tool_runs: dict[Literal['lint', 'width', 'synthesize'], WorkerToolRun | None] = Field(default_factory=dict)
 
     @model_validator(mode='after')
     def netlist_requires_successful_synthesis(self):
-        if self.netlist is not None and not any(stage.name == 'synthesize' and stage.status == 'pass' for stage in self.stages):
+        if (self.netlist is not None or self.structure is not None) and not any(stage.name == 'synthesize' and stage.status == 'pass' for stage in self.stages):
             raise ValueError('netlist requires successful synthesis')
+        if self.structure is not None and (self.structure_error is not None or self.module not in parse_structure(self.structure.text)['modules']):
+            raise ValueError('structure does not match selected module')
         return self
 
 

@@ -257,7 +257,18 @@ export interface SimulationEvidence {
   runtime?: { exit_code: number | null; log: string; error: string | null };
 }
 
+export type StructureBit = number | '0' | '1' | 'x' | 'z';
+export interface DesignStructure {
+  run_id: number; project_id: number; top_module: string; source_sha256: string; structure_sha256: string;
+  design: { modules: Record<string, {
+    ports: Record<string, { direction: 'input' | 'output' | 'inout'; bits: StructureBit[] }>;
+    cells: Record<string, { type: string; port_directions: Record<string, string>; connections: Record<string, StructureBit[]> }>;
+    netnames: Record<string, { bits: StructureBit[] }>;
+  }> };
+}
 export interface RtlSignoffResult {
+  structure?: { format: 'yosys-json/v1'; text: string; sha256: string; byte_length: number } | null;
+  structure_error?: string | null;
   netlist?: { format: 'yosys-generic-verilog/v1'; text: string; sha256: string; byte_length: number } | null;
   top_module_requested?: string | null;
   tool_runs?: Partial<Record<'lint' | 'width' | 'synthesize', { command: string[]; exit_code: number | null; error: string | null; log: string } | null>>;
@@ -422,6 +433,7 @@ export const api = {
   getProject: (id: number) => request<Project>(`/projects/${id}`),
   listRuns: (projectId: number) =>
     request<SignoffRun[]>(`/projects/${projectId}/runs`),
+  runStructure: (runId: number) => request<DesignStructure>(`/runs/${runId}/evidence/structure`),
   runNetlist: (runId: number) => request<Blob>(`/runs/${runId}/evidence/netlist`, undefined, 'blob'),
   runSource: (runId: number) => request<Blob>(`/runs/${runId}/evidence/source`, undefined, 'blob'),
   runEvidence: (runId: number) => request<RunEvidence>(`/runs/${runId}/evidence`),
