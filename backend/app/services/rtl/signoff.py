@@ -72,6 +72,7 @@ class SignoffResult:
             "rules": self.rules,
             "suggestions": self.suggestions,
             "simulation": self.simulation,
+            "tool_runs": self.report.get("tool_runs", {}),
         }
 
 

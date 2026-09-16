@@ -43,6 +43,14 @@ class WorkerRule(BaseModel):
     detail: str
 
 
+class WorkerToolRun(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    command: list[str] = Field(max_length=32)
+    exit_code: int | None
+    error: str | None = Field(max_length=1024)
+    log: str = Field(max_length=128 * 1024)
+
+
 class WorkerResult(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     verdict: Literal['SIGNED_OFF', 'CONDITIONAL', 'REJECTED']
@@ -53,6 +61,7 @@ class WorkerResult(BaseModel):
     rules: list[WorkerRule]
     suggestions: list[str]
     simulation: dict
+    tool_runs: dict[Literal['lint', 'width', 'synthesize'], WorkerToolRun | None] = Field(default_factory=dict)
 
 
 def container_mode():

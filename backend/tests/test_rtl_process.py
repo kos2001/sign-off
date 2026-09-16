@@ -60,6 +60,8 @@ def test_lint_and_synth_fail_on_limits_even_with_success_text(tmp_path, monkeypa
     monkeypatch.setattr(tools, 'MAX_OUTPUT_BYTES', 1024)
     result = invoke('module top; endmodule')
     assert result.available and not result.ok
+    assert result.execution['error'] is not None
+    assert len(result.execution['log'].encode()) <= 1024
     assert any(('timed out' if failure == 'timeout' else 'output exceeded') in issue for issue in result.issues), result.issues
 
 
@@ -67,9 +69,20 @@ def test_synthesis_stats_and_lint_diagnostics_survive_bounded_runner(tmp_path, m
     fake_tool(tmp_path, monkeypatch, 'yosys', "print('  3 cells\\n  2 $_DFF_P_\\n  1 $_DLATCH_P_')")
     result = tools.synthesize('module top; endmodule')
     assert result.ok and result.cells == 3 and result.flops == 2 and result.latches == 1
+    assert result.execution['exit_code'] == 0
+    assert '$_DLATCH_P_' in result.execution['log']
+    assert result.execution['command'][1] == '-p'
     fake_tool(tmp_path, monkeypatch, 'verilator', "import sys; print('%Error: bad RTL',file=sys.stderr); sys.exit(1)")
     result = tools.lint('module top; endmodule')
     assert not result.ok and result.issues == ['%Error: bad RTL']
+    assert result.execution['exit_code'] == 1
+    assert result.execution['log'].strip() == '%Error: bad RTL'
+    assert 'design.sv' in result.execution['command']
+    from app.services.rtl.analyzer import strict_width_findings
+    strict_width_findings('module top; endmodule', result)
+    assert result.strict_execution is not None
+    assert '-Wno-WIDTHTRUNC' not in result.strict_execution['command']
+    assert '-Wno-WIDTHTRUNC' in result.execution['command']
 
 
 def test_missing_executable_is_a_failure(tmp_path):
@@ -123,3 +136,9 @@ def test_resource_setup_failure_does_not_execute_tool(monkeypatch, tmp_path, cap
     assert launcher.main(['1', '4096', '134217728', '64', 'unused']) == 125
     assert not executed
     assert 'resource setup failed' in capsys.readouterr().err
+
+
+def test_yosys_legacy_statistics_format_preserves_nonzero_counts(tmp_path, monkeypatch):
+    fake_tool(tmp_path, monkeypatch, 'yosys', "print('   Number of cells: 7\\n   $_DFF_P_ 3\\n   $_SDFFE_PP0P_ 2\\n   $_DLATCH_P_ 1\\n   $_NOT_ 1')")
+    result = tools.synthesize('module top; endmodule')
+    assert result.ok and result.cells == 7 and result.flops == 5 and result.latches == 1
