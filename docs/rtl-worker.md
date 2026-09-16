@@ -256,3 +256,19 @@ unknown이며 경고·오류와 전체 제한된 실행 로그가 저장된다. 
 
 참조: [Yosys 계층 검사](https://yosyshq.readthedocs.io/projects/yosys/en/stable/cmd/index_passes_hierarchy.html),
 [Yosys 구조 검사](https://yosyshq.readthedocs.io/projects/yosys/en/v0.65/cmd/index_passes_status.html).
+
+### 하위 모듈 경계를 넘는 연결 검사
+
+모듈별 `check`만으로는 여러 모듈의 포트를 지나 다시 돌아오는 조합 루프를 놓칠 수 있다.
+각 구조 검사 시점에 `design -push-copy`로 설계를 복사하고 복사본의 모듈·인스턴스
+`keep_hierarchy` 속성을 제거한 뒤 `flatten -wb; check -assert`를 수행한다. 통과하면
+`design -pop`으로 원래 설계를 복원한다. 계층 유지 속성은 검사를 면제하지 않는다.
+
+이 작업은 `proc` 이후와 매핑·최적화 이후 모두 수행한다. 통계는 복원된 계층 설계에서
+생성하므로 검사용 평탄화로 모듈별 기록이 사라지거나 합성 최적화 결과가 달라지지 않는다.
+검사 실패 시에는 통계를 성공 수치로 제공하지 않으며 펼쳐진 셀/신호 이름과 진단이 기존
+실행 로그에 남는다. 복사·평탄화도 동일한 도구 프로세스의 시간·메모리·출력 제한을 따른다.
+
+실제 도구로 모듈 간 조합 루프, 모듈/인스턴스 계층 유지 속성 조합의 실패를 확인했다.
+플립플롭을 거치는 정상 피드백과 계층별 통계 보존도 확인한다. 추가 AI 호출은 없다.
+참조: [Yosys flatten](https://yosyshq.readthedocs.io/projects/yosys/en/stable/cmd/index_passes_hierarchy.html#flatten-flatten-design).
