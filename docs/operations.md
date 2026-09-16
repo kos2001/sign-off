@@ -3,7 +3,9 @@
 ## 생존 상태와 준비 상태
 
 - `GET /health`: HTTP 프로세스가 응답하는지 확인합니다. DB에 접속하지 않습니다.
-- `GET /ready`: DB 연결과 projects/signoff_runs/users 테이블의 읽기 조회가 가능한지 확인합니다.
+- `GET /ready`: DB 연결과 모든 앱 모델 테이블의 필수 열에 대한 SELECT가 가능한지 확인합니다.
+  각 테이블에 `LIMIT 0`을 적용하므로 설계·보고서·계정 데이터 행은 읽지 않습니다.
+  테이블 또는 필수 열 누락은 준비 실패이며, 이후 복구되면 다음 요청에 반영됩니다.
   `SIGNOFF_RTL_EXECUTION=container`에서는 Docker 데몬에 연결하여 설정한 로컬 워커 이미지의
   ID도 조회합니다. 이미지 누락·Docker 연결 실패·잘못된 실행 설정이면 준비 실패입니다.
   정상은 HTTP 200 `{"status":"ready"}`, 실패는 HTTP 503 `{"status":"not_ready"}`입니다.
@@ -19,7 +21,8 @@ Docker 확인은 이미지를 내려받거나 작업 컨테이너를 실행하�
 유효한 캐시가 없고 다른 요청이 검사 중이면 추가 Docker 호출이나 대기 없이 503을 반환합니다.
 모니터링에서는 한 번의 실패로 즉시 재시작하지 않도록 연속 실패 기준을 설정하세요.
 
-준비 상태는 DB 읽기와 컨테이너 모드의 이미지 조회 가능 여부입니다. 쓰기 권한, 전체 스키마 마이그레이션,
+준비 상태는 필수 테이블·열의 SELECT 가능 여부와 컨테이너 모드의 이미지 조회 가능 여부입니다.
+열의 타입·제약 조건·인덱스 일치, 쓰기 권한, 전체 스키마 마이그레이션의 정확성,
 실제 컨테이너 생성 권한·이미지 내부 툴·정리기 저장소·검토 제공자·RTL 실행 슬롯의 여유·기능적 정확성은 검사하지 않습니다.
 `local` 모드에서는 Docker나 로컬 EDA 툴을 확인하지 않습니다.
 DB 드라이버/연결 풀의 대기 시간은 그대로 적용됩니다. 운영 모니터링의 요청 타임아웃과
@@ -41,7 +44,8 @@ Uvicorn 기본 INFO 로그에서 `uvicorn.error.signoff` 네임스페이스의 �
 
 - `response_headers`: request_id, HTTP method, 등록된 route 형식, status, elapsed_ms.
 - `request_failed`: 응답 헤더 전송 전 예외의 request_id와 예외 클래스.
-- `readiness_failed`: DB 또는 워커 준비 상태 조회 실패의 request_id와 예외 클래스.
+- `readiness_failed`: DB 또는 워커 준비 상태 조회 실패의 request_id, component (`database` 또는 `rtl_worker`)와 예외 클래스.
+  테이블·열 이름, 연결 정보, 예외 원문은 포함하지 않습니다.
 
 `elapsed_ms`는 응답 헤더가 준비되기까지의 시간입니다. NDJSON 전체 분석이나 다운로드의
 총 수행 시간이 아닙니다. 이 애플리케이션 기록에는 요청 본문·쿠키·인증 헤더·쿼리 문자열·
@@ -55,7 +59,7 @@ Uvicorn 기본 INFO 로그에서 `uvicorn.error.signoff` 네임스페이스의 �
 
 ## 검증
 
-`backend/tests/test_operations.py`는 요청 번호 생성, DB 장애/누락 테이블의 준비 상태,
+`backend/tests/test_operations.py`는 요청 번호 생성, DB 장애, 각 앱 테이블 및 필수 열 누락의 503과 복구 후 200, 데이터 행 없는 조회,
 인증 모드에서도 공개 상태 조회, 민감한 예외·쿼리·헤더가 애플리케이션 로그/오류에 없는지 검사합니다.
 기존 커밋 실패 테스트도 500 응답과 함께 비밀번호·세션·위반·권한·보고서 저장 롤백을 확인합니다.
 
