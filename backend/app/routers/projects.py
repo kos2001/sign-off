@@ -3,7 +3,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Project
+from ..services.access import change_membership
+from ..auth import auth_required
+from ..models import Project, ProjectMember
 from ..schemas import ProjectCreate, ProjectOut
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -23,13 +25,21 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="project name already exists")
     project = Project(**payload.model_dump())
     db.add(project)
+    db.flush()
+    user = db.info.get("user")
+    if user:
+        change_membership(db, project.id, user, "owner", actor=user)
     db.commit()
     return project
 
 
 @router.get("", response_model=list[ProjectOut])
 def list_projects(db: Session = Depends(get_db)):
-    return db.scalars(select(Project).order_by(Project.id)).all()
+    query = select(Project)
+    user = db.info.get("user")
+    if auth_required() and user and not user.is_admin:
+        query = query.join(ProjectMember).where(ProjectMember.user_id == user.id)
+    return db.scalars(query.order_by(Project.id)).all()
 
 
 @router.get("/{project_id}", response_model=ProjectOut)

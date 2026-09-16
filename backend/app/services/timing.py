@@ -8,12 +8,14 @@ failing endpoints estimates how many violations are GBA pessimism artifacts
 (the trade-off behind ML-based PBA estimation, e.g. Synopsys US 12,124,782).
 """
 
+from math import fsum
+
 
 def _stats(slacks: list[float]) -> dict:
     violating = [s for s in slacks if s < 0]
     return {
-        "wns_ps": round(min(slacks), 3),
-        "tns_ps": round(sum(violating), 3),
+        "wns_ps": min(slacks),
+        "tns_ps": fsum(violating),
         "violating_endpoints": len(violating),
         "total_endpoints": len(slacks),
     }
@@ -25,9 +27,8 @@ def summarize_corners(
 ) -> dict:
     """Summarize STA results across corners.
 
-    Each corner dict: ``name`` and ``endpoint_slacks_ps``. All corners must
-    report the same endpoints in the same order (equal-length lists), which is
-    what makes the endpoint-wise MMMC merge meaningful.
+    With endpoint_ids, align equal unique endpoint sets regardless of order.
+    Without IDs, retain the legacy positional assumption and report it explicitly.
     """
     if not corners:
         raise ValueError("corners must not be empty")
@@ -40,13 +41,29 @@ def summarize_corners(
     if len(lengths) != 1:
         raise ValueError("all corners must report the same number of endpoints")
 
+    identities = [corner.get('endpoint_ids') for corner in corners]
+    has_ids = any(ids is not None for ids in identities)
+    if has_ids and not all(ids is not None for ids in identities):
+        raise ValueError('all corners must provide endpoint_ids, or all must omit them')
+    baseline_ids = identities[0] if has_ids else None
+    if has_ids:
+        for corner, ids in zip(corners, identities):
+            if len(ids) != len(corner['endpoint_slacks_ps']) or len(set(ids)) != len(ids):
+                raise ValueError('each corner requires one unique ID per endpoint slack')
+            if set(ids) != set(baseline_ids):
+                raise ValueError('all corners must report the same endpoint ID set')
+        mapped = [dict(zip(ids, corner['endpoint_slacks_ps'])) for corner, ids in zip(corners, identities)]
+        aligned = [[float(values[endpoint]) for endpoint in baseline_ids] for values in mapped]
+    else:
+        aligned = [[float(slack) for slack in corner['endpoint_slacks_ps']] for corner in corners]
+
     per_corner = [
         {"name": c["name"], **_stats([float(s) for s in c["endpoint_slacks_ps"]])}
         for c in corners
     ]
 
     merged_slacks = [
-        min(float(c["endpoint_slacks_ps"][i]) for c in corners)
+        min(values[i] for values in aligned)
         for i in range(lengths.pop())
     ]
     merged = _stats(merged_slacks)
@@ -55,6 +72,15 @@ def summarize_corners(
         "corners": per_corner,
         "merged": merged,
         "signoff_clean": merged["violating_endpoints"] == 0,
+        'endpoint_alignment': 'by_id' if has_ids else 'positional',
+        'endpoint_ids': baseline_ids,
+        'merged_slacks_ps': merged_slacks,
+        'worst_endpoints': [
+            {'index': index, 'endpoint_id': baseline_ids[index] if has_ids else None,
+             'slack_ps': merged_slacks[index],
+             'limiting_corners': [corner['name'] for corner, values in zip(corners, aligned) if values[index] == merged_slacks[index]]}
+            for index in sorted(range(len(merged_slacks)), key=lambda i: (merged_slacks[i], i))[:20]
+        ],
     }
 
     if pba_pessimism_credit_ps > 0:

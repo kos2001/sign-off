@@ -161,7 +161,7 @@ class TestRtlSignoffApi:
 
         starts = [e["stage"] for e in events if e["event"] == "stage_start"]
         dones = {e["stage"]: e["status"] for e in events if e["event"] == "stage_done"}
-        assert starts == ["lint", "design", "synthesize"]
+        assert starts == ["lint", "design", "synthesize", "simulate"]
         assert dones["design"] == "pass"
         assert dones["simulate"] == "skip"
 

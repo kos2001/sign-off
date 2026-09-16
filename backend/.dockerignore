@@ -1,0 +1,16 @@
+*
+!Dockerfile.rtl-check
+!Dockerfile.rtl-worker
+!requirements.txt
+!requirements.in
+!app/
+!app/**
+!tests/
+!tests/**
+!scripts/
+!scripts/check_rtl_runtime.py
+!scripts/check_dependencies.py
+**/__pycache__
+**/*.pyc
+**/*.db
+**/.env

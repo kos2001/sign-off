@@ -1,12 +1,35 @@
-from fastapi import FastAPI
+import logging
+import time
+import uuid
 
-from .db import Base, engine
-from .routers import agents, analysis, projects, runs
+from fastapi import FastAPI, Depends, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.responses import JSONResponse
+from sqlalchemy import select
+
+from .auth import authorize, auth_required
+
+from .db import engine, SessionLocal
+from .models import Project, SignoffRun, User
+from .migrations import initialize_schema
+from .worker_maintenance import worker_lifespan
+from .worker_readiness import WorkerReadiness
+from .services.rtl.worker_client import WorkerError
+from .services.rtl.admission import capacity
+from .review_capacity import capacity as review_capacity
+from .routers import markers, run_reviews, auth, agents, analysis, comparison, imports, projects, runs, timing_paths, violations
+
+logger = logging.getLogger('uvicorn.error.signoff')
 
 
 def create_app() -> FastAPI:
-    Base.metadata.create_all(engine)
+    auth_required()  # Reject misspelled auth modes instead of silently disabling protection.
+    capacity()
+    review_capacity()
+    initialize_schema(engine)
     app = FastAPI(
+        lifespan=worker_lifespan,
         title="Sign-off Hub API",
         version="0.1.0",
         description=(
@@ -17,14 +40,65 @@ def create_app() -> FastAPI:
             "summary)."
         ),
     )
-    app.include_router(projects.router)
-    app.include_router(runs.router)
-    app.include_router(analysis.router)
-    app.include_router(agents.router)
+    app.include_router(projects.router, dependencies=[Depends(authorize)])
+    app.state.worker_readiness = WorkerReadiness()
+    app.include_router(runs.router, dependencies=[Depends(authorize)])
+    app.include_router(violations.router, dependencies=[Depends(authorize)])
+    app.include_router(comparison.router, dependencies=[Depends(authorize)])
+    app.include_router(imports.router, dependencies=[Depends(authorize)])
+    app.include_router(timing_paths.router, dependencies=[Depends(authorize)])
+    app.include_router(markers.router, dependencies=[Depends(authorize)])
+    app.include_router(analysis.router, dependencies=[Depends(authorize)])
+    app.include_router(run_reviews.router, dependencies=[Depends(authorize)])
+    app.include_router(agents.router, dependencies=[Depends(authorize)])
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request, error):
+        if request.url.path.startswith(('/auth/', '/analysis/')):
+            return JSONResponse(status_code=422, content={"detail": [
+                {key: item[key] for key in ['loc', 'msg', 'type']} for item in error.errors()
+            ]})
+        return await request_validation_exception_handler(request, error)
+
+    @app.middleware("http")
+    async def private_responses(request, call_next):
+        request_id = uuid.uuid4().hex
+        request.state.request_id = request_id
+        started = time.monotonic()
+        try:
+            response = await call_next(request)
+        except Exception as error:
+            logger.error('request_failed request_id=%s failure=%s', request_id, type(error).__name__)
+            response = JSONResponse(status_code=500, content={'detail': 'internal server error', 'request_id': request_id})
+        response.headers['X-Request-ID'] = request_id
+        if auth_required():
+            response.headers["Cache-Control"] = "no-store"
+        if response.status_code >= 500:
+            response.headers['Cache-Control'] = 'no-store'
+        route = getattr(request.scope.get('route'), 'path', 'unmatched')
+        logger.info('response_headers request_id=%s method=%s route=%s status=%s elapsed_ms=%.2f',
+                    request_id, request.method[:16], route, response.status_code, (time.monotonic() - started) * 1000)
+        return response
+
+    app.include_router(auth.router)
+    app.include_router(auth.members_router)
 
     @app.get("/health", tags=["meta"])
     def health():
         return {"status": "ok"}
+
+    @app.get('/ready', tags=['meta'])
+    def readiness(request: Request):
+        try:
+            with SessionLocal() as db:
+                for model in [Project, SignoffRun, User]:
+                    db.execute(select(model.id).limit(1)).all()
+            if not app.state.worker_readiness.ready():
+                raise WorkerError('RTL worker prerequisite is unavailable.')
+        except Exception as error:
+            logger.warning('readiness_failed request_id=%s failure=%s', request.state.request_id, type(error).__name__)
+            return JSONResponse(status_code=503, content={'status': 'not_ready'}, headers={'Cache-Control': 'no-store', 'Retry-After': '5'})
+        return JSONResponse(content={'status': 'ready'}, headers={'Cache-Control': 'no-store'})
 
     return app
 

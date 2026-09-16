@@ -16,8 +16,8 @@ export function Card({
   return (
     <section id={id} className="card p-5 scroll-mt-20">
       {(title || actions) && (
-        <header className="mb-4 flex items-start justify-between gap-3">
-          <div>
+        <header className="mb-4 flex flex-col items-start justify-between gap-3 sm:flex-row">
+          <div className="min-w-0">
             {title && <h2 className="text-sm font-semibold">{title}</h2>}
             {subtitle && (
               <p className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
@@ -51,11 +51,11 @@ export function StatTile({
         ? "var(--status-critical)"
         : "var(--text-primary)";
   return (
-    <div className="card px-4 py-3">
+    <div className="card min-w-0 px-4 py-3">
       <div className="text-xs" style={{ color: "var(--text-muted)" }}>
         {label}
       </div>
-      <div className="mt-1 text-2xl font-semibold" style={{ color }}>
+      <div className="mt-1 break-all text-2xl font-semibold" style={{ color }}>
         {value}
         {suffix && (
           <span className="ml-1 text-sm font-normal" style={{ color: "var(--text-muted)" }}>

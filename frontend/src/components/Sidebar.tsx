@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 
+import { useAuth } from "./AuthProvider";
 import { api } from "../api";
 
 interface NavItem {
@@ -19,7 +21,7 @@ function SidebarSection({ title, items }: { title: string; items: NavItem[] }) {
           const [itemPath, itemHash] = item.to.split("#");
           const isActive = itemHash
             ? pathname === itemPath && hash === `#${itemHash}`
-            : pathname === item.to;
+            : pathname === item.to || pathname.startsWith(`${item.to}/`);
           return (
             <li key={item.to}>
               <NavLink to={item.to} className={`sidebar-link ${isActive ? "sidebar-link-active" : ""}`}>
@@ -34,11 +36,16 @@ function SidebarSection({ title, items }: { title: string; items: NavItem[] }) {
 }
 
 export function Sidebar() {
+  const auth = useAuth();
+  const [logoutError, setLogoutError] = useState("");
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { pathname, hash } = useLocation();
+  useEffect(() => setMobileOpen(false), [pathname, hash]);
 
   return (
     <aside className="sidebar">
-      <div className="mb-6 flex items-center gap-2.5 px-1">
+      <div className="flex items-center gap-2.5 px-1 md:mb-6">
         <span
           aria-hidden
           className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white"
@@ -52,10 +59,13 @@ export function Sidebar() {
             칩 설계 사인오프 관리 · 분석
           </p>
         </div>
+        <button className="btn btn-ghost ml-auto md:hidden" aria-expanded={mobileOpen} aria-controls="main-navigation" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? "메뉴 닫기" : "메뉴"}</button>
       </div>
 
-      <nav>
-        <SidebarSection title="개요" items={[{ to: "/", label: "대시보드" }]} />
+      <nav id="main-navigation" aria-label="주 메뉴" className={mobileOpen ? "mt-5 md:mt-0" : "hidden md:block"}>
+        <div className="mb-5 text-xs space-y-2">{auth.state.user ? <><p>로그인: {auth.state.user.username}{auth.state.user.is_admin ? " · 관리자" : ""}</p><button className="btn btn-ghost" onClick={() => auth.logout().catch(error => setLogoutError(error.message))}>로그아웃</button><NavLink className="btn btn-ghost" to="/account">계정 설정</NavLink>{logoutError && <p role="alert">{logoutError}</p>}</> : <p>로컬 모드 · 계정 인증 없음</p>}</div>
+        <SidebarSection title="개요" items={[{ to: "/", label: "대시보드" }, { to: "/agents", label: "에이전트 개입 안내" }]} />
+        {auth.state.user?.is_admin && <SidebarSection title="운영 관리" items={[{ to: '/admin/security-events', label: '보안 이력 관리' }]} />}
 
         <SidebarSection
           title="프로젝트"

@@ -26,7 +26,7 @@
 ```bash
 # backend (http://127.0.0.1:8000, Swagger: /docs)
 cd backend
-uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python -r requirements.txt
+uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 .venv/bin/python scripts/seed_demo.py        # Ibex 실제 예제 시드
 .venv/bin/uvicorn app.main:app
 
@@ -36,7 +36,9 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && .venv/bin/python -m pytest` (54개)
+테스트: `cd backend && .venv/bin/python -m pytest` (565개; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+
+백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
 ## hermes-agent 연동 (선택)
 
@@ -50,3 +52,62 @@ RTL/타이밍/파워-IR/게이트 분석 결과를 실제로 위반·이상 징�
 
 `.github/workflows/ci.yml`이 `main` push/PR마다 backend pytest + frontend build를 실행합니다.
 Dependabot이 backend(pip)/frontend(npm)/GitHub Actions 의존성을 매주 점검합니다.
+
+## 프로젝트 위반 검토
+
+적용된 검색 조건의 전체 위반과 런·웨이버 정보를 [JSON으로 내보낼 수 있습니다](docs/violation-export.md).
+
+프로젝트의 **전체 위반 검토**에서 검색·상태·심각도·단계·도메인 필터와 페이지 이동을
+사용할 수 있습니다. 기본 범위는 단계·도메인별 최신 런이며 과거 런도 선택할 수 있습니다.
+검색 조건과 선택 항목은 URL에 보존됩니다. 위반별 수정 완료·웨이버·재오픈 사유와
+처리 이력을 기록합니다. 인증 모드에서는 로그인 계정, 로컬 모드에서는 직접 입력한 이름을 사용합니다.
+
+진행 상태: [서비스 개선 기록](docs/service-improvement.md).
+브라우저 검증 재현: [검증 가이드](docs/browser-verification.md).
+
+## 실행 결과 비교
+
+프로젝트의 **런 비교**에서 같은 도메인·단계의 두 실행을 선택합니다. 지표의 변화와
+위반의 추가·내용 변경·기준에만 남은 기록을 나란히 볼 수 있습니다. 선택된 실행 ID와
+차이 필터는 URL에 저장됩니다. 비교는 읽기 전용이며 미검출을 수정 완료로 처리하지 않습니다.
+
+## RTL 실행 근거
+
+프로젝트에 기록한 RTL 분석은 실행 소스·SHA-256·입력 리비전·원래 판정과 단계별 결과를
+함께 보존합니다. 런의 **실행 근거 보기**에서 조회하고 JSON으로 내려받을 수 있습니다.
+`CONDITIONAL`은 `incomplete`(검증 미완료)로 저장되며 RTL 게이트를 열지 않습니다.
+서버 분석 결과는 수동 Pass/Fail이나 지표 변경으로 덮어쓰지 않고 다시 실행하여 갱신합니다.
+
+## 동시 검토 보호
+
+위반을 처리할 때 조회한 변경 버전을 함께 검사합니다. 다른 검토자가 상태를 바꿨다가
+원래대로 되돌린 경우도 충돌로 감지합니다. 충돌한 사유는 현재 브라우저 탭 안에 유지되며,
+변경 내용을 확인하고 다시 처리할 수 있습니다. 탭 새로고침·닫기 이후까지 초안을 보존하지는 않습니다.
+
+API 연동에서는 위반 응답의 `version`을 수정·웨이버 요청의 `expected_version`으로 보내야 합니다.
+
+SQLite 운영 데이터는 온라인 백업·검증·새 경로 복원을 지원합니다.
+[백업 및 복구 안내](docs/backup-recovery.md)
+
+RTL 테스트벤치 입력, 실제 Icarus 실행, 컴파일·실행 로그와 소스 해시 보존을 지원합니다.
+[테스트벤치 사용 및 서버 설정](docs/rtl-simulation.md)
+
+로그인·프로젝트 역할과 로그인 계정 기반 승인 이력을 지원합니다. 기본 로컬 모드는 인증을
+사용하지 않으며 운영 시 [인증 설정](docs/authentication.md)을 적용해야 합니다.
+
+## 자기 개선 루프
+
+`python3 scripts/self_improve.py check`로 현재 상태를 점검하고,
+`python3 scripts/self_improve.py run --max-iterations 3`으로 분리된 작업 공간에서
+점검→수정→회귀 검증을 반복합니다. 통과한 후보와 누적 패치를 남기며,
+`--apply`를 지정하면 원본이 시작 시점과 같을 때만 적용합니다.
+[실행·중단·검증 범위 안내](docs/self-improvement-loop.md)
+
+프로젝트에서 [OpenSTA JSON 보고서 가져오기](docs/report-import.md)를 사용해 경로와 슬랙을 미리 보고 원본 근거·위반을 저장할 수 있습니다.
+
+운영 상태 확인과 문의 번호 로그는 [운영 점검](docs/operations.md)을 참고하세요.
+
+스테이지 게이트는 수동 통과 상태만으로 열리지 않으며 도메인별 최신 런의 설계 리비전도 검사합니다.
+검증 범위와 현재 지원 한계는 [게이트 근거 정책](docs/gate-provenance.md)을 참고하세요.
+
+[KLayout DRC 마커 보고서 가져오기](docs/klayout-import.md)를 지원합니다. PV 런·위반·원본 근거로 보존하며 전체 DRC 통과와 구분합니다.

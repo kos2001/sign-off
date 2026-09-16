@@ -11,3 +11,6 @@ dist/
 *.tsbuildinfo
 .env
 !.env.example
+
+.self-improve/
+.rtl-reaper/

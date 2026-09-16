@@ -45,10 +45,10 @@ class TestSignoffFlow:
         assert status["ready"] is False
         assert pv["open_blocking_violations"] == 1
 
-        # waive the blocking violation -> gate becomes ready
+        # Waiving resolves the violation, but does not supply verification coverage.
         resp = client.post(
             f"/violations/{violation_id}/waiver",
-            json={"reason": "foundry-approved metal fill exception", "approved_by": "kos"},
+            json={"expected_version": 1, "reason": "foundry-approved metal fill exception", "approved_by": "kos"},
         )
         assert resp.status_code == 201
         assert resp.json()["status"] == "waived"
@@ -56,7 +56,9 @@ class TestSignoffFlow:
         status = client.get(
             f"/projects/{pid}/signoff-status", params={"stage": "placement"}
         ).json()
-        assert status["ready"] is True
+        assert status["ready"] is False
+        assert all(not d["ready"] for d in status["domains"])
+        assert all("manual status" in d["reason"] for d in status["domains"])
 
     def test_duplicate_project_name_conflict(self, client):
         payload = {"name": "dup-chip", "process_node": "5nm", "foundry": "Samsung"}
@@ -77,7 +79,7 @@ class TestSignoffFlow:
             json=[{"check_name": "setup", "severity": "critical"}],
         ).json()[0]["id"]
 
-        waiver = {"reason": "known false path", "approved_by": "kos"}
+        waiver = {"expected_version": 1, "reason": "known false path", "approved_by": "kos"}
         assert client.post(f"/violations/{vid}/waiver", json=waiver).status_code == 201
         assert client.post(f"/violations/{vid}/waiver", json=waiver).status_code == 409
 

@@ -12,3 +12,10 @@ platforms:
     extra:
       port: 8657
       host: 127.0.0.1
+
+# Merge these keys into the profile; preserve model/provider credentials.
+# API reviews use inline evidence and do not execute tools.
+platform_toolsets:
+  api_server: [no_mcp]
+agent:
+  reasoning_effort: medium

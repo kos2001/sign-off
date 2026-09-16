@@ -10,6 +10,7 @@ signoff.
 """
 
 from ..models import Domain, RunStatus, Severity, SignoffRun, Stage, ViolationStatus
+from .evidence import rtl_result_status
 
 REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
     Stage.rtl: (Domain.rtl, Domain.sta),
@@ -25,8 +26,8 @@ BLOCKING_SEVERITIES = (Severity.error, Severity.critical)
 def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
     """Evaluate whether a project's signoff gate is ready at the given stage.
 
-    A domain is ready when its latest run at the stage passed and has no open
-    (unwaived) error/critical violations.
+    Use latest runs only. Captured coverage and matching declared revisions are
+    necessary; manual status changes are not verification evidence.
     """
     domains = []
     for domain in REQUIRED_DOMAINS[stage]:
@@ -35,7 +36,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
 
         if latest is None:
             domains.append(
-                {"domain": domain.value, "ready": False, "reason": "no run for this stage"}
+                {"domain": domain.value, "ready": False, "reason": "no run for this stage", "design_revision": None}
             )
             continue
 
@@ -44,11 +45,27 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             for v in latest.violations
             if v.severity in BLOCKING_SEVERITIES and v.status == ViolationStatus.open
         ]
-        if latest.status != RunStatus.passed:
+        evidence_result = latest.evidence.result if latest.evidence_source == "rtl_ladder" else latest.metrics
+        if latest.domain == Domain.rtl and latest.evidence_source != "rtl_ladder":
+            reason = "RTL requires captured ladder evidence; rerun the analysis"
+            ready = False
+        elif latest.evidence_source == 'opensta_report':
+            reason = 'Imported path report does not establish full STA coverage'
+            ready = False
+        elif latest.evidence_source == 'klayout_report':
+            reason = 'Imported marker report does not establish full DRC coverage'
+            ready = False
+        elif latest.domain == Domain.rtl and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
+            reason = f"RTL evidence is {rtl_result_status(evidence_result).value}; required stages must all pass"
+            ready = False
+        elif latest.status != RunStatus.passed:
             reason = f"latest run status is '{latest.status.value}'"
             ready = False
         elif blocking:
             reason = f"{len(blocking)} open blocking violation(s)"
+            ready = False
+        elif latest.evidence_source != 'rtl_ladder' or latest.domain != Domain.rtl:
+            reason = 'Captured verification coverage required; manual status is not evidence'
             ready = False
         else:
             reason = None
@@ -61,11 +78,20 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
                 "reason": reason,
                 "run_id": latest.id,
                 "open_blocking_violations": len(blocking),
+                "evidence_source": latest.evidence_source,
+                "design_revision": latest.evidence.design_revision if latest.evidence else None,
             }
         )
 
+    # Labels are declarations, not cryptographic proof that all tools used the
+    # same design. Never select older runs merely to make these labels match.
+    revisions = sorted({d['design_revision'] for d in domains if d['design_revision'] and d['design_revision'].strip()})
+    missing = [d['domain'] for d in domains if not d['design_revision'] or not d['design_revision'].strip()]
+    revision_state = 'mismatch' if len(revisions) > 1 else 'missing' if missing else 'consistent'
     return {
         "stage": stage.value,
-        "ready": all(d["ready"] for d in domains),
+        "ready": all(d["ready"] for d in domains) and revision_state == 'consistent',
         "domains": domains,
+        "revision_check": {"status": revision_state, "revisions": revisions, "missing_domains": missing,
+                           "common_revision": revisions[0] if revision_state == 'consistent' else None},
     }
