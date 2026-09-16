@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, load_only
 
+from ..services.rtl.artifacts import netlist_metadata_only
 from ..db import get_db
 from ..auth import require_project
 from ..hermes import REVIEW_GUIDANCE, ROLES, Settings
@@ -57,7 +58,7 @@ def snapshot(run):
             'evidence_source': evidence.source}
     if evidence.source == 'rtl_ladder':
         role = ROLES['a1_rtl']
-        data['analysis'] = evidence.result
+        data['analysis'] = netlist_metadata_only(evidence.result)
     else:
         role = ROLES['a2_timing']
         result = evidence.result

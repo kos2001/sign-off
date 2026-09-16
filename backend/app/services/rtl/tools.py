@@ -6,6 +6,7 @@ as skipped instead of failing, so the ladder still runs on boxes without an
 EDA toolchain.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -16,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .process import run_command
+from .artifacts import MAX_NETLIST_BYTES, NetlistArtifact
 
 VERILATOR = "verilator"
 YOSYS = "yosys"
@@ -26,19 +28,20 @@ _MODULE_RE = re.compile(r"\bmodule\s+(\w+)\b")
 _FENCE_RE = re.compile(r"^```[\w-]*\n|\n?```$", re.M)
 
 
-def read_design_statistics(path: Path) -> tuple[int, int, int]:
-    """Read Yosys's expanded design totals, never sum module definitions.
-
-    tee also preserves the complete JSON in the bounded tool transcript.
-    Reject missing/invalid statistics instead of reporting a fabricated zero.
-    """
+def read_regular_output(path: Path, limit: int) -> bytes:
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-            raise ValueError("statistics is not a regular file")
-        raw = stream.read(MAX_OUTPUT_BYTES + 1)
-    if len(raw) > MAX_OUTPUT_BYTES:
-        raise ValueError("statistics exceeds size limit")
+            raise ValueError("output is not a regular file")
+        raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError("output exceeds size limit")
+    return raw
+
+
+def read_design_statistics(path: Path) -> tuple[int, int, int]:
+    """Read expanded design totals, not the sum of module definitions."""
+    raw = read_regular_output(path, MAX_OUTPUT_BYTES)
     data = json.loads(raw)
     design = data["design"]
     cells = design["num_cells"]
@@ -89,6 +92,7 @@ class SynthResult:
     cells: int | None = None
     flops: int | None = None
     latches: int | None = None
+    netlist: dict | None = None
     execution: dict | None = None
     issues: list[str] = field(default_factory=list)
 
@@ -164,17 +168,22 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
         )
         script = (
             f"read_verilog -sv design.sv; {hier}; proc; {connection_check}; "
-            f"opt; techmap; opt; {connection_check}; tee -o stats.json stat -json"
+            f"opt; techmap; opt; {connection_check}; tee -o stats.json stat -json; write_verilog -noattr netlist.v"
         )
         cmd = [YOSYS, '-p', script]
         proc = run_command(cmd, td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
         counts = (None, None, None)
         statistics_error = None
+        netlist = None
         if proc['exit_code'] == 0 and proc['error'] is None:
             try:
                 counts = read_design_statistics(Path(td) / "stats.json")
+                raw_netlist = read_regular_output(Path(td) / "netlist.v", MAX_NETLIST_BYTES)
+                netlist = NetlistArtifact(format='yosys-generic-verilog/v1', text=raw_netlist.decode('utf-8'),
+                                          sha256=hashlib.sha256(raw_netlist).hexdigest(),
+                                          byte_length=len(raw_netlist)).model_dump()
             except (OSError, ValueError, KeyError, TypeError, RecursionError):
-                statistics_error = "yosys: design statistics unavailable or invalid"
+                statistics_error = "yosys: design statistics or netlist unavailable or invalid"
 
     raw = proc['log']
     ok = proc['exit_code'] == 0 and proc['error'] is None
@@ -185,6 +194,7 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
         issues.append(f"yosys: {proc['error']}")
 
     if statistics_error:
+        counts = (None, None, None)
         ok = False
         issues.append(statistics_error)
 
@@ -194,6 +204,7 @@ def synthesize(code: str, *, top_module: str | None = None) -> SynthResult:
         cells=counts[0],
         flops=counts[1],
         latches=counts[2],
+        netlist=netlist,
         issues=issues or ([] if ok else ["synthesis failed"]),
         execution={"command": cmd, **proc},
     )
