@@ -31,7 +31,7 @@ def test_explicit_top_reaches_both_lint_passes_and_synthesis():
             record = result['tool_runs'][kind]
             assert record['command'][-2:] == ['--top-module', 'chip_top']
             assert record['exit_code'] == 0
-        assert 'hierarchy -top chip_top;' in result['tool_runs']['synthesize']['command'][-1]
+        assert 'hierarchy -simcheck -top chip_top;' in result['tool_runs']['synthesize']['command'][-1]
         assert result['tool_runs']['synthesize']['exit_code'] == 0
     missing = run_signoff(MULTI_RTL, top_module='absent').to_dict()
     assert missing['verdict'] == 'REJECTED'

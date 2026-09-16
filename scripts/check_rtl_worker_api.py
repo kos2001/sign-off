@@ -71,6 +71,21 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
             assert evidence['result']['tool_runs'] == result['tool_runs']
             assert '"modules"' in result['tool_runs']['synthesize']['log']
             assert '"design"' in result['tool_runs']['synthesize']['log']
+        invalid = fixture('test_rtl_structure.py', 'INVALID_DESIGNS')
+        for case, (invalid_code, diagnostic) in invalid.items():
+            for streaming in [False, True]:
+                response = client.post('/analysis/rtl-signoff' + ('/stream' if streaming else ''),
+                                       json={'code': invalid_code, 'top_module': 'top', 'project_id': project})
+                assert response.status_code == 200, response.text
+                result = json.loads(response.text.splitlines()[-1])['result'] if streaming else response.json()
+                synth = next(stage for stage in result['stages'] if stage['name'] == 'synthesize')
+                assert result['verdict'] == 'REJECTED' and synth['status'] == 'fail', (case, result)
+                assert 'cells=unknown' in synth['detail']
+                record = result['tool_runs']['synthesize']
+                assert record['exit_code'] != 0 and diagnostic in record['log'], (case, record)
+                evidence = client.get(f"/runs/{result['run_id']}/evidence").json()
+                assert evidence['result']['stages'] == result['stages']
+                assert evidence['result']['tool_runs'] == result['tool_runs']
         image = os.environ.get('SIGNOFF_RTL_WORKER_IMAGE')
         os.environ['SIGNOFF_RTL_WORKER_IMAGE'] = 'signoff-missing:' + uuid.uuid4().hex
         try:
@@ -82,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
                 del os.environ['SIGNOFF_RTL_WORKER_IMAGE']
             else:
                 os.environ['SIGNOFF_RTL_WORKER_IMAGE'] = image
-        assert len(client.get(f'/projects/{project}/runs').json()) == 4
+        assert len(client.get(f'/projects/{project}/runs').json()) == 4 + 2 * len(invalid)
         cancel = threading.Event()
         running = worker.stream_worker(code, testbench, 'tb', cancel=cancel)
         assert next(running)['event'] == 'stage_start'

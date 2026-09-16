@@ -35,7 +35,7 @@ try {
   assert.equal(result.module, 'chip_top'); assert.equal(result.top_module_requested, 'chip_top');
   assert.equal(result.verdict, 'CONDITIONAL');
   for (const kind of ['lint', 'width']) assert.deepEqual(result.tool_runs[kind].command.slice(-2), ['--top-module', 'chip_top']);
-  assert.ok(result.tool_runs.synthesize.command.at(-1).includes('hierarchy -top chip_top;'));
+  assert.ok(result.tool_runs.synthesize.command.at(-1).includes('hierarchy -simcheck -top chip_top;'));
   assert.equal(result.execution.backend, 'container');
   const stored = await (await context.request.get(`${base}/api/runs/${result.run_id}/evidence`)).json();
   assert.equal(stored.result.top_module_requested, 'chip_top');

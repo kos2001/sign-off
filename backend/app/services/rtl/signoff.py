@@ -92,8 +92,9 @@ def _suggestions(stages: list[LadderStage]) -> list[str]:
             out.append(f"Resolve the design-rule violation: {s.detail}. Add a synchronizer for a "
                        "CDC, or correct reset/blocking-assignment issues, then re-run.")
         elif s.name == "synthesize" and s.status == "fail":
-            out.append("RTL does not synthesize — remove unsynthesizable constructs and check for "
-                       "inferred latches (drive every output on every path).")
+            out.append("Synthesis validation failed. Review the Yosys diagnostics for unsupported RTL, "
+                       "missing modules or blackboxes, undriven/conflicting drivers, logic loops, "
+                       "or unavailable statistics. Correct the reported cause and re-run.")
         elif s.name == "simulate" and s.status == "fail":
             out.append("Review the testbench compile/runtime logs, fix the failure, and re-run all checks.")
         elif s.gating and s.status == "skip":
