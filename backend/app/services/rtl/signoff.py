@@ -75,6 +75,8 @@ class SignoffResult:
             "suggestions": self.suggestions,
             "simulation": self.simulation,
             "netlist": self.report.get("netlist"),
+            "structure": self.report.get("structure"),
+            "structure_error": self.report.get("structure_error"),
             "tool_runs": self.report.get("tool_runs", {}),
         }
 

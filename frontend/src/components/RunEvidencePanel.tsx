@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { RtlSourceInspector } from "./RtlSourceInspector";
 import { RunReviewHistory } from "./RunReviewHistory";
 import { SimulationDetails } from "./SimulationDetails";
@@ -94,6 +95,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
             </> : <p>넷리스트 미보관 · 합성 미완료 또는 이전 실행입니다.</p>}
             <p className="text-[var(--text-muted)]">Yosys가 생성한 합성 결과입니다. 라이브러리 매핑·배치배선·타이밍 검증 전이며, 다운로드는 전체 사인오프 통과를 의미하지 않습니다. 조회에는 AI가 개입하지 않습니다.</p>
           </section>
+          {evidence.data.result.structure ? <Link className="btn btn-ghost inline-block" to={`/runs/${run.id}/structure`}>합성 구조 탐색</Link> : <p>{evidence.data.result.structure_error ?? '합성 구조 미보관 · 이전 실행 또는 구조 미생성'}</p>}
           <RtlSourceInspector key={run.id} evidence={evidence.data} />
           <section aria-label="RTL 도구 실행 로그" className="space-y-2">
             <h3 className="font-semibold">도구 명령과 실행 로그</h3>

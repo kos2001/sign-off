@@ -60,6 +60,13 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
             downloaded = client.get(f"/runs/{result['run_id']}/evidence/netlist")
             assert downloaded.status_code == 200 and downloaded.content == artifact['text'].encode()
             assert downloaded.headers['x-artifact-sha256'] == artifact['sha256']
+            structure = result['structure']
+            assert structure and result['structure_error'] is None
+            assert hashlib.sha256(structure['text'].encode()).hexdigest() == structure['sha256']
+            view = client.get(f"/runs/{result['run_id']}/evidence/structure")
+            assert view.status_code == 200 and view.json()['design'] == json.loads(structure['text'])
+            assert view.json()['structure_sha256'] == structure['sha256']
+
             assert 'Yosys' in records['synthesize']['log']
             synth = next(stage for stage in result['stages'] if stage['name'] == 'synthesize')
             assert 'flops=4' in synth['detail'] and 'latches=0' in synth['detail'], synth
