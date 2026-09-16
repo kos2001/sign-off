@@ -54,3 +54,5 @@ jobs:
       - name: Audit frontend dependencies (including build tools)
         run: pnpm audit --audit-level=moderate
       - run: pnpm build
+      - name: Check RTL diagnostic navigation parsing
+        run: node ../scripts/check_rtl_diagnostics.mjs

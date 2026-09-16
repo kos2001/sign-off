@@ -1,3 +1,4 @@
+import { RtlSourceInspector } from "./RtlSourceInspector";
 import { RunReviewHistory } from "./RunReviewHistory";
 import { SimulationDetails } from "./SimulationDetails";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -73,6 +74,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
             <div className="flex flex-wrap items-center gap-2"><strong>{stage.name}</strong><StatusBadge status={stage.status === "pass" ? "good" : stage.status === "fail" ? "critical" : "warning"} label={stage.status} /><span>{stage.gating ? "필수 단계" : "참고 단계"}</span></div>
             <p className="mt-1 whitespace-pre-wrap break-words">{stage.detail}</p>
           </li>)}</ul>
+          <RtlSourceInspector key={run.id} evidence={evidence.data} />
           <section aria-label="RTL 도구 실행 로그" className="space-y-2">
             <h3 className="font-semibold">도구 명령과 실행 로그</h3>
             <p>서버가 실행한 기본 린트·폭 검사·합성 기록입니다. 로그는 도구별 최대 128 KiB이며 출력 한도 초과는 실행 오류로 기록합니다. 조회에는 AI가 개입하지 않습니다.</p>
