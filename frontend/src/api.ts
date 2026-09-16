@@ -258,6 +258,7 @@ export interface SimulationEvidence {
 }
 
 export interface RtlSignoffResult {
+  netlist?: { format: 'yosys-generic-verilog/v1'; text: string; sha256: string; byte_length: number } | null;
   top_module_requested?: string | null;
   tool_runs?: Partial<Record<'lint' | 'width' | 'synthesize', { command: string[]; exit_code: number | null; error: string | null; log: string } | null>>;
   execution?: { backend: 'container'; image_id: string };
@@ -421,6 +422,7 @@ export const api = {
   getProject: (id: number) => request<Project>(`/projects/${id}`),
   listRuns: (projectId: number) =>
     request<SignoffRun[]>(`/projects/${projectId}/runs`),
+  runNetlist: (runId: number) => request<Blob>(`/runs/${runId}/evidence/netlist`, undefined, 'blob'),
   runSource: (runId: number) => request<Blob>(`/runs/${runId}/evidence/source`, undefined, 'blob'),
   runEvidence: (runId: number) => request<RunEvidence>(`/runs/${runId}/evidence`),
   compareRuns: (projectId: number, baseline: number, candidate: number, kind: string, offset: number) =>
