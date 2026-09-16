@@ -68,7 +68,7 @@ def test_lint_and_synth_fail_on_limits_even_with_success_text(tmp_path, monkeypa
 def statistics_tool(tmp_path, monkeypatch, cells, types, log=''):
     payload = json.dumps({'design': {'num_cells': cells, 'num_cells_by_type': types}})
     fake_tool(tmp_path, monkeypatch, 'yosys',
-              f"from pathlib import Path; Path('stats.json').write_text({payload!r}); print({log!r})")
+              f"from pathlib import Path; Path('stats.json').write_text({payload!r}); Path('netlist.v').write_text('module top; endmodule\\n'); print({log!r})")
 
 
 def test_synthesis_stats_and_lint_diagnostics_survive_bounded_runner(tmp_path, monkeypatch):
@@ -163,7 +163,7 @@ def test_successful_process_without_valid_statistics_fails(tmp_path, monkeypatch
     result = tools.synthesize('module top; endmodule')
     assert not result.ok and result.execution['exit_code'] == 0
     assert result.cells is result.flops is result.latches is None
-    assert 'statistics unavailable or invalid' in result.issues[0]
+    assert 'statistics or netlist unavailable or invalid' in result.issues[0]
     from app.services.rtl.signoff import _synth_stage
     stage = _synth_stage(result)
     assert stage.status == 'fail' and 'cells=unknown' in stage.detail

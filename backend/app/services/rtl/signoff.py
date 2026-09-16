@@ -74,6 +74,7 @@ class SignoffResult:
             "rules": self.rules,
             "suggestions": self.suggestions,
             "simulation": self.simulation,
+            "netlist": self.report.get("netlist"),
             "tool_runs": self.report.get("tool_runs", {}),
         }
 

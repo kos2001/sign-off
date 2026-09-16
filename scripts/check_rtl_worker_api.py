@@ -1,5 +1,6 @@
 """Real Docker worker + service API checks, using a disposable SQLite database."""
 import ast
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -52,6 +53,13 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
                 assert record['exit_code'] == 0 and record['error'] is None, (name, record)
                 assert len(record['log'].encode()) <= 128 * 1024
                 assert record['command'][0] == ('yosys' if name == 'synthesize' else 'verilator')
+            artifact = result['netlist']
+            assert artifact == evidence['result']['netlist']
+            assert hashlib.sha256(artifact['text'].encode()).hexdigest() == artifact['sha256']
+            assert len(artifact['text'].encode()) == artifact['byte_length']
+            downloaded = client.get(f"/runs/{result['run_id']}/evidence/netlist")
+            assert downloaded.status_code == 200 and downloaded.content == artifact['text'].encode()
+            assert downloaded.headers['x-artifact-sha256'] == artifact['sha256']
             assert 'Yosys' in records['synthesize']['log']
             synth = next(stage for stage in result['stages'] if stage['name'] == 'synthesize')
             assert 'flops=4' in synth['detail'] and 'latches=0' in synth['detail'], synth
@@ -88,6 +96,8 @@ with tempfile.TemporaryDirectory(prefix='signoff-worker-api-') as directory:
                 synth = next(stage for stage in result['stages'] if stage['name'] == 'synthesize')
                 assert result['verdict'] == 'REJECTED' and synth['status'] == 'fail', (case, result)
                 assert 'cells=unknown' in synth['detail']
+                assert result['netlist'] is None
+                assert client.get(f"/runs/{result['run_id']}/evidence/netlist").status_code == 409
                 record = result['tool_runs']['synthesize']
                 assert record['exit_code'] != 0 and diagnostic in record['log'], (case, record)
                 evidence = client.get(f"/runs/{result['run_id']}/evidence").json()
