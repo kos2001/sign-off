@@ -49,7 +49,42 @@ try {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     if (width === 390) await detail.screenshot({ path: `${output}/edge-pair.png` });
   }
+  // Mouse and keyboard exploration must affect only the viewport.
+  const svg = detail.getByRole('img');
+  const originalPath = await svg.locator('path').getAttribute('d');
+  const originalEvidence = await (await context.request.get(`${base}/api/runs/${run.id}/evidence`)).json();
+  await detail.getByRole('button', { name: '도형 확대', exact: true }).click();
+  assert.equal(await svg.getAttribute('viewBox'), '50 50 100 100');
+  await svg.focus(); await svg.press('+');
+  assert.equal(await svg.getAttribute('viewBox'), '75 75 50 50');
+  await svg.press('ArrowLeft');
+  assert.equal(await svg.getAttribute('viewBox'), '70 75 50 50');
+  await svg.press('Home');
+  assert.equal(await svg.getAttribute('viewBox'), '0 0 200 200');
+  await detail.getByRole('button', { name: '도형 확대', exact: true }).click();
+  await svg.scrollIntoViewIfNeeded();
+  const box = await svg.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const dragged = await svg.getAttribute('viewBox');
+  assert.ok(Number(dragged.split(' ')[0]) < 25);
+  assert.equal(await svg.locator('path').getAttribute('d'), originalPath);
+  await page.waitForResponse(response => response.url().endsWith(`/api/runs/${run.id}/markers/1`) && response.status() === 200, { timeout: 10000 });
+  assert.equal(await svg.getAttribute('viewBox'), dragged, 'polling must preserve viewport');
+  await svg.focus();
+  for (let i = 0; i < 8; i++) await svg.press('+');
+  assert.equal(await detail.getByRole('button', { name: '도형 확대', exact: true }).isDisabled(), true);
+  assert.equal(Number((await svg.getAttribute('viewBox')).split(' ')[2]), 6.25);
+  await detail.getByRole('button', { name: '전체 도형 맞춤', exact: true }).click();
+  assert.equal(await svg.getAttribute('viewBox'), '0 0 200 200');
+  assert.equal(await detail.getByRole('button', { name: '도형 축소', exact: true }).isDisabled(), true);
+  assert.deepEqual(await (await context.request.get(`${base}/api/runs/${run.id}/evidence`)).json(), originalEvidence);
+  await detail.getByRole('button', { name: '도형 확대', exact: true }).click();
   await page.goto(`${base}/runs/${run.id}/markers?selected=3`);
+  await detail.getByRole('img', { name: '마커 #3 셀 좌표 미리보기', exact: true }).waitFor();
+  assert.equal(await detail.getByRole('img').getAttribute('viewBox'), '0 0 200 200');
   await detail.getByRole('img').waitFor();
   assert.equal(await detail.locator('svg path').getAttribute('fill-rule'), 'evenodd');
   assert.equal(((await detail.locator('svg path').getAttribute('d')).match(/ Z/g) ?? []).length, 2);
@@ -58,5 +93,5 @@ try {
   await page.getByText('검색 결과 25 / 보고된 마커 27개', { exact: false }).waitFor();
   assert.equal(new URL(page.url()).searchParams.has('selected'), false);
   assert.deepEqual(errors, []);
-  console.log('PASS: viewer browsing, paging/search/category, no-geometry fallback, exact edge-pair plot, polygon holes, shared selection, responsive layout');
+  console.log('PASS: viewer browsing, paging/search/category, no-geometry fallback, exact edge-pair plot, polygon holes, shared selection, responsive layout, zoom/pan/keyboard/fit, polling preservation and immutable evidence');
 } finally { await browser.close(); }

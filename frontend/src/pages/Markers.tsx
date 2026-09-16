@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { api } from '../api';
+import { MarkerGeometryViewer } from '../components/MarkerGeometryViewer';
 import { MarkerViolationReview } from '../components/MarkerViolationReview';
 import { RunEvidencePanel } from '../components/RunEvidencePanel';
 
@@ -56,15 +57,8 @@ export default function Markers() {
       {detail.isPending ? <p role="status">마커 상세 불러오는 중…</p> : detail.isError ? <p role="alert">{detail.error.message} <button className="btn btn-ghost" onClick={() => void detail.refetch()}>상세 다시 시도</button></p> : item && geometry && <>
         <h2 className="font-semibold break-words">마커 #{item.index} · {item.category}</h2><p>셀: {item.cell || '전체 셀'} · 보고된 중복 발생 수: {item.multiplicity}</p>
         <p>현재 검색과 독립적으로 선택한 원본 마커입니다. 좌표 단위 µm, X는 오른쪽·Y는 위쪽입니다. 셀 계층 변환을 적용하지 않습니다.</p>
-        {geometry.shapes.length > 0 ? <svg role="img" aria-label={`마커 #${item.index} 셀 좌표 미리보기`} viewBox="0 0 200 200" className="w-full max-w-md aspect-square border border-[var(--border)] bg-[var(--surface-2)]">
-          <title>선택한 마커의 셀 좌표 도형 · µm</title>
-          {geometry.shapes.map(shape => <g key={shape.value_index}>
-            <path d={shape.contours.map(contour => contour.map((point, i) => `${i ? 'L' : 'M'} ${point[0]} ${point[1]}`).join(' ') + (shape.closed ? ' Z' : '')).join(' ')} fill={shape.closed ? 'var(--series-1)' : 'none'} fillOpacity={0.15} fillRule="evenodd" stroke="var(--series-1)" strokeWidth={1.5} />
-            {!shape.closed && shape.contours.flatMap((contour, ci) => contour.map((point, pi) => <circle key={`${ci}-${pi}`} cx={point[0]} cy={point[1]} r={2} fill="var(--series-1)" />))}
-            {shape.closed && shape.contours.flat().every(point => point[0] === shape.contours[0][0][0] && point[1] === shape.contours[0][0][1]) && <circle cx={shape.contours[0][0][0]} cy={shape.contours[0][0][1]} r={2} fill="var(--series-1)" />}
-          </g>)}
-        </svg> : <p>표시 가능한 기하 값이 없습니다. 아래 원문을 확인하세요.</p>}
-        {geometry.bounds_um && <p className="break-words">표시 범위 (µm): X {geometry.bounds_um.xmin} ~ {geometry.bounds_um.xmax} · Y {geometry.bounds_um.ymin} ~ {geometry.bounds_um.ymax}</p>}
+        {geometry.shapes.length > 0 ? <MarkerGeometryViewer key={`${runId}-${selected}`} geometry={geometry} index={item.index} /> : <p>표시 가능한 기하 값이 없습니다. 아래 원문을 확인하세요.</p>}
+        {geometry.bounds_um && <p className="break-words">전체 도형 범위 (µm): X {geometry.bounds_um.xmin} ~ {geometry.bounds_um.xmax} · Y {geometry.bounds_um.ymin} ~ {geometry.bounds_um.ymax}</p>}
         <p>도형으로 표시한 값 {geometry.rendered_values} / {item.values.length}개. box·edge·edge-pair·polygon을 지원하며 레이아웃 배경은 포함하지 않습니다.</p>
         {!!geometry.unrendered_values.length && <p>표시하지 않은 값 번호: {geometry.unrendered_values.join(', ')}. 텍스트·미지원 형식·범위 초과 값은 원문으로 확인하세요.</p>}
         <p className="break-words">원본 태그: {item.tags || '없음'} · 서비스 승인 상태가 아닙니다.</p><p className="whitespace-pre-wrap break-words">댓글: {item.comment || '없음'}</p>
