@@ -1,3 +1,5 @@
+import NotFound from "./pages/NotFound";
+import { RouteScreenBoundary } from "./components/ScreenBoundary";
 import { AuthProvider } from "./components/AuthProvider";
 import AgentGuide from "./pages/AgentGuide";
 import Account from "./pages/Account";
@@ -21,7 +23,7 @@ export default function App() {
     <AuthProvider><ReviewDraftProvider><div className="app-shell">
       <Sidebar />
       <main className="app-main">
-        <Routes>
+        <RouteScreenBoundary><Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/projects/:id/violations" element={<Violations />} />
@@ -35,7 +37,8 @@ export default function App() {
           <Route path="/admin/security-events" element={<SecurityEvents />} />
           <Route path="/agents" element={<AgentGuide />} />
           <Route path="/analysis" element={<Analysis />} />
-        </Routes>
+          <Route path="*" element={<NotFound />} />
+        </Routes></RouteScreenBoundary>
       </main>
     </div></ReviewDraftProvider></AuthProvider>
   );
