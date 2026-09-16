@@ -214,6 +214,7 @@ class GlitchPowerRequest(BaseModel):
 
 
 class RtlSignoffRequest(BaseModel):
+    top_module: str | None = Field(default=None, max_length=120, pattern=r"^[A-Za-z_][A-Za-z0-9_$]*$")
     testbench: str | None = Field(default=None, min_length=1, max_length=500_000)
     testbench_top: str | None = Field(default=None, max_length=120, pattern=r"^[A-Za-z_][A-Za-z0-9_$]*$")
 
