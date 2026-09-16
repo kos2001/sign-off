@@ -8,20 +8,22 @@ EDA toolchain.
 
 import re
 import shutil
-import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .process import run_command
+
 VERILATOR = "verilator"
 YOSYS = "yosys"
 TOOL_TIMEOUT = 60
+MAX_OUTPUT_BYTES = 128 * 1024
 
 _MODULE_RE = re.compile(r"\bmodule\s+(\w+)\b")
 _FENCE_RE = re.compile(r"^```[\w-]*\n|\n?```$", re.M)
 
 _CELLS_RE = re.compile(r"^\s*(\d+)\s+cells\s*$", re.M)
-_DFF_RE = re.compile(r"^\s*(\d+)\s+\$_(?:S?DFF|DLATCH)\w*", re.M)
+_DFF_RE = re.compile(r"^\s*(\d+)\s+\$_S?DFF\w*", re.M)
 _LATCH_RE = re.compile(r"^\s*(\d+)\s+\$_DLATCH\w*", re.M)
 
 
@@ -88,11 +90,16 @@ def lint(code: str, strict: bool = False) -> LintResult:
         cmd += ["--timing", str(src)]
         if top:
             cmd += ["--top-module", top]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUT)
+        proc = run_command(cmd, td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
 
-    raw = (proc.stdout + proc.stderr).strip()
-    issues = [l for l in raw.splitlines() if l and ("%Error" in l or "%Warning" in l)]
-    return LintResult(ok=proc.returncode == 0, available=True, issues=issues, top=top)
+    raw = proc['log'].strip()
+    issues = [line for line in raw.splitlines() if line and ('%Error' in line or '%Warning' in line)]
+    if proc['error']:
+        issues.append(f"verilator: {proc['error']}")
+    ok = proc['exit_code'] == 0 and proc['error'] is None
+    if not ok and not issues:
+        issues = [f"verilator failed (exit code {proc['exit_code']})"]
+    return LintResult(ok=ok, available=True, issues=issues, top=top)
 
 
 def synthesize(code: str) -> SynthResult:
@@ -109,15 +116,15 @@ def synthesize(code: str) -> SynthResult:
         src.write_text(code if code.endswith("\n") else code + "\n")
         hier = f"hierarchy -top {top}" if top else "hierarchy -auto-top"
         script = f"read_verilog -sv design.sv; {hier}; proc; opt; techmap; opt; stat"
-        proc = subprocess.run(
-            [YOSYS, "-p", script], cwd=td, capture_output=True, text=True, timeout=TOOL_TIMEOUT
-        )
+        proc = run_command([YOSYS, '-p', script], td, timeout_seconds=TOOL_TIMEOUT, max_output_bytes=MAX_OUTPUT_BYTES)
 
-    raw = proc.stdout + proc.stderr
-    ok = proc.returncode == 0
+    raw = proc['log']
+    ok = proc['exit_code'] == 0 and proc['error'] is None
     issues = []
     if not ok:
-        issues = [l.strip() for l in raw.splitlines() if l.startswith("ERROR") or "%Error" in l][:8]
+        issues = [line.strip() for line in raw.splitlines() if line.startswith('ERROR') or '%Error' in line][:8]
+    if proc['error']:
+        issues.append(f"yosys: {proc['error']}")
 
     def first_int(rx: re.Pattern) -> int:
         m = rx.search(raw)

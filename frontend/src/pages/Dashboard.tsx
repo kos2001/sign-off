@@ -34,7 +34,7 @@ export default function Dashboard() {
 
   const list = list0;
   const runsByProject = new Map(list.map((p, i) => [p.id, runQueries[i]?.data ?? []]));
-  const aggregateCounts = { passed: 0, failed: 0, running: 0 };
+  const aggregateCounts = { passed: 0, failed: 0, running: 0, incomplete: 0 };
   for (const runs of runsByProject.values())
     for (const r of runs) aggregateCounts[r.status] += 1;
 
@@ -165,11 +165,11 @@ function ProjectRunGlance({ runs }: { runs: SignoffRun[] }) {
       </p>
     );
   }
-  const counts = { passed: 0, failed: 0, running: 0 };
+  const counts = { passed: 0, failed: 0, running: 0, incomplete: 0 };
   for (const r of runs) counts[r.status] += 1;
   const total = runs.length;
-  const order: (keyof typeof counts)[] = ["passed", "failed", "running"];
-  const color = { passed: "var(--status-good)", failed: "var(--status-critical)", running: "var(--status-warning)" };
+  const order: (keyof typeof counts)[] = ["passed", "failed", "running", "incomplete"];
+  const color = { passed: "var(--status-good)", failed: "var(--status-critical)", running: "var(--status-warning)", incomplete: "var(--text-muted)" };
 
   return (
     <div>
@@ -183,6 +183,7 @@ function ProjectRunGlance({ runs }: { runs: SignoffRun[] }) {
       </div>
       <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
         런 {total}건 · 통과 {counts.passed} · 실패 {counts.failed}
+        {counts.incomplete > 0 && ` · 검증 미완료 ${counts.incomplete}`}
         {counts.running > 0 && ` · 진행 중 ${counts.running}`}
       </p>
     </div>

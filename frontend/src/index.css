@@ -238,3 +238,37 @@ body {
   color: var(--text-primary);
   white-space: nowrap;
 }
+
+/* Keep review actions and evidence within the viewport on narrow screens. */
+@media (max-width: 640px) {
+  .violation-table,
+  .violation-table tbody {
+    display: block;
+  }
+  .violation-table thead {
+    display: none;
+  }
+  .violation-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .violation-table td {
+    display: block;
+    min-width: 0;
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .violation-table td:first-child {
+    grid-column: 1 / -1;
+  }
+  .violation-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    color: var(--text-muted);
+  }
+  .violation-table .violation-detail {
+    display: block;
+  }
+}

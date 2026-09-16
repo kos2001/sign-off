@@ -1,54 +1,37 @@
 ---
 name: sign-off-api
-description: "Query the Sign-off Hub REST API for chip-design sign-off data: projects, per-domain sign-off runs (STA/EM-IR/PV/glitch power/thermal), violations, waivers, shift-left stage-gate status, and the fast pre-signoff analysis endpoints (RTL ladder, IR-drop screening, MMMC timing summary, vectorless glitch power). Use WHENEVER the user asks about sign-off status, a project's gate readiness, open violations, or wants a screening analysis run — instead of guessing at numbers."
+description: Query Sign-off Hub projects, runs, violations, evidence and stage gates, or carry out a user-requested analysis or review update using its REST API.
 ---
 
 # Sign-off Hub API
 
-Base URL: `${SIGNOFF_API:-http://127.0.0.1:8001}` (Swagger at `/docs`). No auth in the MVP.
+Use `${SIGNOFF_API:-http://127.0.0.1:18000}`; `/docs` and `/openapi.json` describe the running API. The browser at port 15173 proxies `/api/*` to this backend without the `/api` prefix.
 
-## Reading state
+## Session and permissions
 
-| 목적 | 호출 |
+Read `GET /auth/session` first. `mode=local` permits local access; `mode=required` uses the user's authenticated session and project role. Do not assume anonymous access or use the Hermes API_SERVER_KEY as a Sign-off credential. Do not display passwords, session cookies or API keys. For mutations in required mode, send the session's `csrf_token` in `X-CSRF-Token` alongside its session cookie. If no authenticated session is available, explain which access is missing.
+
+## Inspect a project
+
+| Purpose | Request |
 |---|---|
-| 프로젝트 목록 | `GET /projects` |
-| 프로젝트 상세 | `GET /projects/{id}` |
-| 프로젝트의 사인오프 런 목록 | `GET /projects/{id}/runs` |
-| 스테이지 게이트 상태 | `GET /projects/{id}/signoff-status?stage=placement` |
-| 런의 위반 목록 | `GET /runs/{run_id}/violations` |
+| List/select projects | `GET /projects` |
+| Project and runs | `GET /projects/{id}`, `GET /projects/{id}/runs` |
+| Gate for a stage | `GET /projects/{id}/signoff-status?stage=placement` |
+| Filtered violations | `GET /projects/{id}/violations` |
+| Current violation/version | `GET /violations/{id}` |
+| Run violations | `GET /runs/{id}/violations` |
+| Recorded review events | `GET /violations/{id}/history/page` |
+| Full history export | `GET /violations/{id}/history/export` |
 
-`stage` is one of `rtl | synthesis | placement | routing | final`. `signoff-status` returns, per domain required at that stage, whether the latest run *at that stage* passed with no open blocking violations — this is the authority for "is the gate open", not a raw scan of `/runs`.
+Read the live schema for evidence, report import, timing-path, and comparison endpoints and query parameters. Do not guess endpoint paths. Follow pagination until the requested scope is covered; do not label a first page as all results. History cursors and snapshot IDs belong to the selected violation and filters.
 
-## Running screening analysis (stateless, no project required)
+Stages: `rtl`, `synthesis`, `placement`, `routing`, `final`. Use the gate response for the requested stage. Its latest run per domain and stage decides readiness; an earlier-stage pass cannot substitute. The gate also checks evidence coverage, so a passed status alone is insufficient.
 
-```bash
-curl -s -X POST "$SIGNOFF_API/analysis/rtl-signoff" \
-  -H "Content-Type: application/json" \
-  -d '{"code": "<SystemVerilog source>", "project_id": 1}'
-```
-Runs verilator lint → CDC/reset/FSM design-rule checks → yosys synthesis and returns a `SIGNED_OFF | CONDITIONAL | REJECTED` verdict with per-rule pass/violation detail. `project_id` is optional; when given, the result is recorded as a run. A streaming variant exists at `/analysis/rtl-signoff/stream` (newline-delimited JSON events: `stage_start`, `stage_done`, `result`).
+## Analyses and writes
 
-```bash
-curl -s -X POST "$SIGNOFF_API/analysis/ir-drop" -H "Content-Type: application/json" \
-  -d '{"cell_density": [[...]], "switching_activity": [[...]], "pdn_strength": [[...]], "vdd": 1.8}'
-curl -s -X POST "$SIGNOFF_API/analysis/glitch-power" -H "Content-Type: application/json" \
-  -d '{"nets": [{"name": "n1", "cap_ff": 20, "functional_toggle_rate": 0.2, "total_toggle_rate": 0.6}], "vdd": 1.8, "clock_period_ns": 10}'
-curl -s -X POST "$SIGNOFF_API/analysis/timing-summary" -H "Content-Type: application/json" \
-  -d '{"corners": [{"name": "ss_100C_1v60", "endpoint_slacks_ps": [-320, 60, ...]}], "pba_pessimism_credit_ps": 15}'
-```
+For an explicitly requested analysis, inspect the request schema before calling `/analysis/rtl-signoff`, `/analysis/ir-drop`, `/analysis/glitch-power` or `/analysis/timing-summary`. Omit `project_id` for a no-save RTL check; including it persists a run. Explain screening limits using `sign-off-evidence-review`. Do not execute submitted RTL merely to answer a status question.
 
-These three are **pre-signoff screening**, not golden sign-off — say so when reporting their results (see SOUL.md). None of them require a `project_id`; pass one only if the caller wants the result recorded against a project.
+For an authorized violation update, read the current `status` and `version`, then send `expected_status`, `expected_version`, target `status`, `actor`, and `reason` to `PATCH /violations/{id}`. A waiver can also use `POST /violations/{id}/waiver` with `expected_version`, `approved_by`, and `reason`. Actual roles and attribution are enforced by the server. On 409, show the changed record and reassess; do not blindly retry against a newer version.
 
-## Writing state
-
-- `POST /projects` — `{name, process_node, foundry}`
-- `POST /projects/{id}/runs` — `{domain, stage, tool}` (domain: `rtl|sta|emir|pv|glitch_power|thermal`)
-- `PATCH /runs/{id}` — `{status: "passed"|"failed"}`
-- `POST /runs/{id}/violations` — array of `{check_name, severity, location?}`
-- `POST /violations/{id}/waiver` — `{reason, approved_by}` — records a waiver; does **not** change the violation's underlying risk, only its `status`.
-
-## Traps
-
-- `GET /projects/{id}/signoff-status` needs a `stage` query param — omitting it is a 422, not "all stages".
-- A run's `status` starts `"running"` until `PATCH`ed to `passed`/`failed`; a stage gate blocked on a domain with no run at all looks identical in the UI to one blocked on a `running` run — check `reason` in the gate response to tell them apart.
-- The RTL ladder's `run_id` in its result is only populated when you passed a `project_id` in the request; without it, the analysis is stateless and nothing is recorded.
+A request to explain readiness does not authorize changing results, approvals or waivers. When updates are requested, report the actual returned state and event; an LLM recommendation is not an approval record.

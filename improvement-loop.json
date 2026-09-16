@@ -1,0 +1,8 @@
+{
+  "goal": "Sign-off Hub를 상용 서비스 수준으로 개선한다. 현재 증거에서 가장 중요한 문제 한 가지를 선택해 수정하고, 사용자 동작과 회귀 검증 근거를 남긴다.",
+  "checks": [
+    {"name": "backend", "cwd": "backend", "argv": ["{python}", "-m", "pytest", "-q"]},
+    {"name": "frontend", "cwd": "frontend", "argv": ["npm", "run", "build"]}
+  ],
+  "protected": ["improvement-loop.json", "scripts/", "backend/tests/", ".github/", ".gitignore", "frontend/package.json", "frontend/package-lock.json", "frontend/pnpm-lock.yaml", "backend/requirements.txt", "backend/requirements.in"]
+}
