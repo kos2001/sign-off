@@ -18,10 +18,21 @@ function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { proj
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState<number | null>(null);
+  const [attestationText, setAttestationText] = useState('');
   const fileVersion = useRef(0);
   function edit(patch: Partial<ReportImportInput>) {
     setForm(current => ({ ...current, ...patch, import_id: crypto.randomUUID() }));
     setPreview(null); setSaved(null); setError('');
+  }
+  function requestForm(): ReportImportInput {
+    if (!commercialSta || !attestationText.trim()) return form;
+    try {
+      const parsed = JSON.parse(attestationText) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+      return { ...form, coverage_attestation: parsed as ReportImportInput['coverage_attestation'] };
+    } catch {
+      throw new Error('커버리지 증명은 JSON 객체여야 합니다.');
+    }
   }
   if (project.isPending) return <p role="status">프로젝트 불러오는 중…</p>;
   if (project.isError) return <p role="alert">{project.error.message}</p>;
@@ -33,7 +44,7 @@ function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { proj
     {drc && <p className="text-sm">PV 보고서 수집에는 에이전트가 개입하지 않습니다. 위반 승인·웨이버는 권한 있는 사용자가 처리합니다.</p>}
     <form className="space-y-4" onSubmit={async e => {
       e.preventDefault(); setPending(true); setError(''); setPreview(null);
-      try { setPreview(await (klayout ? api.previewKLayout(projectId, form) : commercialDrc ? api.previewCommercialDrc(projectId, form) : commercialSta ? api.previewCommercialSta(projectId, form) : api.previewOpenSta(projectId, form))); }
+      try { const body = requestForm(); setPreview(await (klayout ? api.previewKLayout(projectId, body) : commercialDrc ? api.previewCommercialDrc(projectId, body) : commercialSta ? api.previewCommercialSta(projectId, body) : api.previewOpenSta(projectId, body))); }
       catch (error) { setError((error as Error).message); }
       finally { setPending(false); }
     }}>
@@ -55,6 +66,7 @@ function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { proj
           finally { setPending(false); }
         }} /></label>
         <label className="block text-sm">{klayout ? "보고서 XML" : "보고서 JSON"}<textarea aria-label={klayout ? "보고서 XML" : "보고서 JSON"} className="input mt-1 w-full font-mono text-xs" rows={10} required maxLength={2_000_000} spellCheck={false} value={form.source_text} onChange={e => { fileVersion.current++; edit({ source_text: e.target.value }); }} /></label>
+        {commercialSta && <label className="block text-sm">신뢰된 수집기 커버리지 증명 (선택)<textarea aria-label="커버리지 증명 JSON" className="input mt-1 w-full font-mono text-xs" rows={7} spellCheck={false} value={attestationText} onChange={e => { setAttestationText(e.target.value); setPreview(null); setSaved(null); setError(''); }} placeholder='{"format":"signoff/coverage-attestation/v1", ...}' /><span className="mt-1 block text-xs text-[var(--text-muted)]">서버에 등록된 수집기 키로 서명된 증명만 전체 STA 실행 범위로 인정합니다. 일반 경로 보고서는 계속 부분 근거로 저장됩니다.</span></label>}
         <button className="btn btn-primary" disabled={pending || saved !== null}>{pending ? '처리 중…' : '가져오기 미리보기'}</button>
       </fieldset>
     </form>
@@ -71,7 +83,8 @@ function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { proj
       {preview.tool && <p className="text-sm">수집 툴: <strong>{preview.tool}</strong>{preview.tool_version ? ` · ${preview.tool_version}` : ''}</p>}
       <p className="text-sm">경로 {preview.metrics.reported_paths}개 · 위반 {preview.metrics.violating_paths}개 · 제약 없음 {preview.metrics.unconstrained_paths}개</p>
       <p className="text-sm break-all">보고된 최악 슬랙: {preview.metrics.worst_reported_slack_ps === null ? '없음' : `${preview.metrics.worst_reported_slack_ps} ps`}</p>
-      <p className="text-sm">{preview.status === 'failed' ? '위반이 있어 실패 상태로 저장합니다.' : '전체 검증 범위를 확인할 수 없어 검증 미완료로 저장합니다.'} 일부 경로만 포함될 수 있으므로 전체 설계의 WNS/TNS나 사인오프 통과로 해석하지 마세요.</p>
+      {preview.coverage_attestation?.verified && <p className="text-sm font-semibold">신뢰된 수집기 서명과 전체 STA 범위 선언을 검증했습니다.</p>}
+      <p className="text-sm">{preview.status === 'failed' ? '위반이 있어 실패 상태로 저장합니다.' : preview.coverage_attestation?.verified ? '서명된 전체 범위에서 보고된 위반과 제약 누락이 없어 통과 상태로 저장합니다.' : '전체 검증 범위를 확인할 수 없어 검증 미완료로 저장합니다.'} {!preview.coverage_attestation?.verified && '일부 경로만 포함될 수 있으므로 전체 설계의 WNS/TNS나 사인오프 통과로 해석하지 마세요.'}</p>
       <ul className="space-y-2">{preview.paths.slice(0, 20).map(path => <li key={path.index} className="rounded-lg bg-[var(--surface-2)] p-3 text-xs break-all"><strong>#{path.index} · {path.path_type} · {path.path_group}</strong><p>{path.startpoint} → {path.endpoint}</p><p>{path.slack_ps === null ? '제약 없음' : `${path.slack_ps} ps`}</p></li>)}</ul>
       {preview.paths.length > 20 && <p className="text-xs">처음 20개 경로를 표시합니다. 저장 시 전체 {preview.paths.length}개를 보존합니다.</p>}
       </>}
@@ -79,7 +92,7 @@ function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { proj
       <button className="btn btn-primary" disabled={pending} onClick={async () => {
         setPending(true); setError('');
         try {
-          const run = await (klayout ? api.importKLayout(projectId, form) : commercialDrc ? api.importCommercialDrc(projectId, form) : commercialSta ? api.importCommercialSta(projectId, form) : api.importOpenSta(projectId, form)); setSaved(run.id);
+          const body = requestForm(); const run = await (klayout ? api.importKLayout(projectId, body) : commercialDrc ? api.importCommercialDrc(projectId, body) : commercialSta ? api.importCommercialSta(projectId, body) : api.importOpenSta(projectId, body)); setSaved(run.id);
           await Promise.all([qc.invalidateQueries({ queryKey: ['runs', projectId] }), qc.invalidateQueries({ queryKey: ['gate', projectId] }), qc.invalidateQueries({ queryKey: ['project-violations', projectId] })]);
         } catch (error) { setError((error as Error).message); }
         finally { setPending(false); }

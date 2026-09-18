@@ -1,7 +1,9 @@
 import copy
 import hashlib
+import hmac
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -12,6 +14,8 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.models import ReportImport, RunEvidence, SignoffRun, Violation
 from app.services.report_import import parse_commercial_sta, parse_opensta
+from app.services.coverage_attestation import REQUIRED_STA_CLAIMS, canonical_payload
+from app.routers.imports import CoverageAttestationPayload
 from test_auth import accounts  # Reuse authenticated project fixture.
 
 
@@ -48,6 +52,23 @@ def commercial_payload(document=None):
     return {'import_id': str(uuid.uuid4()), 'stage': 'routing', 'filename': 'primetime-paths.json',
             'tool_version': document.get('tool_version', 'T-2025.06'), 'design_revision': 'rev-commercial',
             'scenario': 'ss-setup', 'source_text': json.dumps(document, ensure_ascii=False, indent=2) + '\n'}
+
+
+def attest_sta(body, project_id, secret='collector-secret-that-is-at-least-32-bytes'):
+    now = datetime.now(timezone.utc)
+    value = {
+        'format': 'signoff/coverage-attestation/v1', 'attestation_id': body['import_id'],
+        'key_id': 'qa-collector-1', 'issued_at': now.isoformat(),
+        'expires_at': (now + timedelta(hours=1)).isoformat(), 'project_id': project_id,
+        'stage': body['stage'], 'domain': 'sta', 'design_revision': body['design_revision'],
+        'source_sha256': hashlib.sha256(body['source_text'].encode()).hexdigest(),
+        'tool': json.loads(body['source_text'])['tool'], 'tool_version': body['tool_version'],
+        'scenario': body['scenario'], 'claims': {claim: True for claim in REQUIRED_STA_CLAIMS},
+        'signature': '0' * 64,
+    }
+    parsed = CoverageAttestationPayload.model_validate(value)
+    value['signature'] = hmac.new(secret.encode(), canonical_payload(parsed), hashlib.sha256).hexdigest()
+    return value
 
 
 def project(client):
@@ -126,6 +147,96 @@ def test_commercial_sta_preview_import_paths_and_evidence(client):
     assert client.post(path, json=body).json()['id'] == run['id']
     assert client.post(path, json={**body, 'scenario': 'ff-hold'}).status_code == 409
     assert client.post(path + '/preview', json={**body, 'tool_version': 'mismatch'}).status_code == 422
+
+
+def test_trusted_sta_attestation_can_establish_gate_coverage(client, monkeypatch):
+    secret = 'collector-secret-that-is-at-least-32-bytes'
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': secret}))
+    pid = project(client)
+    body = commercial_payload({**commercial_report(slack=0.1), 'paths': []})
+    body['coverage_attestation'] = attest_sta(body, pid, secret)
+    path = f'/projects/{pid}/imports/commercial-sta'
+    preview = client.post(path + '/preview', json=body)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()['status'] == 'passed'
+    assert preview.json()['coverage'] == 'collector_attested_complete'
+    assert preview.json()['coverage_attestation']['verified'] is True
+    response = client.post(path, json=body)
+    assert response.status_code == 201, response.text
+    run = response.json()
+    assert run['status'] == 'passed'
+    evidence = client.get(f"/runs/{run['id']}/evidence").json()
+    assert evidence['result']['coverage_attestation']['signature'] == body['coverage_attestation']['signature']
+    candidate_body = commercial_payload({**commercial_report(slack=0.1), 'paths': []})
+    candidate_body['coverage_attestation'] = attest_sta(candidate_body, pid, secret)
+    candidate = client.post(path, json=candidate_body).json()
+    comparison = client.get(f"/projects/{pid}/run-comparison", params={
+        'baseline_run_id': run['id'], 'candidate_run_id': candidate['id'],
+    }).json()
+    assert comparison['partial'] is False
+    monkeypatch.delenv('SIGNOFF_COVERAGE_HMAC_KEYS')
+    assert client.post(path, json=body).json()['id'] == run['id']  # Durable idempotent retry after key rotation.
+    domain = next(item for item in client.get(
+        f'/projects/{pid}/signoff-status?stage=routing').json()['domains'] if item['domain'] == 'sta')
+    assert domain['ready'] is True and domain['run_id'] == candidate['id']
+
+
+@pytest.mark.parametrize('mutation', ['signature', 'source_sha256', 'claims', 'claim_type', 'expired', 'unknown_key'])
+def test_invalid_sta_attestation_never_promotes_coverage(client, monkeypatch, mutation):
+    secret = 'collector-secret-that-is-at-least-32-bytes'
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': secret}))
+    pid = project(client)
+    body = commercial_payload({**commercial_report(slack=0.1), 'paths': []})
+    attestation = attest_sta(body, pid, secret)
+    if mutation == 'signature':
+        attestation['signature'] = 'f' * 64
+    elif mutation == 'source_sha256':
+        attestation['source_sha256'] = '0' * 64
+    elif mutation == 'claims':
+        attestation['claims'].pop('findings_complete')
+    elif mutation == 'claim_type':
+        attestation['claims']['findings_complete'] = 1
+    elif mutation == 'expired':
+        attestation['issued_at'] = '2020-01-01T00:00:00Z'
+        attestation['expires_at'] = '2020-01-01T01:00:00Z'
+    else:
+        attestation['key_id'] = 'unknown'
+    body['coverage_attestation'] = attestation
+    response = client.post(f'/projects/{pid}/imports/commercial-sta/preview', json=body)
+    assert response.status_code == 422
+    assert client.get(f'/projects/{pid}/runs').json() == []
+
+
+def test_attestation_requires_server_key_configuration(client):
+    pid = project(client)
+    body = commercial_payload({**commercial_report(slack=0.1), 'paths': []})
+    body['coverage_attestation'] = attest_sta(body, pid)
+    response = client.post(f'/projects/{pid}/imports/commercial-sta/preview', json=body)
+    assert response.status_code == 503
+
+
+def test_attested_sta_findings_still_fail(client, monkeypatch):
+    secret = 'collector-secret-that-is-at-least-32-bytes'
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': secret}))
+    pid = project(client)
+    body = commercial_payload(commercial_report(slack=-0.025))
+    body['coverage_attestation'] = attest_sta(body, pid, secret)
+    preview = client.post(f'/projects/{pid}/imports/commercial-sta/preview', json=body)
+    assert preview.status_code == 200
+    assert preview.json()['status'] == 'failed'
+    run = client.post(f'/projects/{pid}/imports/commercial-sta', json=body).json()
+    domain = next(item for item in client.get(
+        f'/projects/{pid}/signoff-status?stage=routing').json()['domains'] if item['domain'] == 'sta')
+    assert domain['run_id'] == run['id'] and domain['ready'] is False
+    assert domain['reason'] == "latest run status is 'failed'"
+
+
+def test_invalid_configured_attestation_keys_stop_app_startup(monkeypatch):
+    from app.main import create_app
+    from app.services.coverage_attestation import AttestationConfigurationError
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', '{"duplicate":"a", "duplicate":"b"}')
+    with pytest.raises(AttestationConfigurationError):
+        create_app()
 
 
 @pytest.mark.parametrize('source', [
