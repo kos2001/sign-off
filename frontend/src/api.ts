@@ -372,7 +372,9 @@ export interface SignoffReleaseDecision {
   id: number; project_id: number; stage: Stage; decision: 'approved' | 'rejected';
   reason: string; design_revision: string | null; decided_by: string;
   decided_by_user_id: number | null; manifest_sha256: string; package_sha256: string;
-  decision_sha256: string; byte_length: number; created_at: string; gate: GateStatus;
+  decision_sha256: string; gate_snapshot_sha256: string | null; evidence_snapshot_sha256: string | null;
+  lifecycle_status: 'current' | 'evidence_changed' | 'superseded_by_decision' | 'legacy_unbound';
+  byte_length: number; created_at: string; gate: GateStatus;
 }
 
 export interface IrDropResult {

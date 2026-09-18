@@ -91,6 +91,7 @@ export default function ProjectDetail() {
     queryFn: ({ pageParam }) => api.signoffReleases(projectId, pageParam),
     initialPageParam: null as number | null,
     getNextPageParam: page => page.next_before_id ?? undefined,
+    refetchInterval: 5000,
   });
   const releaseDecision = useMutation({
     mutationFn: (decision: 'approved' | 'rejected') => api.createSignoffRelease(projectId, { stage, decision, reason: releaseReason }),
@@ -260,12 +261,14 @@ export default function ProjectDetail() {
                 {releaseItems.map(item => <li key={item.id} className="rounded-md border border-[var(--grid-hairline)] p-2 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={item.decision === 'approved' ? 'good' : 'critical'} label={item.decision === 'approved' ? '승인' : '차단'} />
+                    <StatusBadge status={item.lifecycle_status === 'current' ? 'good' : 'warning'} label={{ current: '현재 근거와 일치', evidence_changed: '근거 변경 · 재결정 필요', superseded_by_decision: '후속 결정으로 대체됨', legacy_unbound: '기존 기록 · 현재성 미확인' }[item.lifecycle_status]} />
                     <strong>{STAGE_LABELS[item.stage]}</strong>
                     <span>{item.decided_by} · {new Date(item.created_at).toLocaleString()}</span>
                     <button className="btn btn-ghost" disabled={archivedPackage.isPending} onClick={() => archivedPackage.mutate(item.id)}>보관 패키지</button>
                   </div>
                   <p className="mt-1 break-words">{item.reason}</p>
                   <p className="mt-1 break-all text-[var(--text-muted)]">리비전 {item.design_revision || '미확정'} · 패키지 SHA-256 {item.package_sha256}</p>
+                  {item.lifecycle_status === 'evidence_changed' && <p className="mt-1 text-[var(--status-warning)]">현재 런·웨이버·사인오프 계획이 이 결정의 동결 근거와 다릅니다. 현재 게이트를 다시 검토해 새 결정을 기록하세요.</p>}
                 </li>)}
               </ul> : <p className="text-xs text-[var(--text-muted)]">기록된 사인오프 결정이 없습니다.</p>}
               {releases.hasNextPage && <button className="btn btn-ghost" disabled={releases.isFetchingNextPage} onClick={() => void releases.fetchNextPage()}>{releases.isFetchingNextPage ? '이전 결정 불러오는 중…' : '이전 결정 더 보기'}</button>}

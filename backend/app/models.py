@@ -162,6 +162,8 @@ class SignoffReleaseDecision(Base):
     decided_by: Mapped[str] = mapped_column(String(80))
     decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
     gate_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    gate_snapshot_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evidence_snapshot_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     manifest: Mapped[dict] = mapped_column(JSON)
     manifest_sha256: Mapped[str] = mapped_column(String(64))
     package_sha256: Mapped[str] = mapped_column(String(64))
