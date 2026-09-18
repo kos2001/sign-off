@@ -5,6 +5,7 @@ import pytest
 
 from app.db import Base
 from app.main import create_app
+from app.request_limits import RequestBodyError, declared_content_length
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -124,6 +125,47 @@ def test_metrics_reports_readiness_without_failure_details(client, monkeypatch):
     response = client.get('/metrics', headers={'Authorization': f'Bearer {token}'})
     assert 'signoff_readiness_checks_total{result="not_ready",component="database"}' in response.text
     assert secret not in response.text
+
+
+def test_request_body_limit_rejects_declared_and_streamed_oversize(monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv('SIGNOFF_MAX_REQUEST_BYTES', '1024')
+    limited = TestClient(create_app())
+    secret = 'private-body-value-must-not-be-reflected'
+    declared = limited.post('/projects', content=b'{}', headers={'Content-Length': '1025'})
+    assert declared.status_code == 413
+    assert declared.json() == {'detail': 'request body exceeds 1024 bytes'}
+    streamed = limited.post('/projects', content=iter([secret.encode() * 20, b'x' * 600]))
+    assert streamed.status_code == 413
+    assert streamed.headers['cache-control'] == 'no-store'
+    assert re.fullmatch('[a-f0-9]{32}', streamed.headers['x-request-id'])
+    assert secret not in streamed.text
+
+
+def test_request_body_limit_accepts_exact_boundary(monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv('SIGNOFF_MAX_REQUEST_BYTES', '1024')
+    limited = TestClient(create_app())
+    response = limited.post('/projects', content=b'{}' + b' ' * 1022)
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize('value', ['1.5', '-1', '1023', str(256 * 1024 * 1024 + 1)])
+def test_invalid_request_body_limit_prevents_startup(monkeypatch, value):
+    monkeypatch.setenv('SIGNOFF_MAX_REQUEST_BYTES', value)
+    with pytest.raises(RuntimeError, match='SIGNOFF_MAX_REQUEST_BYTES'):
+        create_app()
+
+
+@pytest.mark.parametrize('headers,status', [
+    ([(b'content-length', b'10'), (b'Content-Length', b'10')], 400),
+    ([(b'content-length', b'9' * 10_000)], 413),
+])
+def test_unsafe_content_length_is_rejected_without_integer_parsing(headers, status):
+    request = type('Request', (), {'scope': {'headers': headers}})()
+    with pytest.raises(RequestBodyError) as error:
+        declared_content_length(request)
+    assert error.value.status_code == status
 
 
 @pytest.mark.parametrize('table_name', sorted(Base.metadata.tables))

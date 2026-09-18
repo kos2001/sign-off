@@ -14,6 +14,7 @@ from .auth import authorize, auth_required
 from .db import Base, engine, SessionLocal
 from .migrations import initialize_schema
 from .metrics import Metrics, configured_token
+from .request_limits import RequestBodyError, cache_limited_body, configured_request_limit
 from .worker_maintenance import worker_lifespan
 from .worker_readiness import WorkerReadiness
 from .services.rtl.worker_client import WorkerError
@@ -29,6 +30,7 @@ logger = logging.getLogger('uvicorn.error.signoff')
 def create_app() -> FastAPI:
     auth_required()  # Reject misspelled auth modes instead of silently disabling protection.
     configured_token()  # Reject weak scrape credentials before opening the service.
+    request_limit = configured_request_limit()
     capacity()
     sta_capacity()
     review_capacity()
@@ -85,7 +87,15 @@ def create_app() -> FastAPI:
         started = time.monotonic()
         app.state.metrics.start_request()
         try:
-            response = await call_next(request)
+            try:
+                await cache_limited_body(request, request_limit)
+            except RequestBodyError as error:
+                response = JSONResponse(
+                    status_code=error.status_code, content={'detail': error.detail},
+                    headers={'Cache-Control': 'no-store'},
+                )
+            else:
+                response = await call_next(request)
         except Exception as error:
             logger.error('request_failed request_id=%s failure=%s', request_id, type(error).__name__)
             response = JSONResponse(status_code=500, content={'detail': 'internal server error', 'request_id': request_id})
