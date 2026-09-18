@@ -13,13 +13,15 @@ export default function Dashboard() {
   const appliedSearch = params.get('q')?.trim() ?? '';
   const rawSort = params.get('sort');
   const sort = rawSort === 'oldest' || rawSort === 'name' ? rawSort : 'newest';
+  const rawLifecycle = params.get('lifecycle');
+  const lifecycle = rawLifecycle === 'archived' || rawLifecycle === 'all' ? rawLifecycle : 'active';
   const rawPage = Number(params.get('page'));
   const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1;
   const pageSize = 24;
   const [search, setSearch] = useState(appliedSearch);
   const projects = useQuery({
-    queryKey: ['project-summary-page', appliedSearch, sort, page],
-    queryFn: () => api.projectSummaryPage({ q: appliedSearch || undefined, sort, offset: (page - 1) * pageSize, limit: pageSize }),
+    queryKey: ['project-summary-page', appliedSearch, sort, lifecycle, page],
+    queryFn: () => api.projectSummaryPage({ q: appliedSearch || undefined, sort, lifecycle, offset: (page - 1) * pageSize, limit: pageSize }),
   });
   const [form, setForm] = useState({ name: "", process_node: "", foundry: "" });
   const [error, setError] = useState<string | null>(null);
@@ -87,8 +89,13 @@ export default function Dashboard() {
               <option value="newest">최근 등록순</option><option value="oldest">오래된 등록순</option><option value="name">이름순</option>
             </select>
           </Field>
+          <Field label="수명주기">
+            <select className="input" value={lifecycle} onChange={event => updateParams({ lifecycle: event.target.value === 'active' ? null : event.target.value, page: null })}>
+              <option value="active">활성 프로젝트</option><option value="archived">보관 프로젝트</option><option value="all">전체</option>
+            </select>
+          </Field>
           <button className="btn btn-primary">검색</button>
-          {(appliedSearch || sort !== 'newest') && <button type="button" className="btn btn-ghost" onClick={() => { setSearch(''); setParams({}); }}>초기화</button>}
+          {(appliedSearch || sort !== 'newest' || lifecycle !== 'active') && <button type="button" className="btn btn-ghost" onClick={() => { setSearch(''); setParams({}); }}>초기화</button>}
         </form>
         {projects.isLoading ? (
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
@@ -110,7 +117,7 @@ export default function Dashboard() {
                   style={{ background: "var(--surface-2)" }}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold">{p.name}</span>
+                    <span className="text-sm font-semibold">{p.name}{p.archived_at && <span className="ml-2 rounded-full border px-2 py-0.5 text-xs">보관됨</span>}</span>
                     <span className="text-xs" style={{ color: "var(--text-muted)" }}>
                       #{p.id} →
                     </span>

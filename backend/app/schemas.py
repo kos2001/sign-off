@@ -18,6 +18,35 @@ class ProjectOut(ProjectCreate):
 
     id: int
     created_at: datetime
+    lifecycle_version: int
+    archived_at: datetime | None
+    archived_by: str | None
+    archived_by_user_id: int | None
+
+
+class ProjectLifecycleUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    expected_version: int = Field(ge=1)
+    archived: bool
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class ProjectLifecycleEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    version: int
+    before_state: Literal['active', 'archived']
+    after_state: Literal['active', 'archived']
+    reason: str
+    actor: str
+    actor_user_id: int | None
+    created_at: datetime
+
+
+class ProjectLifecycleHistoryOut(BaseModel):
+    items: list[ProjectLifecycleEventOut]
+    next_before_id: int | None
 
 
 class SignoffPlanUpdate(BaseModel):

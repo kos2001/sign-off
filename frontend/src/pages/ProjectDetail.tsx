@@ -12,7 +12,7 @@ import { ReadyProgress, RunStatusBar } from "../components/charts";
 import { Card, Field, StatusBadge } from "../components/ui";
 import { defaultSignoffTool, SIGNOFF_TOOLS, signoffTool } from "../signoffTools";
 
-function SignoffPlanEditor({ projectId, stage }: { projectId: number; stage: Stage }) {
+function SignoffPlanEditor({ projectId, stage, readOnly = false }: { projectId: number; stage: Stage; readOnly?: boolean }) {
   const auth = useAuth();
   const qc = useQueryClient();
   const plan = useQuery({ queryKey: ['signoff-plan', projectId], queryFn: () => api.signoffPlan(projectId) });
@@ -25,7 +25,7 @@ function SignoffPlanEditor({ projectId, stage }: { projectId: number; stage: Sta
   if (plan.isError || !current) return <p role="alert" className="text-sm">사인오프 계획을 불러오지 못했습니다.</p>;
   return <section className="rounded-lg border border-[var(--border)] p-3 space-y-3" aria-label="프로젝트 사인오프 계획">
     <div><h3 className="font-semibold text-sm">프로젝트 사인오프 계획 · {STAGE_LABELS[stage]}</h3><p className="text-xs text-[var(--text-muted)]">{current.source === 'default' ? '서비스 기본 계획' : `사용자 정의 계획 v${current.version}`} · 필수 도메인 {current.required_domains.map(domain => DOMAIN_LABELS[domain]).join(', ')}</p>{current.reason && <p className="mt-1 text-xs">변경 사유: {current.reason} · {current.updated_by}</p>}</div>
-    {auth.can(projectId, 'approver') && <details><summary className="cursor-pointer text-sm font-medium">필수 도메인 편집</summary><div className="mt-3 space-y-3">
+    {auth.can(projectId, 'approver') && !readOnly && <details><summary className="cursor-pointer text-sm font-medium">필수 도메인 편집</summary><div className="mt-3 space-y-3">
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(Object.keys(DOMAIN_LABELS) as Domain[]).map(domain => <label key={domain} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={domains.includes(domain)} onChange={event => setDomains(values => event.target.checked ? [...values, domain] : values.filter(value => value !== domain))}/>{DOMAIN_LABELS[domain]}</label>)}</div>
       <textarea className="input w-full" rows={2} maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} placeholder="계획 변경 사유" aria-label="사인오프 계획 변경 사유"/>
       <button className="btn btn-primary" disabled={!domains.length || !reason.trim() || update.isPending} onClick={() => update.mutate()}>{update.isPending ? '계획 저장 중…' : '새 계획 버전 저장'}</button>
@@ -82,6 +82,11 @@ export default function ProjectDetail() {
   runFilterKeyRef.current = runFilterKey;
   useEffect(() => { setOlderRuns([]); setOlderCursor(undefined); }, [runFilterKey]);
   const [releaseReason, setReleaseReason] = useState("");
+  const [lifecycleReason, setLifecycleReason] = useState('');
+  const project = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => api.getProject(projectId),
+  });
   const gateExport = useMutation({
     mutationFn: (input: { projectId: number; stage: Stage }) => api.exportGate(input.projectId, input.stage),
     onSuccess: (blob, input) => {
@@ -109,7 +114,7 @@ export default function ProjectDetail() {
     queryFn: ({ pageParam }) => api.signoffReleases(projectId, pageParam),
     initialPageParam: null as number | null,
     getNextPageParam: page => page.next_before_id ?? undefined,
-    refetchInterval: 5000,
+    refetchInterval: project.data?.archived_at ? false : 5000,
   });
   const releaseDecision = useMutation({
     mutationFn: (decision: 'approved' | 'rejected') => api.createSignoffRelease(projectId, { stage, decision, reason: releaseReason }),
@@ -130,15 +135,29 @@ export default function ProjectDetail() {
     },
   });
 
-  const project = useQuery({
-    queryKey: ["project", projectId],
-    queryFn: () => api.getProject(projectId),
+  const lifecycleHistory = useQuery({
+    queryKey: ['project-lifecycle-history', projectId], queryFn: () => api.projectLifecycleHistory(projectId),
+    enabled: auth.can(projectId, 'owner'),
+  });
+  const lifecycle = useMutation({
+    mutationFn: (archived: boolean) => api.updateProjectLifecycle(projectId, {
+      expected_version: project.data!.lifecycle_version, archived, reason: lifecycleReason.trim(),
+    }),
+    onSuccess: async () => {
+      setLifecycleReason('');
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['project', projectId] }),
+        qc.invalidateQueries({ queryKey: ['project-lifecycle-history', projectId] }),
+        qc.invalidateQueries({ queryKey: ['project-summary-page'] }),
+        qc.invalidateQueries({ queryKey: ['projects'] }),
+      ]);
+    },
   });
   // 5s polling keeps runs and gate status live while ladders execute elsewhere
   const runs = useQuery({
     queryKey: ["runs-page", projectId, runFilters, appliedToolQuery],
     queryFn: () => api.runPage(projectId, { ...runFilters, q: appliedToolQuery || undefined }),
-    refetchInterval: 5000,
+    refetchInterval: project.data?.archived_at ? false : 5000,
   });
   const loadOlderRuns = useMutation({
     mutationFn: ({ beforeId }: { beforeId: number; filterKey: string }) => api.runPage(projectId, {
@@ -157,7 +176,7 @@ export default function ProjectDetail() {
   const gate = useQuery({
     queryKey: ["gate", projectId, stage],
     queryFn: () => api.gateStatus(projectId, stage),
-    refetchInterval: 5000,
+    refetchInterval: project.data?.archived_at ? false : 5000,
   });
 
   const invalidate = () => {
@@ -172,7 +191,7 @@ export default function ProjectDetail() {
   const gateReview = useQuery({
     queryKey: ["agent-review-gate", projectId, stage, gate.data],
     queryFn: () => api.reviewGate({ gate_status: gate.data }),
-    enabled: !!gate.data,
+    enabled: !!gate.data && !project.data?.archived_at,
     staleTime: Infinity, refetchOnWindowFocus: false, retry: false,
   });
 
@@ -197,16 +216,30 @@ export default function ProjectDetail() {
         <Link className="btn btn-primary" to={`/projects/${projectId}/violations`}>전체 위반 검토</Link>
         <Link className="btn btn-ghost" to={`/projects/${projectId}/compare`}>런 비교</Link>
         <Link className="btn btn-ghost" to={`/projects/${projectId}/sta-matrix`}>STA 시나리오 매트릭스</Link>
-        {auth.can(projectId, "editor") && <Link className="btn btn-ghost" to={`/projects/${projectId}/import`}>보고서 가져오기</Link>}
+        {auth.can(projectId, "editor") && !p.archived_at && <Link className="btn btn-ghost" to={`/projects/${projectId}/import`}>보고서 가져오기</Link>}
         {auth.state.mode === "required" && auth.can(projectId, "owner") && <Link className="btn btn-ghost" to={`/projects/${projectId}/members`}>접근 권한</Link>}
         {auth.can(projectId, "owner") && <Link className="btn btn-ghost" to={`/projects/${projectId}/collectors`}>수집기 자격증명</Link>}
       </header>
+
+      {p.archived_at && <p role="status" className="rounded-lg border border-[var(--status-warning)] p-3">이 프로젝트는 보관 상태이며 모든 쓰기 작업과 수집기 제출이 차단됩니다. 기존 근거·결정·감사 이력은 계속 조회할 수 있습니다.</p>}
+
+      {auth.can(projectId, 'owner') && <Card title="프로젝트 수명주기" subtitle="완료된 설계를 삭제하지 않고 운영 목록에서 보관합니다">
+        <div className="space-y-3">
+          <p className="text-sm">현재 상태: <strong>{p.archived_at ? '보관됨' : '활성'}</strong> · 버전 {p.lifecycle_version}{p.archived_at && ` · ${p.archived_by ?? '알 수 없음'} · ${new Date(p.archived_at).toLocaleString()}`}</p>
+          <Field label={p.archived_at ? '복원 사유' : '보관 사유'}><textarea className="input w-full" rows={2} maxLength={2000} value={lifecycleReason} onChange={event => setLifecycleReason(event.target.value)} /></Field>
+          <button className={p.archived_at ? 'btn btn-primary' : 'btn btn-ghost'} disabled={!lifecycleReason.trim() || lifecycle.isPending} onClick={() => lifecycle.mutate(!p.archived_at)}>{lifecycle.isPending ? '처리 중…' : p.archived_at ? '활성 프로젝트로 복원' : '프로젝트 보관'}</button>
+          {!p.archived_at && <p className="text-xs text-[var(--text-muted)]">실행 중인 런이나 STA 배치가 있으면 보관할 수 없습니다. 보관 후 모든 쓰기와 자동 수집이 중단됩니다.</p>}
+          {lifecycle.isError && <p role="alert" className="text-sm">{lifecycle.error.message}</p>}
+          <details><summary className="cursor-pointer text-sm font-medium">보관·복원 이력</summary>{lifecycleHistory.isPending ? <p>이력 불러오는 중…</p> : lifecycleHistory.isError ? <p role="alert">{lifecycleHistory.error.message}</p> : lifecycleHistory.data.items.length === 0 ? <p className="text-sm">아직 변경 이력이 없습니다.</p> : <ul className="mt-2 space-y-2">{lifecycleHistory.data.items.map(item => <li key={item.id} className="rounded border p-2 text-sm">v{item.version} · {item.after_state === 'archived' ? '보관' : '복원'} · {item.actor} · {new Date(item.created_at).toLocaleString()}<p>{item.reason}</p></li>)}</ul>}</details>
+          <p className="text-xs text-[var(--text-muted)]">보관·복원 판단에는 AI가 개입하지 않습니다.</p>
+        </div>
+      </Card>}
 
       <Card
         title="Shift-left 스테이지 게이트"
         subtitle="도메인별 최신 런의 검증 범위와 설계 리비전을 확인합니다. 수동 통과 상태만으로는 게이트를 통과할 수 없습니다."
       >
-        <SignoffPlanEditor key={stage} projectId={projectId} stage={stage} />
+        <SignoffPlanEditor key={stage} projectId={projectId} stage={stage} readOnly={!!p.archived_at} />
         <div className="mb-4 mt-4 space-y-2 text-sm">
           <div className="flex flex-wrap gap-2">
             <button className="btn btn-primary" disabled={evidencePackage.isPending} onClick={() => evidencePackage.mutate({ projectId, stage })}>{evidencePackage.isPending ? `${STAGE_LABELS[evidencePackage.variables.stage]} 패키지 준비 중…` : '검증된 근거 패키지 다운로드'}</button>
@@ -282,7 +315,7 @@ export default function ProjectDetail() {
                 <h3 className="font-semibold text-sm">사람의 사인오프 결정</h3>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">승인자만 결정할 수 있습니다. 서버가 현재 근거 패키지를 다시 검증해 결정과 함께 불변 보관하며 AI는 승인·거절에 개입하지 않습니다.</p>
               </div>
-              {auth.can(projectId, 'approver') && <div className="space-y-2">
+              {auth.can(projectId, 'approver') && !p.archived_at && <div className="space-y-2">
                 <textarea className="input w-full" rows={2} maxLength={4000} value={releaseReason} onChange={event => setReleaseReason(event.target.value)} placeholder="결정 사유" aria-label="사인오프 결정 사유" />
                 <div className="flex flex-wrap gap-2">
                   <button className="btn btn-primary" disabled={!gate.data.ready || !releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('approved')}>게이트 승인·동결</button>
@@ -325,12 +358,12 @@ export default function ProjectDetail() {
                 </li>
               ))}
             </ul>
-            <div className="pt-3">
+            {!p.archived_at ? <div className="pt-3">
               <h3 className="font-semibold text-sm">에이전트 검토 흐름 · A5 종합 → V 검증</h3>
               <p className="mt-1 text-xs text-[var(--text-muted)]">선택한 스테이지의 현재 게이트 근거를 검토합니다. 두 역할의 결과는 함께 표시되며, 승인·웨이버는 사람이 별도로 결정합니다.</p>
               <AgentReviewPanel role="a5_synth" scope={STAGE_LABELS[stage]} review={gateReview.data?.a5} loading={gateReview.isFetching} failed={gateReview.isError} onRetry={() => void gateReview.refetch()} retryLabel="종합·검증 다시 시도" />
               <AgentReviewPanel role="v_verify" scope={STAGE_LABELS[stage]} review={gateReview.data?.v} loading={gateReview.isFetching} waitingLabel={gateReview.isError ? '진행 확인 불가' : gateReview.data?.a5.available === false ? '선행 검토 미완료' : gateReview.data?.a5.triggered === false ? '조건 미해당 · 실행 안 됨' : '실행 전'} waiting={gateReview.isError ? '요청 결과를 받지 못해 V의 실행 여부를 확인할 수 없습니다.' : gateReview.data?.a5.available === false ? '선행 검토 미완료 · A5 의견이 없어 V는 실행되지 않았습니다.' : gateReview.data?.a5.triggered === false ? '게이트가 통과 가능하여 A5와 V를 실행하지 않았습니다.' : 'A5 종합 검토가 완료되면 원본 근거와 대조합니다.'} onRetry={() => void gateReview.refetch()} retryLabel="종합·검증 다시 시도" />
-            </div>
+            </div> : <p className="pt-3 text-xs text-[var(--text-muted)]">보관 프로젝트에서는 자동 검토를 새로 실행하지 않습니다. 기존 런의 저장된 검토 이력은 런 워크스페이스에서 확인할 수 있습니다.</p>}
           </div>
         )}
       </Card>
@@ -352,7 +385,7 @@ export default function ProjectDetail() {
         hasMore={(olderCursor === undefined ? runs.data?.next_before_id : olderCursor) != null}
         loadingMore={loadOlderRuns.isPending} loadError={loadOlderRuns.error?.message}
         onLoadMore={() => { const cursor = olderCursor === undefined ? runs.data?.next_before_id : olderCursor; if (cursor) loadOlderRuns.mutate({ beforeId: cursor, filterKey: runFilterKey }); }}
-        onChange={invalidate} />
+        onChange={invalidate} readOnly={!!p.archived_at} />
     </div>
   );
 }
@@ -369,6 +402,7 @@ function RunsCard({
   loadError,
   onLoadMore,
   onChange,
+  readOnly,
 }: {
   projectId: number;
   runs: SignoffRun[];
@@ -381,6 +415,7 @@ function RunsCard({
   loadError?: string;
   onLoadMore: () => void;
   onChange: () => void;
+  readOnly: boolean;
 }) {
   const auth = useAuth();
   const [form, setForm] = useState({
@@ -406,7 +441,7 @@ function RunsCard({
       </div>
       {loading && <p role="status" className="mb-3 text-sm">런 이력 불러오는 중…</p>}
       {error && <p role="alert" className="mb-3 text-sm">{error}</p>}
-      <form
+      {!readOnly && <form
         className="mb-4 flex flex-wrap items-end gap-3"
         onSubmit={(e) => {
           e.preventDefault();
@@ -456,7 +491,7 @@ function RunsCard({
         <button className="btn btn-primary" disabled={create.isPending || !auth.can(projectId, "editor")}>
           런 생성
         </button>
-      </form>
+      </form>}
 
       <section id="run-tool-help" aria-label="선택한 툴 안내" className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm space-y-1">
         <p className="font-semibold">{selectedTool.label}</p>
@@ -479,7 +514,7 @@ function RunsCard({
       ) : (
         <ul className="space-y-3">
           {runs.map((run) => (
-            <RunRow key={run.id} run={run} onChange={onChange} />
+            <RunRow key={run.id} run={run} onChange={onChange} readOnly={readOnly} />
           ))}
         </ul>
       )}
@@ -489,7 +524,7 @@ function RunsCard({
   );
 }
 
-function RunRow({ run, onChange }: { run: SignoffRun; onChange: () => void }) {
+function RunRow({ run, onChange, readOnly }: { run: SignoffRun; onChange: () => void; readOnly: boolean }) {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
   const update = useMutation({
@@ -525,10 +560,10 @@ function RunRow({ run, onChange }: { run: SignoffRun; onChange: () => void }) {
           {run.evidence_source === 'commercial_cdc_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/cdc-findings`}>CDC·RDC finding</Link>}
           {run.evidence_source === 'commercial_lec_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/lec-failures`}>LEC 실패</Link>}
           {run.evidence_source === 'commercial_lvs_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/lvs-mismatches`}>LVS 불일치</Link>}
-          <button className="btn btn-ghost" disabled={!auth.can(run.project_id, "editor") || update.isPending || run.result_locked} title={run.result_locked ? "서버 분석 결과는 다시 실행하여 갱신하세요" : "수동 상태 변경"} onClick={() => update.mutate("passed")}>
+          <button className="btn btn-ghost" disabled={readOnly || !auth.can(run.project_id, "editor") || update.isPending || run.result_locked} title={readOnly ? '보관 프로젝트는 읽기 전용입니다' : run.result_locked ? "서버 분석 결과는 다시 실행하여 갱신하세요" : "수동 상태 변경"} onClick={() => update.mutate("passed")}>
             Pass
           </button>
-          <button className="btn btn-ghost" disabled={!auth.can(run.project_id, "editor") || update.isPending || run.result_locked} title={run.result_locked ? "서버 분석 결과는 다시 실행하여 갱신하세요" : "수동 상태 변경"} onClick={() => update.mutate("failed")}>
+          <button className="btn btn-ghost" disabled={readOnly || !auth.can(run.project_id, "editor") || update.isPending || run.result_locked} title={readOnly ? '보관 프로젝트는 읽기 전용입니다' : run.result_locked ? "서버 분석 결과는 다시 실행하여 갱신하세요" : "수동 상태 변경"} onClick={() => update.mutate("failed")}>
             Fail
           </button>
           <button className="btn btn-ghost" onClick={() => setOpen((v) => !v)}>
@@ -538,7 +573,7 @@ function RunRow({ run, onChange }: { run: SignoffRun; onChange: () => void }) {
       </div>
       {update.isError && <p role="alert">{update.error.message}</p>}
       <RunEvidencePanel run={run} />
-      {open && <ViolationList locked={run.result_locked} runId={run.id} onChange={onChange} />}
+      {open && <ViolationList locked={run.result_locked || readOnly} runId={run.id} onChange={onChange} />}
     </li>
   );
 }
