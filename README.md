@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1017개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1026개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -125,12 +125,12 @@ RTL 테스트벤치 입력, 실제 Icarus 실행, 컴파일·실행 로그와 �
 프로젝트에서 [OpenSTA JSON 보고서 가져오기](docs/report-import.md)를 사용해 경로와 슬랙을 미리 보고 원본 근거·위반을 저장할 수 있습니다.
 [PrimeTime / Tempus 경로 JSON 가져오기](docs/commercial-sta-import.md)는 명시적인 툴·버전·시간 단위와
 핀 목록을 검증하고 같은 경로 탐색·비교·위반 검토 흐름에 연결합니다.
-[신뢰된 수집기 커버리지 증명](docs/coverage-attestation.md)을 STA, DRC, LVS, LEC, EM/IR, 전력, 열 또는 RTL 회귀 보고서와 함께 제출하면
+[신뢰된 수집기 커버리지 증명](docs/coverage-attestation.md)을 STA, CDC/RDC, DRC, LVS, LEC, EM/IR, 전력, 열 또는 RTL 회귀 보고서와 함께 제출하면
 서버에 등록된 HMAC 키로 실행 범위를 검증하며, 서명 없는 보고서는 계속 부분 근거로 처리합니다.
 [상용 EDA 수집기 CLI](docs/collector-cli.md)는 보고서를 같은 파서로 검증하고 비밀키를 명령행이나
 출력 파일에 노출하지 않은 채 서버에 바로 제출할 요청 JSON을 생성합니다.
 인증 필수 배포에서는 프로젝트 범위·만료·폐기를 적용한 수집기 Bearer 자격증명으로 브라우저
-세션 없이 여덟 상용 보고서 저장 API만 호출할 수 있으며 제출 신원은 실행 근거에 보존됩니다.
+세션 없이 아홉 상용 보고서 저장 API만 호출할 수 있으며 제출 신원은 실행 근거에 보존됩니다.
 [Calibre / Pegasus DRC 마커 JSON 가져오기](docs/commercial-drc-import.md)는 툴·버전·좌표 단위·심각도와
 도형을 검증하고 마커 탐색과 위반 검토 흐름에 연결합니다.
 [Calibre / Pegasus LVS 결과 가져오기](docs/commercial-lvs-import.md)는 레이아웃·회로도 TOP과 추출
@@ -145,6 +145,8 @@ compare point와 등가성 실패를 검증하고 synthesis/final 게이트의 �
 제한, 3D 위치를 정규화하고 열 핫스폿 탐색과 위반 검토에 연결합니다.
 [VCS / Xcelium RTL 회귀 결과 가져오기](docs/commercial-rtl-import.md)는 컴파일·테스트·assertion
 집계를 검증하고 테스트별 로그 탐색과 위반 검토에 연결합니다.
+[VC SpyGlass / Jasper CDC·RDC 결과 가져오기](docs/commercial-cdc-import.md)는 clock/reset domain,
+crossing과 정적 finding을 검증하고 RTL 게이트의 독립 CDC/RDC 근거로 연결합니다.
 
 운영 상태 확인과 문의 번호 로그는 [운영 점검](docs/operations.md)을 참고하세요.
 

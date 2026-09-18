@@ -1,4 +1,4 @@
-export type Domain = "rtl" | "sta" | "emir" | "pv" | "lvs" | "lec" | "glitch_power" | "thermal";
+export type Domain = "rtl" | "cdc" | "sta" | "emir" | "pv" | "lvs" | "lec" | "glitch_power" | "thermal";
 export type Stage = "rtl" | "synthesis" | "placement" | "routing" | "final";
 export type RunStatus = "running" | "passed" | "failed" | "incomplete";
 export type Severity = "info" | "warning" | "error" | "critical";
@@ -21,7 +21,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "commercial_cdc_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report";
   result_locked: boolean;
 }
 
@@ -31,7 +31,7 @@ export interface RunEvidence {
   source_text: string | null;
   source_sha256: string | null;
   design_revision: string | null;
-  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & Partial<LecPreview> & {
+  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & Partial<LecPreview> & Partial<CdcPreview> & {
     metadata?: { filename: string; tool_version: string; scenario: string; parasitics?: 'spef' | 'none' };
     submitted_by?: { user_id: number; username: string } | { collector_id: number; name: string } | null;
     input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc' | 'spef', { sha256: string; byte_length: number }>>;
@@ -150,6 +150,10 @@ export type LecKind='non_equivalent'|'unmapped'|'aborted'|'black_box'|'setup';
 export interface LecFailure{index:number;kind:LecKind;name:string;severity:'error'|'critical';reference_object:string|null;implementation_object:string|null;message:string;fingerprint:string}
 export interface LecPreview{parser:string;tool:string;tool_version:string;status:'passed'|'failed'|'incomplete';source_sha256:string;coverage_attestation?:CoverageAttestation;lec_status:'equivalent'|'non_equivalent'|'error';reference_top:string;implementation_top:string;error_message:string|null;summary:{reference_compare_points:number;implementation_compare_points:number;matched_points:number;failing_points:number;aborted_points:number;unreachable_points:number};metrics:Record<string,number>;items:LecFailure[]}
 export interface LecPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;lec_status:LecPreview['lec_status'];reference_top:string;implementation_top:string;error_message:string|null;summary:LecPreview['summary'];reported_total:number;total:number;offset:number;limit:number;items:LecFailure[]}
+export type CdcKind='cdc'|'rdc'|'constraint'|'synchronizer'|'protocol'|'reconvergence';
+export interface CdcFinding{index:number;kind:CdcKind;rule:string;name:string;severity:'warning'|'error'|'critical';source_object:string|null;destination_object:string|null;source_domain:string|null;destination_domain:string|null;message:string;fingerprint:string}
+export interface CdcPreview{parser:string;tool:string;tool_version:string;status:'passed'|'failed'|'incomplete';source_sha256:string;coverage_attestation?:CoverageAttestation;cdc_status:'clean'|'violations'|'error';top:string;error_message:string|null;summary:{clock_domains:number;reset_domains:number;cdc_crossings:number;rdc_crossings:number};metrics:Record<string,number>;items:CdcFinding[]}
+export interface CdcPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;cdc_status:CdcPreview['cdc_status'];top:string;error_message:string|null;summary:CdcPreview['summary'];reported_total:number;total:number;offset:number;limit:number;items:CdcFinding[]}
 
 export type TimingPath = ReportPreview['paths'][number] & { status: 'violated' | 'met' | 'unconstrained' };
 export interface TimingPathSummary {
@@ -563,6 +567,9 @@ export const api = {
   previewCommercialLec:(projectId:number,body:ReportImportInput)=>request<LecPreview>(`/projects/${projectId}/imports/commercial-lec/preview`,{method:'POST',body:JSON.stringify(body)}),
   importCommercialLec:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-lec`,{method:'POST',body:JSON.stringify(body)}),
   lecFailures:(runId:number,filters:Record<string,string>)=>request<LecPage>(`/runs/${runId}/lec-failures?${new URLSearchParams(filters)}`),
+  previewCommercialCdc:(projectId:number,body:ReportImportInput)=>request<CdcPreview>(`/projects/${projectId}/imports/commercial-cdc/preview`,{method:'POST',body:JSON.stringify(body)}),
+  importCommercialCdc:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-cdc`,{method:'POST',body:JSON.stringify(body)}),
+  cdcFindings:(runId:number,filters:Record<string,string>)=>request<CdcPage>(`/runs/${runId}/cdc-findings?${new URLSearchParams(filters)}`),
   previewKLayout: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/klayout/preview`, { method: 'POST', body: JSON.stringify(body) }),
   importKLayout: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/klayout`, { method: 'POST', body: JSON.stringify(body) }),
   markers: (runId: number, filters: Record<string, string>) => request<MarkerPage>(`/runs/${runId}/markers?${new URLSearchParams(filters)}`),
@@ -894,6 +901,7 @@ export const DOMAIN_LABELS: Record<Domain, string> = {
   pv: "PV",
   lvs: "LVS",
   lec: "LEC",
+  cdc: "CDC/RDC",
   glitch_power: "Glitch Power",
   thermal: "Thermal",
 };

@@ -53,5 +53,5 @@ def test_same_revision_does_not_promote_partial_sta_report():
 
 def test_empty_stage_has_explicit_missing_revision_report():
     gate = evaluate_gate([], Stage.rtl)
-    assert gate['revision_check'] == {'status': 'missing', 'revisions': [], 'missing_domains': ['rtl', 'sta'], 'common_revision': None}
+    assert gate['revision_check'] == {'status': 'missing', 'revisions': [], 'missing_domains': ['rtl', 'cdc', 'sta'], 'common_revision': None}
     assert not gate['ready']

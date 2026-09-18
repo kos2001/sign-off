@@ -20,6 +20,8 @@ import CommercialLvsImport from './pages/CommercialLvsImport';
 import LvsMismatches from './pages/LvsMismatches';
 import CommercialLecImport from './pages/CommercialLecImport';
 import LecFailures from './pages/LecFailures';
+import CommercialCdcImport from './pages/CommercialCdcImport';
+import CdcFindings from './pages/CdcFindings';
 import ProjectMembers from "./pages/ProjectMembers";
 import { Route, Routes } from "react-router";
 
@@ -54,6 +56,7 @@ export default function App() {
           <Route path="/projects/:id/import/commercial-rtl" element={<CommercialRtlImport />} />
           <Route path="/projects/:id/import/commercial-lvs" element={<CommercialLvsImport />} />
           <Route path="/projects/:id/import/commercial-lec" element={<CommercialLecImport />} />
+          <Route path="/projects/:id/import/commercial-cdc" element={<CommercialCdcImport />} />
           <Route path="/runs/:runId/structure" element={<DesignStructure />} />
           <Route path="/runs/:runId" element={<RunWorkspace />} />
           <Route path="/runs/:runId/paths" element={<TimingPaths />} />
@@ -64,6 +67,7 @@ export default function App() {
           <Route path="/runs/:runId/rtl-regression" element={<RtlRegression />} />
           <Route path="/runs/:runId/lvs-mismatches" element={<LvsMismatches />} />
           <Route path="/runs/:runId/lec-failures" element={<LecFailures />} />
+          <Route path="/runs/:runId/cdc-findings" element={<CdcFindings />} />
           <Route path="/projects/:id/members" element={<ProjectMembers />} />
           <Route path="/account" element={<Account />} />
           <Route path="/admin/security-events" element={<SecurityEvents />} />

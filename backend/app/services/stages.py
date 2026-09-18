@@ -13,7 +13,7 @@ from ..models import Domain, RunStatus, Severity, SignoffRun, Stage, ViolationSt
 from .evidence import rtl_result_status
 
 REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
-    Stage.rtl: (Domain.rtl, Domain.sta),
+    Stage.rtl: (Domain.rtl, Domain.cdc, Domain.sta),
     Stage.synthesis: (Domain.sta, Domain.glitch_power, Domain.lec),
     Stage.placement: (Domain.sta, Domain.emir, Domain.pv),
     Stage.routing: (Domain.sta, Domain.emir, Domain.pv, Domain.lvs),
@@ -55,6 +55,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             Domain.rtl: 'commercial_rtl_report',
             Domain.lvs: 'commercial_lvs_report',
             Domain.lec: 'commercial_lec_report',
+            Domain.cdc: 'commercial_cdc_report',
         }.get(latest.domain)
         attested_coverage = bool(
             attested_source
@@ -87,6 +88,9 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             ready = False
         elif latest.evidence_source == 'commercial_lec_report' and not attested_coverage:
             reason = 'Imported LEC result does not establish full equivalence coverage'
+            ready = False
+        elif latest.evidence_source == 'commercial_cdc_report' and not attested_coverage:
+            reason = 'Imported CDC/RDC findings do not establish full crossing coverage'
             ready = False
         elif latest.domain == Domain.rtl and latest.evidence_source == 'rtl_ladder' and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
             reason = f"RTL evidence is {rtl_result_status(evidence_result).value}; required stages must all pass"

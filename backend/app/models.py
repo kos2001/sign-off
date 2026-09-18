@@ -20,6 +20,7 @@ class Domain(str, enum.Enum):
     thermal = "thermal"
     lvs = "lvs"
     lec = "lec"
+    cdc = "cdc"
 
 
 class Stage(str, enum.Enum):
@@ -105,7 +106,7 @@ class SignoffRun(Base):
 
     @property
     def result_locked(self) -> bool:
-        return self.evidence_source in {"rtl_ladder", "commercial_rtl_report", "opensta_report", "opensta_execution", "commercial_sta_report", "klayout_report", "commercial_drc_report", "commercial_emir_report", "commercial_power_report", "commercial_thermal_report", "commercial_lvs_report", "commercial_lec_report"} or (
+        return self.evidence_source in {"rtl_ladder", "commercial_rtl_report", "commercial_cdc_report", "opensta_report", "opensta_execution", "commercial_sta_report", "klayout_report", "commercial_drc_report", "commercial_emir_report", "commercial_power_report", "commercial_thermal_report", "commercial_lvs_report", "commercial_lec_report"} or (
             self.evidence is None and self.tool == "rtl-signoff-ladder"
         )
 
