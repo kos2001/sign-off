@@ -980,3 +980,10 @@ PrimePower/Joules/PowerArtist의 모드·코너·활동도·전력 모델·계�
 Celsius/Icepak/Calibre 3DSTACK의 재료·경계·전력 맵·패키지·해석·메시 범위를 도메인별 HMAC
 claim으로 검증한다. 제한 초과가 없는 유효한 증명만 전력·열 런을 `passed`로 만들며, 동일
 리비전의 신뢰된 STA/PV/EMIR/전력/열 결과로 최종 게이트 승인과 불변 ZIP 패키지를 생성한다.
+
+### 2026-09-19 · 신뢰된 VCS/Xcelium RTL 회귀 증명
+
+테스트 계획·컴파일·시뮬레이션·assertion·코드/기능 커버리지·결과 완전성을 RTL 도메인 HMAC
+claim으로 검증한다. 컴파일·테스트·assertion 실패가 없는 유효한 증명만 상용 회귀 런을
+`passed`로 만들며, 동일 리비전의 신뢰된 RTL과 STA 결과로 RTL 게이트 승인 및 불변 패키지를
+생성한다. 서명 없는 회귀는 계속 부분 근거로 남는다.
