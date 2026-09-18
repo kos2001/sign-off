@@ -70,3 +70,28 @@ def bounds(items):
     xs = [float(item['x_um']) for item in items]
     ys = [float(item['y_um']) for item in items]
     return {'xmin': min(xs), 'xmax': max(xs), 'ymin': min(ys), 'ymax': max(ys)}
+
+
+@router.get('/runs/{run_id}/power-breakdown')
+def power_breakdown(
+    run_id: int, q: str = Query('', max_length=200),
+    status: Literal['all', 'violated', 'met'] = 'all',
+    sort: Literal['total_desc', 'glitch_desc', 'report'] = 'total_desc',
+    offset: int = Query(0, ge=0, le=5000), limit: int = Query(25, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    run = get_run_or_404(run_id, db)
+    if run.evidence_source != 'commercial_power_report':
+        raise HTTPException(409, 'this run has no imported power breakdown')
+    result = run.evidence.result
+    query = q.casefold()
+    items = [item for item in result['items'] if (not query or query in item['path'].casefold()) and
+             (status == 'all' or item['violated'] == (status == 'violated'))]
+    if sort != 'report':
+        key = 'total_power_mw' if sort == 'total_desc' else 'glitch_share'
+        items.sort(key=lambda item: (-item[key], item['index']))
+    return {'run': RunOut.model_validate(run), 'metadata': result.get('metadata', {}),
+            'source_sha256': run.evidence.source_sha256, 'design_revision': run.evidence.design_revision,
+            'summary': result['summary'], 'glitch_share_limit': result['glitch_share_limit'],
+            'reported_total': len(result['items']), 'total': len(items), 'offset': offset, 'limit': limit,
+            'violated_total': sum(item['violated'] for item in items), 'items': items[offset:offset + limit]}
