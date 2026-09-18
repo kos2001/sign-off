@@ -36,11 +36,16 @@ export interface SignoffRun {
   created_at: string;
   evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "commercial_cdc_report" | "commercial_dft_report" | "commercial_low_power_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report";
   result_locked: boolean;
+  design_revision: string | null;
 }
 export interface RunPage {
   items: SignoffRun[]; total: number;
   status_counts: Record<RunStatus, number>;
   next_before_id: number | null;
+}
+export interface RunRevisionPage {
+  items: { design_revision: string; run_count: number; latest_run_id: number }[];
+  total: number; offset: number; limit: number; unlabeled_runs: number;
 }
 
 export interface RunEvidence {
@@ -674,12 +679,15 @@ export const api = {
   projectLifecycleHistory: (id: number) => request<{ items: { id: number; version: number; before_state: 'active' | 'archived'; after_state: 'active' | 'archived'; reason: string; actor: string; actor_user_id: number | null; created_at: string }[]; next_before_id: number | null }>(`/projects/${id}/lifecycle/history?limit=100`),
   listRuns: (projectId: number) =>
     request<SignoffRun[]>(`/projects/${projectId}/runs`),
-  runPage: (projectId: number, options: { beforeId?: number; limit?: number; domain?: Domain; stage?: Stage; status?: RunStatus; q?: string } = {}) =>
+  runPage: (projectId: number, options: { beforeId?: number; limit?: number; domain?: Domain; stage?: Stage; status?: RunStatus; q?: string; revision?: string; revisionScope?: 'all' | 'labeled' | 'unlabeled' } = {}) =>
     request<RunPage>(`/projects/${projectId}/runs/page?${new URLSearchParams({
       limit: String(options.limit ?? 50), ...(options.beforeId ? { before_id: String(options.beforeId) } : {}),
       ...(options.domain ? { domain: options.domain } : {}), ...(options.stage ? { stage: options.stage } : {}),
       ...(options.status ? { status: options.status } : {}), ...(options.q ? { q: options.q } : {}),
+      ...(options.revision ? { revision: options.revision } : {}),
+      ...(options.revisionScope && options.revisionScope !== 'all' ? { revision_scope: options.revisionScope } : {}),
     })}`),
+  runRevisions: (projectId: number, q?: string) => request<RunRevisionPage>(`/projects/${projectId}/run-revisions?${new URLSearchParams({ limit: '100', ...(q ? { q } : {}) })}`),
   getRun: (runId: number) => request<SignoffRun>(`/runs/${runId}`),
   runStructure: (runId: number) => request<DesignStructure>(`/runs/${runId}/evidence/structure`),
   runNetlist: (runId: number) => request<Blob>(`/runs/${runId}/evidence/netlist`, undefined, 'blob'),

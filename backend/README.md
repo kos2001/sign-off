@@ -40,7 +40,8 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `PUT /projects/{id}/lifecycle` — 소유자 전용 프로젝트 보관·복원. 실행 중 작업과 버전 경합을 거부하고 사유·처리자를 이력에 기록
 - `GET /projects/{id}/lifecycle/history` — 소유자 전용 보관·복원 감사 이력
 - `POST /projects/{id}/runs` — 사인오프 런 생성 (`domain`, `stage`, `tool`, `metrics`)
-- `GET /projects/{id}/runs/page` — 필터 범위의 상태별 전체 집계와 최신순 커서 페이지 (`before_id`, `limit`, `domain`, `stage`, `status`, `q` 툴 이름); 운영 UI 기본 경로
+- `GET /projects/{id}/runs/page` — 필터 범위의 상태별 전체 집계와 최신순 커서 페이지 (`before_id`, `limit`, `domain`, `stage`, `status`, `q` 툴 이름, 정확한 `revision`, `revision_scope`); 운영 UI 기본 경로
+- `GET /projects/{id}/run-revisions` — 저장된 설계 리비전별 런 수·최신 런과 리비전 미기록 런 수 조회
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
 - `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자·설계 리비전·만료 기록, 상태 waived 전환). 새 웨이버는 기본 90일·최대 365일이며 만료/범위 불일치는 게이트 차단에 재반영
