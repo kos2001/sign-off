@@ -1,4 +1,8 @@
 import uuid
+import hashlib
+import io
+import json
+import zipfile
 from sqlalchemy import event
 from app.db import SessionLocal, engine
 from app.models import RunEvidence, SignoffRun
@@ -94,3 +98,58 @@ def test_export_exact_byte_boundary(client, monkeypatch):
     assert client.get(url).content == original.content
     monkeypatch.setattr('app.routers.runs.MAX_GATE_EXPORT_BYTES', len(original.content)-1)
     assert client.get(url).status_code == 413
+
+
+def test_evidence_package_contains_verified_sources_and_manifest(client):
+    pid = client.post('/projects', json={'name': str(uuid.uuid4()), 'process_node': 'test', 'foundry': 'test'}).json()['id']
+    rid = client.post(f'/projects/{pid}/runs', json={'domain': 'sta', 'stage': 'final', 'tool': 'PrimeTime'}).json()['id']
+    source = 'PrimeTime report\nslack -0.100\n'
+    with SessionLocal() as db:
+        evidence = db.get(SignoffRun, rid).evidence
+        evidence.source = 'commercial_sta_report'
+        evidence.source_text = source
+        evidence.source_sha256 = hashlib.sha256(source.encode()).hexdigest()
+        evidence.design_revision = 'rev-package'
+        evidence.result = {'parser': 'commercial-sta/v1'}
+        db.commit()
+
+    response = client.get(f'/projects/{pid}/signoff-package?stage=final')
+    assert response.status_code == 200
+    assert response.headers['content-type'] == 'application/zip'
+    assert response.headers['cache-control'] == 'no-store'
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.namelist() == ['manifest.json', f'evidence/run-{rid}-source.txt']
+        manifest_bytes = archive.read('manifest.json')
+        manifest = json.loads(manifest_bytes)
+        assert archive.read(manifest['files'][0]['path']).decode() == source
+    assert hashlib.sha256(manifest_bytes).hexdigest() == response.headers['x-signoff-manifest-sha256']
+    assert manifest['format'] == 'signoff/evidence-package/v1'
+    assert manifest['gate']['revision_check']['revisions'] == ['rev-package']
+    assert manifest['gate']['revision_check']['status'] == 'missing'
+    assert manifest['runs'][0]['evidence']['source_sha256'] == manifest['files'][0]['sha256']
+
+
+def test_evidence_package_refuses_missing_or_tampered_source(client):
+    pid = client.post('/projects', json={'name': str(uuid.uuid4()), 'process_node': 'test', 'foundry': 'test'}).json()['id']
+    rid = client.post(f'/projects/{pid}/runs', json={'domain': 'sta', 'stage': 'final', 'tool': 'test'}).json()['id']
+    url = f'/projects/{pid}/signoff-package?stage=final'
+    assert client.get(url).status_code == 409
+    with SessionLocal() as db:
+        evidence = db.get(SignoffRun, rid).evidence
+        evidence.source_text = 'changed bytes'
+        evidence.source_sha256 = hashlib.sha256(b'original bytes').hexdigest()
+        db.commit()
+    response = client.get(url)
+    assert response.status_code == 409
+    assert '무결성' in response.json()['detail']
+
+
+def test_evidence_package_permissions_and_size_cap(client, accounts, monkeypatch):
+    _, ids, login = accounts
+    assert login('outsider').get(f"/projects/{ids['project']}/signoff-package?stage=final").status_code == 404
+    owner = login('owner')
+    pid = owner.post('/projects', json={'name': str(uuid.uuid4()), 'process_node': 'test', 'foundry': 'test'}).json()['id']
+    monkeypatch.setattr('app.routers.runs.MAX_EVIDENCE_PACKAGE_BYTES', 1)
+    response = owner.get(f'/projects/{pid}/signoff-package?stage=final')
+    assert response.status_code == 413
+    assert 'content-disposition' not in response.headers

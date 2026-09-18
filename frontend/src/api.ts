@@ -649,6 +649,8 @@ export const api = {
     request<GateStatus>(`/projects/${projectId}/signoff-status?stage=${stage}`),
   exportGate: (projectId: number, stage: Stage) =>
     request<Blob>(`/projects/${projectId}/signoff-status/export?stage=${stage}`, undefined, 'blob'),
+  exportSignoffPackage: (projectId: number, stage: Stage) =>
+    request<Blob>(`/projects/${projectId}/signoff-package?stage=${stage}`, undefined, 'blob'),
   irDrop: (payload: {
     cell_density: number[][];
     switching_activity: number[][];

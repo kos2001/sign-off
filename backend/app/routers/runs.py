@@ -1,6 +1,8 @@
 import copy
 import hashlib
+import io
 import json
+import zipfile
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -28,6 +30,7 @@ from .projects import get_project_or_404
 
 router = APIRouter(tags=["signoff-runs"])
 MAX_GATE_EXPORT_BYTES = 8 * 1024 * 1024
+MAX_EVIDENCE_PACKAGE_BYTES = 32 * 1024 * 1024
 
 
 def get_run_or_404(run_id: int, db: Session) -> SignoffRun:
@@ -476,4 +479,89 @@ def export_gate(project_id: int, stage: Stage, db: Session = Depends(get_db)):
     return Response(content, media_type='application/json', headers={
         'Content-Disposition': f'attachment; filename="project-{project_id}-{stage.value}-gate.json"',
         'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+    })
+
+
+@router.get('/projects/{project_id}/signoff-package')
+def export_signoff_package(project_id: int, stage: Stage, db: Session = Depends(get_db)):
+    """Export the current gate snapshot with every selected run's verified source.
+
+    The manifest identifies the exact latest runs selected by the gate. A package
+    is refused if a selected source is absent or no longer matches its stored
+    digest, so a downloaded archive never presents unverified bytes as evidence.
+    """
+    get_project_or_404(project_id, db)
+    selected = gate_runs(project_id, stage, db)
+    gate = evaluate_gate(selected, stage)
+    selected_ids = {item.get('run_id') for item in gate['domains'] if item.get('run_id') is not None}
+    runs = sorted((run for run in selected if run.id in selected_ids), key=lambda run: run.id)
+    if sum(len(run.violations) for run in runs) > 10000:
+        raise HTTPException(413, '게이트 근거의 위반이 10,000건을 초과합니다.')
+
+    # gate_runs intentionally defers large source text during polling. Fetch only
+    # the selected sources for this explicit download.
+    evidence_by_run = {
+        evidence.run_id: evidence for evidence in db.scalars(
+            select(RunEvidence).where(RunEvidence.run_id.in_(selected_ids))
+        ).all()
+    } if selected_ids else {}
+    source_files: list[tuple[str, bytes]] = []
+    run_records = []
+    for run in runs:
+        evidence = evidence_by_run.get(run.id)
+        if evidence is None or evidence.source_text is None or not evidence.source_sha256:
+            raise HTTPException(409, f'런 #{run.id}의 원본 근거 또는 SHA-256이 없습니다.')
+        source = evidence.source_text.encode('utf-8')
+        digest = hashlib.sha256(source).hexdigest()
+        if digest != evidence.source_sha256:
+            raise HTTPException(409, f'런 #{run.id}의 원본 근거 무결성 검증에 실패했습니다.')
+        path = f'evidence/run-{run.id}-source.txt'
+        source_files.append((path, source))
+        if sum(len(content) for _, content in source_files) > MAX_EVIDENCE_PACKAGE_BYTES:
+            raise HTTPException(413, '사인오프 근거 원본 합계가 32 MiB를 초과합니다.')
+        run_records.append({
+            'id': run.id, 'domain': run.domain.value, 'stage': run.stage.value,
+            'tool': run.tool, 'status': run.status.value,
+            'created_at': (run.created_at.replace(tzinfo=timezone.utc) if run.created_at.tzinfo is None else run.created_at.astimezone(timezone.utc)),
+            'metrics': run.metrics, 'evidence': {
+                'source': evidence.source, 'design_revision': evidence.design_revision,
+                'source_sha256': digest, 'file': path,
+                'result': netlist_metadata_only(evidence.result),
+            },
+            'violations': [{
+                'id': violation.id, 'check_name': violation.check_name,
+                'severity': violation.severity.value, 'status': violation.status.value,
+                'version': violation.version, 'location': violation.location,
+                'description': violation.description,
+                'waiver': None if violation.waiver is None else {
+                    'reason': violation.waiver.reason,
+                    'approved_by': violation.waiver.approved_by,
+                    'approved_user_id': violation.waiver.approved_user_id,
+                    'created_at': (violation.waiver.created_at.replace(tzinfo=timezone.utc) if violation.waiver.created_at.tzinfo is None else violation.waiver.created_at.astimezone(timezone.utc)),
+                },
+            } for violation in sorted(run.violations, key=lambda item: item.id)],
+        })
+
+    exported_at = datetime.now(timezone.utc).isoformat()
+    manifest = {
+        'format': 'signoff/evidence-package/v1', 'project_id': project_id,
+        'stage': stage.value, 'exported_at': exported_at, 'gate': gate,
+        'runs': run_records,
+        'files': [{'path': path, 'sha256': hashlib.sha256(content).hexdigest(), 'bytes': len(content)} for path, content in source_files],
+        'scope_note': 'Exact current gate selection with SHA-256 verified stored source reports and current violation/waiver states. Revision labels are declarations; this package is not a tool-vendor signature or human approval.',
+    }
+    manifest_bytes = json.dumps(jsonable_encoder(manifest), ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode('utf-8')
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        archive.writestr('manifest.json', manifest_bytes)
+        for path, content in source_files:
+            archive.writestr(path, content)
+    content = output.getvalue()
+    if len(content) > MAX_EVIDENCE_PACKAGE_BYTES:
+        raise HTTPException(413, '사인오프 근거 패키지가 32 MiB를 초과합니다.')
+    return Response(content, media_type='application/zip', headers={
+        'Content-Disposition': f'attachment; filename="project-{project_id}-{stage.value}-evidence.zip"',
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+        'X-Signoff-Manifest-SHA256': manifest_sha256,
     })
