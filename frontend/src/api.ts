@@ -347,8 +347,15 @@ export interface GateDomain {
   design_revision?: string | null;
 }
 
+export interface SignoffPlanStage {
+  stage: Stage; version: number; source: 'default' | 'custom'; required_domains: Domain[];
+  reason: string | null; updated_by: string | null; updated_by_user_id: number | null; created_at: string | null;
+}
+export interface SignoffPlan { project_id: number; stages: SignoffPlanStage[] }
+
 export interface GateStatus {
   stage: Stage;
+  plan: SignoffPlanStage;
   ready: boolean;
   domains: GateDomain[];
   revision_check?: { status: 'missing' | 'mismatch' | 'consistent'; revisions: string[]; missing_domains: Domain[]; common_revision: string | null };
@@ -698,6 +705,9 @@ export const api = {
     const content = await request<string>(`/violations/${id}/history/export`, undefined, 'text');
     return { bundle: JSON.parse(content) as ViolationHistoryExport, content };
   },
+  signoffPlan: (projectId: number) => request<SignoffPlan>(`/projects/${projectId}/signoff-plan`),
+  updateSignoffPlan: (projectId: number, stage: Stage, body: { expected_version: number; required_domains: Domain[]; reason: string }) =>
+    request<SignoffPlanStage>(`/projects/${projectId}/signoff-plan/${stage}`, { method: 'PUT', body: JSON.stringify(body) }),
   gateStatus: (projectId: number, stage: Stage) =>
     request<GateStatus>(`/projects/${projectId}/signoff-status?stage=${stage}`),
   exportGate: (projectId: number, stage: Stage) =>

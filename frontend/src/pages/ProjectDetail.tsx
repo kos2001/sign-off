@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 
 import type { Domain, Severity, SignoffRun, Stage } from "../api";
@@ -11,6 +11,29 @@ import { AgentReviewPanel } from "../components/AgentReviewPanel";
 import { ReadyProgress, RunStatusBar } from "../components/charts";
 import { Card, Field, StatusBadge } from "../components/ui";
 import { defaultSignoffTool, SIGNOFF_TOOLS, signoffTool } from "../signoffTools";
+
+function SignoffPlanEditor({ projectId, stage }: { projectId: number; stage: Stage }) {
+  const auth = useAuth();
+  const qc = useQueryClient();
+  const plan = useQuery({ queryKey: ['signoff-plan', projectId], queryFn: () => api.signoffPlan(projectId) });
+  const current = plan.data?.stages.find(item => item.stage === stage);
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [reason, setReason] = useState('');
+  useEffect(() => { if (current) { setDomains(current.required_domains); setReason(''); } }, [current?.stage, current?.version]);
+  const update = useMutation({ mutationFn: () => api.updateSignoffPlan(projectId, stage, { expected_version: current?.version ?? 0, required_domains: domains, reason }), onSuccess: async () => { setReason(''); await Promise.all([qc.invalidateQueries({ queryKey: ['signoff-plan', projectId] }), qc.invalidateQueries({ queryKey: ['gate', projectId, stage] })]); } });
+  if (plan.isPending) return <p className="text-sm">사인오프 계획 불러오는 중…</p>;
+  if (plan.isError || !current) return <p role="alert" className="text-sm">사인오프 계획을 불러오지 못했습니다.</p>;
+  return <section className="rounded-lg border border-[var(--border)] p-3 space-y-3" aria-label="프로젝트 사인오프 계획">
+    <div><h3 className="font-semibold text-sm">프로젝트 사인오프 계획 · {STAGE_LABELS[stage]}</h3><p className="text-xs text-[var(--text-muted)]">{current.source === 'default' ? '서비스 기본 계획' : `사용자 정의 계획 v${current.version}`} · 필수 도메인 {current.required_domains.map(domain => DOMAIN_LABELS[domain]).join(', ')}</p>{current.reason && <p className="mt-1 text-xs">변경 사유: {current.reason} · {current.updated_by}</p>}</div>
+    {auth.can(projectId, 'approver') && <details><summary className="cursor-pointer text-sm font-medium">필수 도메인 편집</summary><div className="mt-3 space-y-3">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(Object.keys(DOMAIN_LABELS) as Domain[]).map(domain => <label key={domain} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={domains.includes(domain)} onChange={event => setDomains(values => event.target.checked ? [...values, domain] : values.filter(value => value !== domain))}/>{DOMAIN_LABELS[domain]}</label>)}</div>
+      <textarea className="input w-full" rows={2} maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} placeholder="계획 변경 사유" aria-label="사인오프 계획 변경 사유"/>
+      <button className="btn btn-primary" disabled={!domains.length || !reason.trim() || update.isPending} onClick={() => update.mutate()}>{update.isPending ? '계획 저장 중…' : '새 계획 버전 저장'}</button>
+      <p className="text-xs text-[var(--text-muted)]">변경은 새 버전으로 보존되며 과거 근거와 결정을 수정하지 않습니다. AI는 필수 도메인을 변경하지 않습니다.</p>
+      {update.isError && <p role="alert" className="text-sm">{update.error.message}</p>}{update.isSuccess && <p role="status" className="text-sm">사인오프 계획을 저장했습니다.</p>}
+    </div></details>}
+  </section>;
+}
 
 function gateReasonLabel(reason?: string | null) {
   const labels: Record<string, string> = {
@@ -146,7 +169,8 @@ export default function ProjectDetail() {
         title="Shift-left 스테이지 게이트"
         subtitle="도메인별 최신 런의 검증 범위와 설계 리비전을 확인합니다. 수동 통과 상태만으로는 게이트를 통과할 수 없습니다."
       >
-        <div className="mb-4 space-y-2 text-sm">
+        <SignoffPlanEditor key={stage} projectId={projectId} stage={stage} />
+        <div className="mb-4 mt-4 space-y-2 text-sm">
           <div className="flex flex-wrap gap-2">
             <button className="btn btn-primary" disabled={evidencePackage.isPending} onClick={() => evidencePackage.mutate({ projectId, stage })}>{evidencePackage.isPending ? `${STAGE_LABELS[evidencePackage.variables.stage]} 패키지 준비 중…` : '검증된 근거 패키지 다운로드'}</button>
             <button className="btn btn-ghost" disabled={gateExport.isPending} onClick={() => gateExport.mutate({ projectId, stage })}>{gateExport.isPending ? `${STAGE_LABELS[gateExport.variables.stage]} 근거 파일 준비 중…` : '게이트 JSON 다운로드'}</button>

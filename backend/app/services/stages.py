@@ -9,7 +9,9 @@ from placement, and the full multi-physics set (including thermal) at final
 signoff.
 """
 
-from ..models import Domain, RunStatus, Severity, SignoffRun, Stage, ViolationStatus
+from sqlalchemy import select
+
+from ..models import Domain, ProjectSignoffPlanRevision, RunStatus, Severity, SignoffRun, Stage, ViolationStatus
 from .evidence import rtl_result_status
 
 REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
@@ -23,14 +25,41 @@ REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
 BLOCKING_SEVERITIES = (Severity.error, Severity.critical)
 
 
-def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
+def resolve_signoff_plan(db, project_id: int, stage: Stage) -> dict:
+    revision = db.scalar(select(ProjectSignoffPlanRevision).where(
+        ProjectSignoffPlanRevision.project_id == project_id,
+        ProjectSignoffPlanRevision.stage == stage,
+    ).order_by(ProjectSignoffPlanRevision.version.desc()).limit(1))
+    if revision is None:
+        domains = REQUIRED_DOMAINS[stage]
+        return {
+            "stage": stage.value, "version": 0, "source": "default",
+            "required_domains": [domain.value for domain in domains], "reason": None,
+            "updated_by": None, "updated_by_user_id": None, "created_at": None,
+        }
+    domains = tuple(Domain(value) for value in revision.required_domains)
+    return {
+        "stage": stage.value, "version": revision.version, "source": "custom",
+        "required_domains": [domain.value for domain in domains], "reason": revision.reason,
+        "updated_by": revision.updated_by, "updated_by_user_id": revision.updated_by_user_id,
+        "created_at": revision.created_at,
+    }
+
+
+def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None) -> dict:
     """Evaluate whether a project's signoff gate is ready at the given stage.
 
     Use latest runs only. Captured coverage and matching declared revisions are
     necessary; manual status changes are not verification evidence.
     """
+    plan = plan or {
+        "stage": stage.value, "version": 0, "source": "default",
+        "required_domains": [domain.value for domain in REQUIRED_DOMAINS[stage]],
+        "reason": None, "updated_by": None, "updated_by_user_id": None, "created_at": None,
+    }
+    required_domains = tuple(Domain(value) for value in plan["required_domains"])
     domains = []
-    for domain in REQUIRED_DOMAINS[stage]:
+    for domain in required_domains:
         candidates = [r for r in runs if r.stage == stage and r.domain == domain]
         latest = max(candidates, key=lambda r: (r.created_at, r.id), default=None)
 
@@ -131,6 +160,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
     revision_state = 'mismatch' if len(revisions) > 1 else 'missing' if missing else 'consistent'
     return {
         "stage": stage.value,
+        "plan": plan,
         "ready": all(d["ready"] for d in domains) and revision_state == 'consistent',
         "domains": domains,
         "revision_check": {"status": revision_state, "revisions": revisions, "missing_domains": missing,

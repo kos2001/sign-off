@@ -20,6 +20,45 @@ class ProjectOut(ProjectCreate):
     created_at: datetime
 
 
+class SignoffPlanUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_version: int = Field(ge=0)
+    required_domains: list[Domain] = Field(min_length=1, max_length=32)
+    reason: str = Field(min_length=1, max_length=4000)
+
+    @model_validator(mode="after")
+    def unique_domains(self):
+        if len(self.required_domains) != len(set(self.required_domains)):
+            raise ValueError("required_domains must not contain duplicates")
+        return self
+
+
+class SignoffPlanStageOut(BaseModel):
+    stage: Stage
+    version: int
+    source: Literal["default", "custom"]
+    required_domains: list[Domain]
+    reason: str | None
+    updated_by: str | None
+    updated_by_user_id: int | None
+    created_at: datetime | None
+
+
+class SignoffPlanOut(BaseModel):
+    project_id: int
+    stages: list[SignoffPlanStageOut]
+
+
+class SignoffPlanRevisionOut(SignoffPlanStageOut):
+    id: int
+
+
+class SignoffPlanHistoryOut(BaseModel):
+    items: list[SignoffPlanRevisionOut]
+    next_before_id: int | None
+
+
 class SignoffReleaseDecisionCreate(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
 
