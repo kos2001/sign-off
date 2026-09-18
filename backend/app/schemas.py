@@ -271,7 +271,11 @@ class StaScenarioDefinitionIn(BaseModel):
 
 
 class StaScenarioSetIn(BaseModel):
-    scenarios: list[StaScenarioDefinitionIn] = Field(max_length=100)
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+
+    scenarios: list[StaScenarioDefinitionIn] = Field(min_length=1, max_length=100)
+    expected_version: int = Field(ge=0, le=2_147_483_646, strict=True)
+    reason: str = Field(min_length=1, max_length=4000)
 
     @model_validator(mode="after")
     def unique_names(self):
@@ -288,6 +292,23 @@ class StaScenarioDefinitionOut(StaScenarioDefinitionIn):
     project_id: int
     stage: Stage
     created_at: datetime
+
+
+class StaScenarioPlanOut(BaseModel):
+    project_id: int
+    stage: Stage
+    version: int
+    source: Literal['legacy', 'versioned']
+    scenarios: list[StaScenarioDefinitionIn]
+    reason: str | None
+    updated_by: str | None
+    updated_by_user_id: int | None
+    created_at: datetime | None
+
+
+class StaScenarioPlanHistoryOut(BaseModel):
+    items: list[StaScenarioPlanOut]
+    next_before_id: int | None
 
 
 class WaiverCreate(BaseModel):

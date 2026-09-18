@@ -75,6 +75,8 @@ curl --fail-with-body \
 `commercial-sta`, `commercial-cdc`, `commercial-drc`, `commercial-lvs`, `commercial-lec`, `commercial-dft`, `commercial-low-power`, `commercial-emir`, `commercial-power`,
 `commercial-thermal`, `commercial-rtl`이다. 기본 유효 시간은 1시간이며
 `--valid-for-seconds`로 1초부터 7일까지 지정할 수 있다.
+STA 도메인에서 버전형 MMMC 계획을 사용하면 `--scenario-plan-version`에 현재 계획 버전을 지정한다.
+서버는 이 값을 HMAC 서명과 함께 검증하며 현재 계획과 다르면 저장을 거부한다.
 
 CLI는 UTF-8 원본 바이트, 툴과 버전, claim 집합을 검증한 후 요청을 생성한다. `--output` 파일은
 같은 디렉터리에서 완성한 뒤 권한 `0600`으로 원자 게시하며 기존 파일을 덮어쓰지 않는다.

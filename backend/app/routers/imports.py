@@ -29,6 +29,7 @@ from ..services.commercial_cdc import parse_commercial_cdc
 from ..services.commercial_dft import parse_commercial_dft
 from ..services.commercial_low_power import parse_commercial_low_power
 from ..services.klayout_report import parse_klayout
+from ..services.sta_scenario_plans import resolve_sta_scenario_plan
 
 router = APIRouter(tags=['report-imports'])
 
@@ -63,6 +64,7 @@ class CoverageAttestationPayload(BaseModel):
     tool: str = Field(min_length=1, max_length=80)
     tool_version: str = Field(min_length=1, max_length=80)
     scenario: str = Field(min_length=1, max_length=160)
+    scenario_plan_version: int | None = Field(default=None, ge=0, le=2_147_483_647, strict=True)
     claims: dict[str, StrictBool] = Field(min_length=1, max_length=20)
     signature: str = Field(pattern=r'^[0-9a-f]{64}$')
 
@@ -122,7 +124,7 @@ class CommercialLowPowerImportPayload(ReportImportPayload):
     coverage_attestation: CoverageAttestationPayload | None = None
 
 
-def apply_sta_attestation(project_id, payload, result):
+def apply_sta_attestation(project_id, payload, result, db):
     try:
         verified = verify_sta_attestation(payload.coverage_attestation, project_id=project_id,
                                           payload=payload, result=result)
@@ -131,6 +133,11 @@ def apply_sta_attestation(project_id, payload, result):
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     if verified:
+        plan = resolve_sta_scenario_plan(db, project_id, payload.stage)
+        attested_version = verified.get('scenario_plan_version')
+        if (0 if attested_version is None else attested_version) != plan['version']:
+            raise HTTPException(422, 'coverage attestation scenario_plan_version does not match the current STA scenario plan')
+        verified['scenario_plan_version'] = plan['version']
         result['coverage_attestation'] = verified
         result['coverage'] = 'collector_attested_complete'
         result['coverage_note'] = 'Configured collector attests complete STA execution scope; source report and claims are preserved.'
@@ -782,7 +789,7 @@ def import_commercial_low_power(project_id: int, payload: CommercialLowPowerImpo
 def preview_commercial_sta(project_id: int, payload: CommercialStaImportPayload, db: Session = Depends(get_db)):
     from .projects import get_project_or_404
     get_project_or_404(project_id, db)
-    result = apply_sta_attestation(project_id, payload, parse(payload, parse_commercial_sta))
+    result = apply_sta_attestation(project_id, payload, parse(payload, parse_commercial_sta), db)
     if result['tool_version'] != payload.tool_version.strip():
         raise HTTPException(422, 'tool_version must match the version captured in the report')
     return result
@@ -802,7 +809,7 @@ def import_commercial_sta(project_id: int, payload: CommercialStaImportPayload, 
         if receipt.payload_sha256 != digest:
             raise HTTPException(409, 'import identifier already used with different content')
         return db.get(SignoffRun, receipt.run_id)
-    result = apply_sta_attestation(project_id, payload, parse(payload, parse_commercial_sta))
+    result = apply_sta_attestation(project_id, payload, parse(payload, parse_commercial_sta), db)
     if result['tool_version'] != payload.tool_version.strip():
         raise HTTPException(422, 'tool_version must match the version captured in the report')
     prefix = 'primetime' if result['tool'] == 'Synopsys PrimeTime' else 'tempus'
