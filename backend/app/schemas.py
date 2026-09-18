@@ -175,6 +175,31 @@ class RunRevisionPage(BaseModel):
     unlabeled_runs: int
 
 
+class RevisionCoverageCell(BaseModel):
+    domain: Domain
+    required: bool
+    run_count: int
+    latest_run: RunOut | None
+
+
+class RevisionCoverageStage(BaseModel):
+    stage: Stage
+    plan_version: int
+    plan_source: Literal['default', 'custom']
+    required_domains: list[Domain]
+    covered_required_domains: int
+    cells: list[RevisionCoverageCell]
+
+
+class RevisionCoverageOut(BaseModel):
+    project_id: int
+    design_revision: str
+    total_runs: int
+    required_cells: int
+    covered_required_cells: int
+    stages: list[RevisionCoverageStage]
+
+
 class ProjectSummaryOut(ProjectOut):
     total_runs: int
     status_counts: RunStatusCounts
