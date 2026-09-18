@@ -11,7 +11,8 @@ signoff.
 
 from sqlalchemy import select
 
-from ..models import Domain, ProjectSignoffPlanRevision, RunStatus, Severity, SignoffRun, Stage, ViolationStatus
+from ..models import (Domain, ProjectSignoffPlanRevision, ProjectStageTargetRevision,
+                      RunStatus, Severity, SignoffRun, Stage, ViolationStatus)
 from .evidence import rtl_result_status
 
 REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
@@ -23,6 +24,20 @@ REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
 }
 
 BLOCKING_SEVERITIES = (Severity.error, Severity.critical)
+
+
+def resolve_target_revision(db, project_id: int, stage: Stage) -> dict:
+    revision = db.scalar(select(ProjectStageTargetRevision).where(
+        ProjectStageTargetRevision.project_id == project_id,
+        ProjectStageTargetRevision.stage == stage,
+    ).order_by(ProjectStageTargetRevision.version.desc()).limit(1))
+    if revision is None:
+        return {'stage': stage.value, 'version': 0, 'design_revision': None, 'reason': None,
+                'updated_by': None, 'updated_by_user_id': None, 'created_at': None}
+    return {'stage': stage.value, 'version': revision.version,
+            'design_revision': revision.design_revision, 'reason': revision.reason,
+            'updated_by': revision.updated_by, 'updated_by_user_id': revision.updated_by_user_id,
+            'created_at': revision.created_at}
 
 
 def resolve_signoff_plan(db, project_id: int, stage: Stage) -> dict:
