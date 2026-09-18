@@ -41,6 +41,15 @@ def initialize_schema(engine):
                 columns = {item["name"] for item in inspect(connection).get_columns(table)}
                 if column not in columns:
                     connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER REFERENCES users(id)"))
+            timestamp_type = "TIMESTAMP WITH TIME ZONE" if engine.dialect.name == "postgresql" else "DATETIME"
+            for table, columns in {
+                "waivers": {"design_revision": "VARCHAR(160)", "expires_at": timestamp_type},
+                "violation_events": {"waiver_design_revision": "VARCHAR(160)", "waiver_expires_at": timestamp_type},
+            }.items():
+                existing = {item["name"] for item in inspect(connection).get_columns(table)}
+                for column, definition in columns.items():
+                    if column not in existing:
+                        connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
             release_columns = {item['name'] for item in inspect(connection).get_columns('signoff_release_decisions')}
             if 'gate_snapshot' not in release_columns:
                 connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN gate_snapshot JSON'))

@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1049개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1052개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -57,6 +57,7 @@ Dependabot이 backend(pip)/frontend(npm)/GitHub Actions 의존성을 매주 점�
 
 적용된 검색 조건의 전체 위반과 런·웨이버 정보를 [JSON으로 내보낼 수 있습니다](docs/violation-export.md).
 
+[웨이버 범위와 만료](docs/waiver-scope-and-expiry.md)는 새 승인을 설계 리비전과 최대 365일 유효기간에 묶고 만료·범위 불일치를 게이트 차단에 다시 반영합니다.
 프로젝트의 **전체 위반 검토**에서 검색·상태·심각도·단계·도메인 필터와 페이지 이동을
 사용할 수 있습니다. 기본 범위는 단계·도메인별 최신 런이며 과거 런도 선택할 수 있습니다.
 검색 조건과 선택 항목은 URL에 보존됩니다. 위반별 수정 완료·웨이버·재오픈 사유와

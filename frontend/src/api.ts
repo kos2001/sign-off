@@ -200,6 +200,10 @@ export interface Waiver {
   reason: string;
   approved_by: string;
   approved_user_id: number | null;
+  design_revision: string | null;
+  expires_at: string | null;
+  active: boolean;
+  inactive_reason: 'expired' | 'design_revision_mismatch' | null;
   created_at: string;
 }
 
@@ -229,6 +233,8 @@ export interface ViolationEvent {
   actor: string;
   actor_user_id: number | null;
   reason: string;
+  waiver_design_revision: string | null;
+  waiver_expires_at: string | null;
   created_at: string;
 }
 
@@ -343,6 +349,7 @@ export interface GateDomain {
   reason: string | null;
   run_id?: number;
   open_blocking_violations?: number;
+  inactive_waivers?: number;
   evidence_source?: string;
   design_revision?: string | null;
 }
@@ -694,7 +701,7 @@ export const api = {
       body: JSON.stringify(w),
     }),
   transitionViolation: (id: number, payload: {
-    expected_status: ViolationStatus; expected_version: number; status: ViolationStatus; actor: string; reason: string;
+    expected_status: ViolationStatus; expected_version: number; status: ViolationStatus; actor: string; reason: string; waiver_expires_at?: string;
   }) => request<Violation>(`/violations/${id}`, {
     method: "PATCH", body: JSON.stringify(payload),
   }),

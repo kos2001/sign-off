@@ -53,7 +53,8 @@ function gateReasonLabel(reason?: string | null) {
   };
   if (!reason) return '미실행';
   const blocking = reason.match(/^(\d+) open blocking violation\(s\)$/);
-  return blocking ? `미해결 차단 위반 ${blocking[1]}건` : labels[reason] ?? reason;
+  const inactiveWaiver = reason.match(/^(\d+) expired or out-of-scope waiver\(s\)$/);
+  return inactiveWaiver ? `만료·범위 불일치 웨이버 ${inactiveWaiver[1]}건` : blocking ? `미해결 차단 위반 ${blocking[1]}건` : labels[reason] ?? reason;
 }
 
 export default function ProjectDetail() {

@@ -18,6 +18,7 @@ export function ViolationActions({ violation: v, onChange, projectId: explicitPr
   const account = auth.state.user?.username;
   const [{ target, reviewVersion, reviewStatus, actor, reason }, updateDraft] = useReviewDraft(v);
   const [showHistory, setShowHistory] = useState(false);
+  const [waiverExpiresAt, setWaiverExpiresAt] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyStatus, setHistoryStatus] = useState('');
@@ -52,6 +53,7 @@ export function ViolationActions({ violation: v, onChange, projectId: explicitPr
     mutationFn: () => api.transitionViolation(v.id, {
       expected_status: reviewStatus, expected_version: reviewVersion,
       status: target!, actor: account ?? actor.trim(), reason: reason.trim(),
+      ...(target === 'waived' && waiverExpiresAt ? { waiver_expires_at: new Date(waiverExpiresAt).toISOString() } : {}),
     }),
     onSuccess: () => {
       updateDraft({ target: null, reason: "" });
@@ -62,6 +64,11 @@ export function ViolationActions({ violation: v, onChange, projectId: explicitPr
   });
   const start = (status: ViolationStatus) => {
     change.reset();
+    if (status === 'waived') {
+      const expiry = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+      const local = new Date(expiry.getTime() - expiry.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      setWaiverExpiresAt(local);
+    }
     updateDraft({ reviewVersion: v.version, reviewStatus: v.status, target: status });
   };
   const stale = target !== null && reviewVersion !== v.version;
@@ -76,11 +83,13 @@ export function ViolationActions({ violation: v, onChange, projectId: explicitPr
         </> : <button className="btn btn-ghost" disabled={!(v.status === "waived" ? canApprove : canEdit) || change.isPending || stale} onClick={() => start("open")}>재오픈</button>}
         <button className="btn btn-ghost" aria-expanded={showHistory} onClick={() => setShowHistory(!showHistory)}>변경 이력</button>
       </div>
-      {v.waiver && <p className="text-xs whitespace-pre-wrap">{v.waiver.approved_by} · {v.waiver.reason}</p>}
+      {v.waiver && <div className="text-xs space-y-1"><p className="whitespace-pre-wrap">{v.waiver.approved_by} · {v.waiver.reason}</p><p className={v.waiver.active ? 'text-[var(--text-muted)]' : 'text-[var(--status-critical)]'}>{v.waiver.active ? '웨이버 유효' : v.waiver.inactive_reason === 'expired' ? '웨이버 만료 · 게이트에 다시 반영' : '설계 리비전 범위 불일치 · 게이트에 다시 반영'} · 리비전 {v.waiver.design_revision || '미기록'} · 만료 {v.waiver.expires_at ? new Date(v.waiver.expires_at).toLocaleString() : '기존 무기한 웨이버'}</p></div>}
       {target && <form className="rounded-lg bg-[var(--surface-1)] p-3 space-y-3" onSubmit={e => { e.preventDefault(); if (!stale && !change.isPending) change.mutate(); }}>
         <p className="font-medium">{labels[reviewStatus]} → {labels[target]}</p>
         {account ? <p className="text-sm">처리 계정: {account}</p> : <Field label="처리자 이름 (직접 입력)"><input className="input" required maxLength={80} value={actor} disabled={change.isPending} onChange={e => updateDraft({ actor: e.target.value })} /></Field>}
         <Field label={target === "fixed" ? "수정 근거 · 검증 결과" : "처리 사유"}><textarea autoFocus className="input w-full" required maxLength={4000} rows={3} value={reason} disabled={change.isPending} onChange={e => updateDraft({ reason: e.target.value })} /></Field>
+        {target === 'waived' && <Field label="웨이버 만료 시각 · 최대 365일"><input className="input w-full" type="datetime-local" required value={waiverExpiresAt} disabled={change.isPending} onChange={event => setWaiverExpiresAt(event.target.value)} /></Field>}
+        {target === 'waived' && <p className="text-xs">현재 런의 설계 리비전에 자동으로 한정됩니다. 만료되거나 범위가 달라지면 차단 위반으로 다시 계산됩니다.</p>}
         {target === "open" && <p className="text-xs">웨이버가 있으면 해제되며, 차단 위반은 게이트에 다시 반영됩니다.</p>}
         {change.isError && !stale && <p role="alert" className="text-xs text-[var(--status-critical)]">{change.error.message}</p>}
         {stale && <div role="alert" className="space-y-2 text-xs">
@@ -88,7 +97,7 @@ export function ViolationActions({ violation: v, onChange, projectId: explicitPr
           <button type="button" className="btn btn-ghost" onClick={() => { setShowHistory(true); updateDraft({ target: null }); change.reset(); qc.invalidateQueries({ queryKey: ["violation-history", v.id] }); }}>변경 내용 확인</button>
         </div>}
         <div className="flex gap-2">
-          <button className="btn btn-primary" disabled={change.isPending || stale || !(account ?? actor.trim()) || !reason.trim()}>{change.isPending ? "저장 중…" : "변경 저장"}</button>
+          <button className="btn btn-primary" disabled={change.isPending || stale || !(account ?? actor.trim()) || !reason.trim() || (target === 'waived' && !waiverExpiresAt)}>{change.isPending ? "저장 중…" : "변경 저장"}</button>
           <button type="button" className="btn btn-ghost" disabled={change.isPending} onClick={() => { updateDraft({ target: null, reason: "" }); change.reset(); }}>취소</button>
         </div>
       </form>}
