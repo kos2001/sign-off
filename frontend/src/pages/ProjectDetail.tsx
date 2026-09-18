@@ -164,6 +164,17 @@ export default function ProjectDetail() {
     queryFn: () => api.signoffReleaseAudit(projectId),
     refetchInterval: project.data?.archived_at ? false : 5000,
   });
+  const releaseLedger = useMutation({
+    mutationFn: () => api.exportSignoffReleaseLedger(projectId),
+    onSuccess: blob => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `project-${projectId}-decision-ledger.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  });
   const prepareReleaseReview = useMutation({
     mutationFn: () => api.signoffReleaseReview(projectId, stage),
     onSuccess: review => setReleaseReview(review),
@@ -382,6 +393,8 @@ export default function ProjectDetail() {
                 <p className="mt-1 text-xs text-[var(--text-muted)]">승인자만 결정할 수 있습니다. 서버가 현재 근거 패키지를 다시 검증해 결정과 함께 불변 보관하며 AI는 승인·거절에 개입하지 않습니다.</p>
                 {releaseAudit.data && <p className="mt-1 break-all text-xs text-[var(--status-good)]">결정 체인 검증 완료 · {releaseAudit.data.decision_count}건 · 헤드 {releaseAudit.data.chain_head_sha256 || '기록 없음'}</p>}
                 {releaseAudit.isError && <p role="alert" className="mt-1 text-xs text-[var(--status-critical)]">결정 감사 체인 검증 실패: {releaseAudit.error.message}</p>}
+                <button className="btn btn-ghost mt-2" disabled={releaseLedger.isPending || releaseAudit.isError} onClick={() => releaseLedger.mutate()}>{releaseLedger.isPending ? '감사 원장 생성 중…' : '검증 가능한 감사 원장 내보내기'}</button>
+                {releaseLedger.isError && <p role="alert" className="mt-1 text-xs text-[var(--status-critical)]">{releaseLedger.error.message}</p>}
               </div>
               {auth.can(projectId, 'approver') && !p.archived_at && <div className="space-y-2">
                 <textarea className="input w-full" rows={2} maxLength={4000} value={releaseReason} onChange={event => setReleaseReason(event.target.value)} placeholder="결정 사유" aria-label="사인오프 결정 사유" />

@@ -19,6 +19,7 @@ from ..schemas import (
     SignoffReleaseReviewOut,
     SignoffReleaseAuditOut,
 )
+from ..release_ledger import FORMAT as LEDGER_FORMAT, canonical_digest, verify_ledger
 from .runs import export_gate, export_signoff_package
 
 router = APIRouter(prefix='/projects/{project_id}/signoff-releases', tags=['signoff-releases'])
@@ -45,7 +46,7 @@ def evidence_digest(bundle: dict) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-def decision_digest(record: SignoffReleaseDecision) -> str:
+def release_decision_payload(record: SignoffReleaseDecision) -> dict:
     created_at = record.created_at
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
@@ -68,8 +69,11 @@ def decision_digest(record: SignoffReleaseDecision) -> str:
     if record.chain_version is not None:
         payload['chain_version'] = record.chain_version
         payload['previous_decision_sha256'] = record.previous_decision_sha256
-    canonical = json.dumps(payload, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(',', ':')).encode()
-    return hashlib.sha256(canonical).hexdigest()
+    return payload
+
+
+def decision_digest(record: SignoffReleaseDecision) -> str:
+    return canonical_digest(release_decision_payload(record))
 
 
 def release_out(record: SignoffReleaseDecision, *, current_evidence_sha256: str,
@@ -251,6 +255,38 @@ def audit_release_decisions(project_id: int, db: Session = Depends(get_db)):
         chained_decision_count=chain_count, chain_head_sha256=expected_head,
         verified_at=datetime.now(timezone.utc),
     )
+
+
+@router.get('/audit/export')
+def export_release_decision_ledger(project_id: int, db: Session = Depends(get_db)):
+    audit = audit_release_decisions(project_id, db)
+    rows = list(db.scalars(select(SignoffReleaseDecision).where(
+        SignoffReleaseDecision.project_id == project_id,
+    ).options(defer(SignoffReleaseDecision.package_bytes), defer(SignoffReleaseDecision.manifest))
+        .order_by(SignoffReleaseDecision.id)))
+    ledger = {
+        'format': LEDGER_FORMAT,
+        'project_id': project_id,
+        'exported_at': datetime.now(timezone.utc).isoformat(),
+        'chain_head_sha256': audit.chain_head_sha256,
+        'decisions': [{
+            'id': row.id, **release_decision_payload(row),
+            'decision_sha256': row.decision_sha256,
+        } for row in rows],
+    }
+    # Verify the exact portable representation before returning it.
+    verify_ledger(jsonable_encoder(ledger), audit.chain_head_sha256)
+    content = json.dumps(jsonable_encoder(ledger), ensure_ascii=False, allow_nan=False,
+                         separators=(',', ':')).encode()
+    if len(content) > 16 * 1024 * 1024:
+        raise HTTPException(413, '사인오프 결정 감사 원장이 16 MiB를 초과합니다.')
+    headers = {
+        'Content-Disposition': f'attachment; filename="project-{project_id}-decision-ledger.json"',
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+    }
+    if audit.chain_head_sha256:
+        headers['X-Signoff-Decision-Chain-Head'] = audit.chain_head_sha256
+    return Response(content, media_type='application/json', headers=headers)
 
 
 def get_release(project_id: int, release_id: int, db: Session) -> SignoffReleaseDecision:

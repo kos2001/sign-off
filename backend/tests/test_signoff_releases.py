@@ -1,13 +1,17 @@
 import hashlib
 import io
 import json
+import subprocess
+import sys
 import zipfile
 
+import pytest
 from fastapi import Response
 
 from app.db import SessionLocal
 from app.models import RunEvidence, SignoffReleaseDecision, SignoffRun
 from app.routers.releases import evidence_digest
+from app.release_ledger import verify_ledger
 from test_auth import accounts
 
 
@@ -57,6 +61,10 @@ def test_release_decision_requires_approver_and_preserves_exact_package(accounts
     assert audit.json()['decision_count'] == 1
     assert audit.json()['chained_decision_count'] == 1
     assert audit.json()['chain_head_sha256'] == item['decision_sha256']
+    ledger_response = viewer.get(f'{url}/audit/export')
+    assert ledger_response.status_code == 200
+    assert ledger_response.headers['x-signoff-decision-chain-head'] == item['decision_sha256']
+    assert verify_ledger(ledger_response.json(), item['decision_sha256'])['decision_count'] == 1
     package = viewer.get(f"{url}/{item['id']}/package")
     assert package.status_code == 200
     assert hashlib.sha256(package.content).hexdigest() == item['package_sha256']
@@ -293,3 +301,31 @@ def test_release_audit_detects_deleted_chain_tail(accounts):
     response = login('viewer').get(f'{url}/audit')
     assert response.status_code == 409
     assert '저장된 헤드' in response.json()['detail']
+
+
+def test_portable_release_ledger_cli_and_tamper_detection(accounts, tmp_path):
+    _, ids, login = accounts
+    attach_source(ids['run'])
+    url = f"/projects/{ids['project']}/signoff-releases"
+    item = login('approver').post(url, json={
+        'stage': 'final', 'decision': 'rejected', 'reason': 'portable audit evidence',
+    }).json()
+    ledger = login('viewer').get(f'{url}/audit/export').json()
+    path = tmp_path / 'decision-ledger.json'
+    path.write_text(json.dumps(ledger, ensure_ascii=False), encoding='utf-8')
+    verified = subprocess.run([
+        sys.executable, '-m', 'app.release_ledger', 'verify', '--ledger', str(path),
+        '--expected-head', item['decision_sha256'],
+    ], capture_output=True, text=True, timeout=10)
+    assert verified.returncode == 0, verified.stderr
+    assert json.loads(verified.stdout)['status'] == 'verified'
+
+    ledger['decisions'][0]['reason'] = 'rewritten outside the service'
+    with pytest.raises(ValueError, match='digest mismatch'):
+        verify_ledger(ledger, item['decision_sha256'])
+    wrong_head = subprocess.run([
+        sys.executable, '-m', 'app.release_ledger', 'verify', '--ledger', str(path),
+        '--expected-head', '0' * 64,
+    ], capture_output=True, text=True, timeout=10)
+    assert wrong_head.returncode == 1
+    assert 'externally retained head' in wrong_head.stderr
