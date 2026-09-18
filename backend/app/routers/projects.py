@@ -1,8 +1,9 @@
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,9 +14,10 @@ from ..services.stages import resolve_signoff_plan
 from ..services.sta_scenario_plans import resolve_sta_scenario_plan
 from ..auth import auth_required
 from ..auth import require_project
-from ..models import Project, ProjectMember, ProjectSignoffPlanRevision, RunStatus, SignoffRun, Stage
-from ..schemas import (CollectorContextOut, ProjectCreate, ProjectOut, ProjectSummaryOut,
-                       ProjectSummaryPageOut,
+from ..models import (Project, ProjectLifecycleEvent, ProjectMember, ProjectSignoffPlanRevision,
+                      RunStatus, SignoffRun, StaBatchExecution, Stage)
+from ..schemas import (CollectorContextOut, ProjectCreate, ProjectLifecycleHistoryOut,
+                       ProjectLifecycleUpdate, ProjectOut, ProjectSummaryOut, ProjectSummaryPageOut,
                        SignoffPlanHistoryOut, SignoffPlanOut,
                        SignoffPlanStageOut, SignoffPlanUpdate)
 
@@ -53,11 +55,13 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[ProjectOut])
-def list_projects(db: Session = Depends(get_db)):
+def list_projects(include_archived: bool = False, db: Session = Depends(get_db)):
     query = select(Project)
     user = db.info.get("user")
     if auth_required() and user and not user.is_admin:
         query = query.join(ProjectMember).where(ProjectMember.user_id == user.id)
+    if not include_archived:
+        query = query.where(Project.archived_at.is_(None))
     return db.scalars(query.order_by(Project.id)).all()
 
 
@@ -67,6 +71,7 @@ def project_summaries(db: Session = Depends(get_db)):
     user = db.info.get('user')
     if auth_required() and user and not user.is_admin:
         query = query.join(ProjectMember).where(ProjectMember.user_id == user.id)
+    query = query.where(Project.archived_at.is_(None))
     projects = db.scalars(query.order_by(Project.id)).all()
     ids = [project.id for project in projects]
     counts = {project_id: {status.value: 0 for status in RunStatus} for project_id in ids}
@@ -78,6 +83,8 @@ def project_summaries(db: Session = Depends(get_db)):
     return [{
         'id': project.id, 'name': project.name, 'process_node': project.process_node,
         'foundry': project.foundry, 'created_at': project.created_at,
+        'lifecycle_version': project.lifecycle_version, 'archived_at': project.archived_at,
+        'archived_by': project.archived_by, 'archived_by_user_id': project.archived_by_user_id,
         'total_runs': sum(counts[project.id].values()), 'status_counts': counts[project.id],
     } for project in projects]
 
@@ -85,12 +92,17 @@ def project_summaries(db: Session = Depends(get_db)):
 @router.get('/summary/page', response_model=ProjectSummaryPageOut)
 def project_summary_page(q: str | None = Query(None, min_length=1, max_length=120),
                          sort: Literal['newest', 'oldest', 'name'] = 'newest',
+                         lifecycle: Literal['active', 'archived', 'all'] = 'active',
                          offset: int = Query(0, ge=0), limit: int = Query(24, ge=1, le=100),
                          db: Session = Depends(get_db)):
     query = select(Project)
     user = db.info.get('user')
     if auth_required() and user and not user.is_admin:
         query = query.join(ProjectMember).where(ProjectMember.user_id == user.id)
+    if lifecycle == 'active':
+        query = query.where(Project.archived_at.is_(None))
+    elif lifecycle == 'archived':
+        query = query.where(Project.archived_at.is_not(None))
     if q is not None:
         search = q.strip()
         if not search:
@@ -132,6 +144,8 @@ def project_summary_page(q: str | None = Query(None, min_length=1, max_length=12
         'items': [{
             'id': project.id, 'name': project.name, 'process_node': project.process_node,
             'foundry': project.foundry, 'created_at': project.created_at,
+            'lifecycle_version': project.lifecycle_version, 'archived_at': project.archived_at,
+            'archived_by': project.archived_by, 'archived_by_user_id': project.archived_by_user_id,
             'total_runs': sum(counts[project.id].values()), 'status_counts': counts[project.id],
         } for project in projects],
         'total': total, 'offset': offset, 'limit': limit, 'foundry_count': foundry_count,
@@ -142,6 +156,62 @@ def project_summary_page(q: str | None = Query(None, min_length=1, max_length=12
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(project_id: int, db: Session = Depends(get_db)):
     return get_project_or_404(project_id, db)
+
+
+@router.put('/{project_id}/lifecycle', response_model=ProjectOut)
+def update_project_lifecycle(project_id: int, payload: ProjectLifecycleUpdate,
+                             db: Session = Depends(get_db)):
+    project = get_project_or_404(project_id, db)
+    require_project(db, project_id, 'owner')
+    currently_archived = project.archived_at is not None
+    if payload.archived == currently_archived:
+        raise HTTPException(409, detail='project lifecycle already has the requested state')
+    if payload.archived:
+        active_run = db.scalar(select(SignoffRun.id).where(
+            SignoffRun.project_id == project_id, SignoffRun.status == RunStatus.running).limit(1))
+        active_batch = db.scalar(select(StaBatchExecution.id).where(
+            StaBatchExecution.project_id == project_id,
+            StaBatchExecution.status.in_(('queued', 'running'))).limit(1))
+        if active_run is not None or active_batch is not None:
+            raise HTTPException(409, detail='finish or cancel active runs and STA batches before archiving')
+    user = db.info.get('user')
+    actor = user.username if user else 'local operator'
+    changed_at = datetime.now(timezone.utc)
+    changed = db.execute(update(Project).where(
+        Project.id == project_id, Project.lifecycle_version == payload.expected_version,
+        Project.archived_at.is_not(None) if currently_archived else Project.archived_at.is_(None),
+    ).values(
+        lifecycle_version=payload.expected_version + 1,
+        archived_at=changed_at if payload.archived else None,
+        archived_by=actor if payload.archived else None,
+        archived_by_user_id=user.id if payload.archived and user else None,
+    ).execution_options(synchronize_session=False))
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(409, detail='project lifecycle changed; reload and retry')
+    db.add(ProjectLifecycleEvent(
+        project_id=project_id, version=payload.expected_version + 1,
+        before_state='archived' if currently_archived else 'active',
+        after_state='archived' if payload.archived else 'active', reason=payload.reason,
+        actor=actor, actor_user_id=user.id if user else None,
+    ))
+    db.commit()
+    db.expire_all()
+    return get_project_or_404(project_id, db)
+
+
+@router.get('/{project_id}/lifecycle/history', response_model=ProjectLifecycleHistoryOut)
+def project_lifecycle_history(project_id: int, before_id: int | None = Query(None, ge=1),
+                              limit: int = Query(25, ge=1, le=100), db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    require_project(db, project_id, 'owner')
+    filters = [ProjectLifecycleEvent.project_id == project_id]
+    if before_id is not None:
+        filters.append(ProjectLifecycleEvent.id < before_id)
+    rows = db.scalars(select(ProjectLifecycleEvent).where(*filters)
+                      .order_by(ProjectLifecycleEvent.id.desc()).limit(limit + 1)).all()
+    items = rows[:limit]
+    return {'items': items, 'next_before_id': items[-1].id if len(rows) > limit else None}
 
 
 @router.get('/{project_id}/collector-context/{stage}', response_model=CollectorContextOut)

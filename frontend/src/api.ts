@@ -10,6 +10,10 @@ export interface Project {
   process_node: string;
   foundry: string;
   created_at: string;
+  lifecycle_version: number;
+  archived_at: string | null;
+  archived_by: string | null;
+  archived_by_user_id: number | null;
 }
 export interface ProjectSummary extends Project {
   total_runs: number;
@@ -656,14 +660,18 @@ export const api = {
   revokeCollector: (id: number, credentialId: number) => request<CollectorCredential>(`/projects/${id}/collectors/${credentialId}`, { method: 'DELETE' }),
   listProjects: () => request<Project[]>("/projects"),
   projectSummaries: () => request<ProjectSummary[]>('/projects/summary'),
-  projectSummaryPage: (options: { q?: string; sort?: 'newest' | 'oldest' | 'name'; offset?: number; limit?: number } = {}) =>
+  projectSummaryPage: (options: { q?: string; sort?: 'newest' | 'oldest' | 'name'; lifecycle?: 'active' | 'archived' | 'all'; offset?: number; limit?: number } = {}) =>
     request<ProjectSummaryPage>(`/projects/summary/page?${new URLSearchParams({
       sort: options.sort ?? 'newest', offset: String(options.offset ?? 0), limit: String(options.limit ?? 24),
+      lifecycle: options.lifecycle ?? 'active',
       ...(options.q ? { q: options.q } : {}),
     })}`),
-  createProject: (p: Omit<Project, "id" | "created_at">) =>
+  createProject: (p: { name: string; process_node: string; foundry: string }) =>
     request<Project>("/projects", { method: "POST", body: JSON.stringify(p) }),
   getProject: (id: number) => request<Project>(`/projects/${id}`),
+  updateProjectLifecycle: (id: number, body: { expected_version: number; archived: boolean; reason: string }) =>
+    request<Project>(`/projects/${id}/lifecycle`, { method: 'PUT', body: JSON.stringify(body) }),
+  projectLifecycleHistory: (id: number) => request<{ items: { id: number; version: number; before_state: 'active' | 'archived'; after_state: 'active' | 'archived'; reason: string; actor: string; actor_user_id: number | null; created_at: string }[]; next_before_id: number | null }>(`/projects/${id}/lifecycle/history?limit=100`),
   listRuns: (projectId: number) =>
     request<SignoffRun[]>(`/projects/${projectId}/runs`),
   runPage: (projectId: number, options: { beforeId?: number; limit?: number; domain?: Domain; stage?: Stage; status?: RunStatus; q?: string } = {}) =>
