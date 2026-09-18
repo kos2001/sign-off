@@ -337,6 +337,7 @@ function RunRow({ run, onChange }: { run: SignoffRun; onChange: () => void }) {
           {run.evidence_source === 'commercial_emir_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/power-integrity`}>EM/IR 핫스폿</Link>}
           {run.evidence_source === 'commercial_power_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/power-breakdown`}>전력 계층</Link>}
           {run.evidence_source === 'commercial_thermal_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/thermal-hotspots`}>열 핫스폿</Link>}
+          {run.evidence_source === 'commercial_rtl_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/rtl-regression`}>RTL 회귀</Link>}
           <button className="btn btn-ghost" disabled={!auth.can(run.project_id, "editor") || update.isPending || run.result_locked} title={run.result_locked ? "서버 분석 결과는 다시 실행하여 갱신하세요" : "수동 상태 변경"} onClick={() => update.mutate("passed")}>
             Pass
           </button>

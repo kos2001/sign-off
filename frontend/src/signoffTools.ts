@@ -12,8 +12,8 @@ export const SIGNOFF_TOOLS: Record<Domain, readonly SignoffToolOption[]> = {
     { value: 'Verilator + Yosys', label: 'Verilator + Yosys · 추천', description: 'RTL 린트·폭 검사와 합성 구조 검증을 함께 기록할 때 적합합니다.', workflow: '실제 실행은 RTL 분석에서 제공됩니다.' },
     { value: 'Verilator', label: 'Verilator', description: 'RTL 린트 또는 시뮬레이션 결과를 수동 등록할 때 사용합니다.', workflow: '이 화면에서는 외부 결과의 출처만 기록합니다.' },
     { value: 'Yosys', label: 'Yosys', description: '합성·구조 검사 결과를 수동 등록할 때 사용합니다.', workflow: '이 화면에서는 외부 결과의 출처만 기록합니다.' },
-    { value: 'Synopsys VCS', label: 'Synopsys VCS', description: '상용 RTL 시뮬레이션 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
-    { value: 'Cadence Xcelium', label: 'Cadence Xcelium', description: '상용 RTL 시뮬레이션 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
+    { value: 'Synopsys VCS', label: 'Synopsys VCS', description: '상용 RTL 시뮬레이션 결과의 출처를 기록합니다.', workflow: '검증된 상용 RTL 회귀 JSON 가져오기를 지원합니다.' },
+    { value: 'Cadence Xcelium', label: 'Cadence Xcelium', description: '상용 RTL 시뮬레이션 결과의 출처를 기록합니다.', workflow: '검증된 상용 RTL 회귀 JSON 가져오기를 지원합니다.' },
   ],
   sta: [
     { value: 'OpenSTA', label: 'OpenSTA · 추천', description: '정적 타이밍 경로와 슬랙을 검토할 때 적합합니다.', workflow: 'OpenSTA JSON 보고서 가져오기를 지원합니다.' },
