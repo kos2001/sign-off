@@ -117,6 +117,13 @@ export interface Violation {
   waiver: Waiver | null;
 }
 
+export interface RunViolationPage {
+  total: number; run_total: number; offset: number; limit: number;
+  status_counts: Record<ViolationStatus, number>;
+  severity_counts: Record<Severity, number>;
+  items: Violation[];
+}
+
 export interface ViolationEvent {
   id: number;
   from_status: ViolationStatus;
@@ -438,6 +445,7 @@ export const api = {
   getProject: (id: number) => request<Project>(`/projects/${id}`),
   listRuns: (projectId: number) =>
     request<SignoffRun[]>(`/projects/${projectId}/runs`),
+  getRun: (runId: number) => request<SignoffRun>(`/runs/${runId}`),
   runStructure: (runId: number) => request<DesignStructure>(`/runs/${runId}/evidence/structure`),
   runNetlist: (runId: number) => request<Blob>(`/runs/${runId}/evidence/netlist`, undefined, 'blob'),
   runSource: (runId: number) => request<Blob>(`/runs/${runId}/evidence/source`, undefined, 'blob'),
@@ -461,6 +469,8 @@ export const api = {
     }),
   listViolations: (runId: number) =>
     request<Violation[]>(`/runs/${runId}/violations`),
+  runViolations: (runId: number, filters: Record<string, string>) =>
+    request<RunViolationPage>(`/runs/${runId}/violations/page?${new URLSearchParams(filters)}`),
   getViolation: (violationId: number) => request<Violation>(`/violations/${violationId}`),
   projectViolations: (projectId: number, filters: ViolationFilters) => {
     const params = new URLSearchParams();
