@@ -18,6 +18,7 @@ import ProjectDetail from "./pages/ProjectDetail";
 import Violations from "./pages/Violations";
 import RunComparison from "./pages/RunComparison";
 import RunWorkspace from "./pages/RunWorkspace";
+import StaMatrix from "./pages/StaMatrix";
 import { ReviewDraftProvider } from "./components/ReviewDrafts";
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/projects/:id/violations" element={<Violations />} />
           <Route path="/projects/:id/compare" element={<RunComparison />} />
+          <Route path="/projects/:id/sta-matrix" element={<StaMatrix />} />
           <Route path="/projects/:id/import" element={<ReportImport />} />
           <Route path="/projects/:id/import/klayout" element={<ReportImport klayout />} />
           <Route path="/runs/:runId/structure" element={<DesignStructure />} />
