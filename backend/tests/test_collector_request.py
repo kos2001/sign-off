@@ -106,6 +106,7 @@ def test_cli_never_echoes_missing_secret_value(tmp_path):
     report_path = tmp_path / 'report.json'; report_path.write_text('{}')
     claims_path = tmp_path / 'claims.json'; claims_path.write_text('{}')
     environment = {key: value for key, value in os.environ.items() if key != 'SIGNOFF_COLLECTOR_HMAC_SECRET'}
+    environment['PYTHONPATH'] = '.'
     completed = subprocess.run([sys.executable, 'scripts/create_coverage_import.py', '--domain', 'sta',
         '--report', str(report_path), '--claims-file', str(claims_path), '--project-id', '1',
         '--stage', 'routing', '--design-revision', 'r1', '--scenario', 'all',
