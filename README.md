@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1083개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1084개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -83,6 +83,8 @@ MMMC 계획까지 평가한 차단 사유를 한 화면에서 확인할 수 있�
 거부하고 새 스냅샷 검토를 요구합니다.
 새 결정은 직전 결정의 SHA-256과 연결되고 프로젝트가 별도 체인 헤드를 보존합니다. 감사 화면과 API는
 개별 내용 변조, 중간 결정 삭제, 마지막 결정 삭제를 검증합니다.
+[휴대용 결정 감사 원장](docs/release-decision-ledger.md)은 서버 밖에서 표준 Python만으로 전체 체인을
+검증하고, 별도로 보관한 체인 헤드와 대조할 수 있습니다.
 대시보드는 접근 가능한 프로젝트와 런 상태 집계를 단일 API 호출로 받아 프로젝트 수에 비례한
 추가 HTTP 요청과 evidence 조회를 만들지 않습니다.
 프로젝트가 많을 때는 이름·공정 노드·파운드리를 서버에서 검색하고 등록일·이름으로 정렬해

@@ -47,6 +47,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET /projects/{id}/target-revisions/history` — 목표 리비전 변경 이력의 커서 페이지
 - `GET /projects/{id}/signoff-releases/review` — approver가 승인 직전 게이트와 근거 스냅샷 SHA-256을 캡처
 - `GET /projects/{id}/signoff-releases/audit` — 결정별 서명, 이전 결정 연결과 프로젝트 체인 헤드를 검증해 변경·삭제 탐지
+- `GET /projects/{id}/signoff-releases/audit/export` — 외부 보관·오프라인 검증용 결정 감사 원장 JSON
 - `POST /projects/{id}/signoff-releases` — 승인·차단 결정과 근거 동결. 승인은 고정된 릴리스 후보와 게이트 공통 리비전이 정확히 일치하고 검토한 근거 해시가 현재 해시와 같아야 함
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
@@ -254,6 +255,9 @@ PostgreSQL 실환경 업그레이드 검증은 남아 있습니다. 앞 절의 r
 `python -m app.backup create|verify|restore`로 온라인 스냅샷, 무결성 검증,
 새 DB 경로 복원을 수행합니다. WAL과 실행 근거·검토 이력을 포함하며 기존 파일은
 덮어쓰지 않습니다. [운영 복구 절차](../docs/backup-recovery.md)를 참고하세요.
+
+결정 감사 원장은 `python -m app.release_ledger verify --ledger <file>`로 DB나 서버 없이 검증합니다.
+이전에 별도 보관한 헤드가 있으면 `--expected-head <sha256>`을 함께 사용하세요.
 
 ### RTL 테스트벤치
 
