@@ -8,7 +8,9 @@ from ..models import RunStatus, Severity, SignoffRun, Violation
 
 def waiver_evidence(violation: Violation):
     waiver = violation.waiver
-    return (waiver.reason, waiver.approved_by) if waiver else None
+    return ((waiver.reason, waiver.approved_by, waiver.design_revision,
+             waiver.expires_at.isoformat() if waiver.expires_at else None,
+             waiver.active) if waiver else None)
 
 
 def signature(violation: Violation):

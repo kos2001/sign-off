@@ -9,7 +9,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
-from ..models import Domain, Severity, SignoffRun, Stage, Violation, ViolationStatus
+from ..models import Domain, Severity, SignoffRun, Stage, Violation, ViolationStatus, Waiver
 from ..schemas import ViolationPage, ProjectViolationOut
 from ..services.stages import BLOCKING_SEVERITIES
 from .projects import get_project_or_404
@@ -81,7 +81,10 @@ def export_rows(db, statement):
             if size > EXPORT_MAX_BYTES:
                 raise export_size_error()
             items.append(encoded)
-            open_blocking += item.status == ViolationStatus.open and item.severity in BLOCKING_SEVERITIES
+            open_blocking += (item.severity in BLOCKING_SEVERITIES
+                              and (item.status == ViolationStatus.open
+                                   or (item.status == ViolationStatus.waived
+                                       and (item.waiver is None or not item.waiver.active))))
     finally:
         rows.close()
     return {'items': items, 'total': len(items), 'open_blocking': open_blocking}
@@ -113,11 +116,14 @@ def violation_page(project_id, db, *, q, status, severity, domain, stage, latest
             column.icontains(q.strip(), autoescape=True)
             for column in (Violation.check_name, Violation.location, Violation.description, SignoffRun.tool)
         ]))
-    blocking = (Violation.status == ViolationStatus.open) & Violation.severity.in_(BLOCKING_SEVERITIES)
+    inactive_waiver = ((Violation.status == ViolationStatus.waived)
+                       & (Waiver.id.is_(None) | ((Waiver.expires_at.is_not(None))
+                                                & (Waiver.expires_at <= datetime.now(timezone.utc)))))
+    blocking = ((Violation.status == ViolationStatus.open) | inactive_waiver) & Violation.severity.in_(BLOCKING_SEVERITIES)
     if not exporting:
         total, open_blocking = db.execute(select(
             func.count(Violation.id), func.coalesce(func.sum(case((blocking, 1), else_=0)), 0),
-        ).select_from(Violation).join(SignoffRun).where(*filters)).one()
+        ).select_from(Violation).join(SignoffRun).outerjoin(Waiver).where(*filters)).one()
     severity_rank = case(
         (Violation.severity == Severity.critical, 0),
         (Violation.severity == Severity.error, 1),

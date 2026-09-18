@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, model_validator
 
 from .models import Domain, RunStatus, Severity, Stage, ViolationStatus
 
@@ -141,7 +141,18 @@ class WaiverOut(BaseModel):
     reason: str
     approved_by: str
     approved_user_id: int | None = None
+    design_revision: str | None = None
+    expires_at: datetime | None = None
+    active: bool
+    inactive_reason: str | None
     created_at: datetime
+
+    @field_serializer('expires_at', 'created_at', when_used='json')
+    def utc_dates(self, value: datetime | None):
+        if value is None:
+            return None
+        return (value.replace(tzinfo=timezone.utc) if value.tzinfo is None
+                else value.astimezone(timezone.utc)).isoformat().replace('+00:00', 'Z')
 
 
 class ViolationOut(ViolationCreate):
@@ -282,6 +293,7 @@ class WaiverCreate(BaseModel):
     reason: str = Field(min_length=1, max_length=4000)
     approved_by: str = Field(min_length=1, max_length=80)
     expected_version: int = Field(ge=1, le=2_147_483_646, strict=True)
+    expires_at: datetime | None = None
 
 
 class ViolationTransition(BaseModel):
@@ -292,6 +304,13 @@ class ViolationTransition(BaseModel):
     status: ViolationStatus
     actor: str = Field(min_length=1, max_length=80)
     reason: str = Field(min_length=1, max_length=4000)
+    waiver_expires_at: datetime | None = None
+
+    @model_validator(mode='after')
+    def waiver_expiry_only_for_waiver(self):
+        if self.status != ViolationStatus.waived and self.waiver_expires_at is not None:
+            raise ValueError('waiver_expires_at is only valid when waiving a violation')
+        return self
 
 
 class ViolationEventOut(BaseModel):
@@ -304,7 +323,16 @@ class ViolationEventOut(BaseModel):
     actor: str
     actor_user_id: int | None = None
     reason: str
+    waiver_design_revision: str | None = None
+    waiver_expires_at: datetime | None = None
     created_at: datetime
+
+    @field_serializer('waiver_expires_at', 'created_at', when_used='json')
+    def utc_dates(self, value: datetime | None):
+        if value is None:
+            return None
+        return (value.replace(tzinfo=timezone.utc) if value.tzinfo is None
+                else value.astimezone(timezone.utc)).isoformat().replace('+00:00', 'Z')
 
 
 FiniteNumber = Annotated[float, Field(strict=True, allow_inf_nan=False)]

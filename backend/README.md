@@ -38,7 +38,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `POST /projects/{id}/runs` — 사인오프 런 생성 (`domain`, `stage`, `tool`, `metrics`)
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
-- `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자 기록, 상태 waived 전환)
+- `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자·설계 리비전·만료 기록, 상태 waived 전환). 새 웨이버는 기본 90일·최대 365일이며 만료/범위 불일치는 게이트 차단에 재반영
 - `GET /projects/{id}/signoff-status?stage=placement` — shift-left 게이트 판정: 해당 스테이지의 필수 도메인이 모두 passed이고 미웨이버 error/critical 위반이 없어야 ready
 - `GET /projects/{id}/signoff-plan` · `PUT /projects/{id}/signoff-plan/{stage}` · `GET /projects/{id}/signoff-plan/history` — 단계별 필수 도메인 계획의 현재 버전·낙관적 갱신·append-only 감사 이력
 - `GET/PUT /projects/{id}/sta-scenarios/{stage}` — 기대 STA 코너·모드와 SPEF 요구 세트 조회·교체
