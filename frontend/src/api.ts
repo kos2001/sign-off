@@ -228,16 +228,24 @@ export interface StaMatrix {
   stage: Stage;
   design_revision: string;
   summary: {
-    scenario_count: number; failed_scenarios: number; incomplete_scenarios: number;
+    scenario_count: number; expected_scenario_count: number; recorded_expected_scenarios: number;
+    missing_scenarios: number; unexpected_scenarios: number; parasitic_requirement_gaps: number;
+    scenario_coverage_complete: boolean; failed_scenarios: number; incomplete_scenarios: number;
     spef_scenarios: number; total_violating_paths: number; worst_reported_slack_ps: number | null;
   };
   scenarios: {
-    scenario: string; run_id: number; run_count: number; status: RunStatus; tool: string;
-    tool_version: string; parasitics: 'spef' | 'none'; source_sha256: string;
-    metrics: Record<string, unknown>; created_at: string;
+    scenario: string; expected: boolean; require_spef: boolean;
+    coverage_state: 'recorded' | 'missing' | 'parasitics_missing' | 'unplanned';
+    run_id: number | null; run_count: number; status: RunStatus | null; tool: string | null;
+    tool_version: string | null; parasitics: 'spef' | 'none' | null; source_sha256: string | null;
+    metrics: Record<string, unknown>; created_at: string | null;
   }[];
   coverage: 'reported_paths_only';
   coverage_note: string;
+}
+
+export interface StaScenarioDefinition {
+  id: number; project_id: number; stage: Stage; name: string; require_spef: boolean; created_at: string;
 }
 
 export interface GateDomain {
@@ -485,6 +493,12 @@ export const api = {
     request<StaMatrix>(`/projects/${projectId}/sta-matrix?${new URLSearchParams({
       stage, design_revision: designRevision,
     })}`),
+  staScenarios: (projectId: number, stage: Stage) =>
+    request<StaScenarioDefinition[]>(`/projects/${projectId}/sta-scenarios/${stage}`),
+  replaceStaScenarios: (projectId: number, stage: Stage, scenarios: { name: string; require_spef: boolean }[]) =>
+    request<StaScenarioDefinition[]>(`/projects/${projectId}/sta-scenarios/${stage}`, {
+      method: 'PUT', body: JSON.stringify({ scenarios }),
+    }),
   createRun: (
     projectId: number,
     run: { domain: Domain; stage: Stage; tool: string },

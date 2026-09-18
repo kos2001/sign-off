@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && .venv/bin/python -m pytest` (565개; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && .venv/bin/python -m pytest` (857개; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -70,6 +70,13 @@ Dependabot이 backend(pip)/frontend(npm)/GitHub Actions 의존성을 매주 점�
 프로젝트의 **런 비교**에서 같은 도메인·단계의 두 실행을 선택합니다. 지표의 변화와
 위반의 추가·내용 변경·기준에만 남은 기록을 나란히 볼 수 있습니다. 선택된 실행 ID와
 차이 필터는 URL에 저장됩니다. 비교는 읽기 전용이며 미검출을 수정 완료로 처리하지 않습니다.
+
+## STA 시나리오 커버리지
+
+프로젝트의 **STA 시나리오 매트릭스**에서 단계별 필수 코너·모드와 SPEF 요구 여부를
+정의할 수 있습니다. 지정한 설계 리비전의 실제 OpenSTA 서버 실행과 기대 세트를 비교해
+실행 누락, SPEF 요구 누락, 계획 외 실행을 구분합니다. WNS와 위반 수는 OpenSTA가 보고한
+경로 표본 범위이며, 시나리오가 모두 실행됐다는 사실을 전체 타이밍 사인오프와 혼동하지 않습니다.
 
 ## RTL 실행 근거
 

@@ -62,6 +62,18 @@ class Project(Base):
     )
 
 
+class StaScenarioDefinition(Base):
+    __tablename__ = "sta_scenario_definitions"
+    __table_args__ = (UniqueConstraint("project_id", "stage", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    stage: Mapped[Stage] = mapped_column(Enum(Stage))
+    name: Mapped[str] = mapped_column(String(160))
+    require_spef: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class SignoffRun(Base):
     __tablename__ = "signoff_runs"
 

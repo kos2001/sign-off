@@ -1,22 +1,34 @@
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 
 import { api, STAGES, STAGE_LABELS, type Stage } from '../api';
 import { Card, Field, StatTile, StatusBadge } from '../components/ui';
+import { useAuth } from '../components/AuthProvider';
 
 function metric(metrics: Record<string, unknown>, name: string) {
   const value = metrics[name];
   return typeof value === 'number' && Number.isFinite(value) ? value : '—';
 }
 
+function slack(metrics: Record<string, unknown>) {
+  const value = metric(metrics, 'worst_reported_slack_ps');
+  return typeof value === 'number' ? `${value} ps` : value;
+}
+
 function tone(status: string) {
   return status === 'passed' ? 'good' : status === 'failed' ? 'critical' : 'warning';
 }
 
+const coverageLabels = {
+  recorded: '실행됨', missing: '실행 누락', parasitics_missing: 'SPEF 누락', unplanned: '계획 외',
+};
+
 export default function StaMatrix() {
   const { id } = useParams();
   const projectId = Number(id);
+  const auth = useAuth();
+  const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
   const initialStage = STAGES.includes(params.get('stage') as Stage) ? params.get('stage') as Stage : 'routing';
   const [stage, setStage] = useState<Stage>(initialStage);
@@ -24,6 +36,25 @@ export default function StaMatrix() {
   const selectedRevision = params.get('revision')?.trim() ?? '';
   const selectedStage = STAGES.includes(params.get('stage') as Stage) ? params.get('stage') as Stage : stage;
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId) });
+  const definitions = useQuery({
+    queryKey: ['sta-scenarios', projectId, selectedStage],
+    queryFn: () => api.staScenarios(projectId, selectedStage),
+    enabled: Number.isSafeInteger(projectId) && projectId > 0,
+  });
+  const [draft, setDraft] = useState<{ name: string; require_spef: boolean }[]>([]);
+  useEffect(() => {
+    if (definitions.data) setDraft(definitions.data.map(({ name, require_spef }) => ({ name, require_spef })));
+  }, [definitions.data]);
+  const saveDefinitions = useMutation({
+    mutationFn: () => api.replaceStaScenarios(projectId, selectedStage,
+      draft.map(item => ({ ...item, name: item.name.trim() })).filter(item => item.name)),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['sta-scenarios', projectId, selectedStage] }),
+        qc.invalidateQueries({ queryKey: ['sta-matrix', projectId, selectedStage] }),
+      ]);
+    },
+  });
   const matrix = useQuery({
     queryKey: ['sta-matrix', projectId, selectedStage, selectedRevision],
     queryFn: () => api.staMatrix(projectId, selectedStage, selectedRevision),
@@ -47,34 +78,48 @@ export default function StaMatrix() {
         <button className="btn btn-primary">매트릭스 조회</button>
       </form>
     </Card>
+    <Card title={`${STAGE_LABELS[selectedStage]} 기대 시나리오`} subtitle="필수 코너·모드 이름과 post-route SPEF 요구를 정의합니다. 저장 시 이 단계의 기존 세트를 교체합니다.">
+      {definitions.isPending ? <p role="status">시나리오 설정 불러오는 중…</p> : definitions.isError ? <p role="alert">{definitions.error.message}</p> : <div className="space-y-3">
+        {draft.map((item, index) => <div className="flex flex-wrap items-center gap-3" key={index}>
+          <input aria-label={`시나리오 ${index + 1} 이름`} className="input min-w-64 flex-1" maxLength={160} disabled={!auth.can(projectId, 'editor')} value={item.name} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, name: event.target.value } : row))} placeholder="예: slow-setup-functional" />
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!auth.can(projectId, 'editor')} checked={item.require_spef} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, require_spef: event.target.checked } : row))} />SPEF 필수</label>
+          {auth.can(projectId, 'editor') && <button className="btn btn-ghost" onClick={() => setDraft(rows => rows.filter((_, i) => i !== index))}>삭제</button>}
+        </div>)}
+        {draft.length === 0 && <p className="text-sm text-[var(--text-muted)]">정의된 기대 시나리오가 없습니다. 이 상태에서는 실행 기록을 계획 외로 표시합니다.</p>}
+        {auth.can(projectId, 'editor') && <div className="flex flex-wrap gap-2"><button className="btn btn-ghost" disabled={draft.length >= 100} onClick={() => setDraft(rows => [...rows, { name: '', require_spef: false }])}>시나리오 추가</button><button className="btn btn-primary" disabled={saveDefinitions.isPending || draft.some(item => !item.name.trim())} onClick={() => saveDefinitions.mutate()}>{saveDefinitions.isPending ? '저장 중…' : '기대 시나리오 저장'}</button></div>}
+        {saveDefinitions.isError && <p role="alert">{saveDefinitions.error.message}</p>}
+        {saveDefinitions.isSuccess && <p role="status">기대 시나리오 세트를 저장했습니다.</p>}
+      </div>}
+    </Card>
     {!selectedRevision && <Card><p className="text-sm">설계 리비전을 입력하면 기록된 시나리오를 조회합니다.</p></Card>}
     {selectedRevision && matrix.isPending && <p role="status">시나리오 매트릭스 불러오는 중…</p>}
     {selectedRevision && matrix.isError && <Card><p role="alert">{matrix.error.message}</p><button className="btn btn-ghost mt-3" onClick={() => matrix.refetch()}>다시 시도</button></Card>}
     {matrix.data && <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <StatTile label="기록된 시나리오" value={matrix.data.summary.scenario_count} />
+        <StatTile label="기대 / 실행" value={`${matrix.data.summary.expected_scenario_count} / ${matrix.data.summary.recorded_expected_scenarios}`} tone={matrix.data.summary.scenario_coverage_complete ? 'good' : undefined} />
+        <StatTile label="실행 누락" value={matrix.data.summary.missing_scenarios} tone={matrix.data.summary.missing_scenarios ? 'critical' : 'good'} />
+        <StatTile label="SPEF 요구 누락" value={matrix.data.summary.parasitic_requirement_gaps} tone={matrix.data.summary.parasitic_requirement_gaps ? 'critical' : 'good'} />
         <StatTile label="실패" value={matrix.data.summary.failed_scenarios} tone={matrix.data.summary.failed_scenarios ? 'critical' : 'good'} />
-        <StatTile label="미완료" value={matrix.data.summary.incomplete_scenarios} />
-        <StatTile label="위반 경로 표본" value={matrix.data.summary.total_violating_paths} />
         <StatTile label="최악 보고 슬랙" value={matrix.data.summary.worst_reported_slack_ps ?? '—'} suffix={matrix.data.summary.worst_reported_slack_ps === null ? undefined : 'ps'} />
       </div>
       <Card title={`${STAGE_LABELS[matrix.data.stage]} · ${matrix.data.design_revision}`} subtitle="표시 값은 각 시나리오의 최신 서버 실행 결과입니다.">
         <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr className="hairline-b"><th className="px-2 py-3">시나리오</th><th className="px-2 py-3">상태</th><th className="px-2 py-3">WNS</th><th className="px-2 py-3">위반 / 보고 / 미제약</th><th className="px-2 py-3">기생 성분</th><th className="px-2 py-3">실행 근거</th></tr></thead>
+          <thead><tr className="hairline-b"><th className="px-2 py-3">시나리오</th><th className="px-2 py-3">커버리지</th><th className="px-2 py-3">상태</th><th className="px-2 py-3">WNS</th><th className="px-2 py-3">위반 / 보고 / 미제약</th><th className="px-2 py-3">기생 성분</th><th className="px-2 py-3">실행 근거</th></tr></thead>
           <tbody>{matrix.data.scenarios.map(row => <tr className="hairline-b" key={row.scenario}>
             <td className="px-2 py-3 font-semibold break-all">{row.scenario}<p className="mt-1 text-xs font-normal text-[var(--text-muted)]">기록 {row.run_count}회</p></td>
-            <td className="px-2 py-3"><StatusBadge status={tone(row.status)} label={row.status} /></td>
-            <td className="px-2 py-3 whitespace-nowrap">{metric(row.metrics, 'worst_reported_slack_ps')} ps</td>
+            <td className="px-2 py-3"><StatusBadge status={row.coverage_state === 'recorded' ? 'good' : row.coverage_state === 'unplanned' ? 'neutral' : 'critical'} label={coverageLabels[row.coverage_state]} /></td>
+            <td className="px-2 py-3">{row.status ? <StatusBadge status={tone(row.status)} label={row.status} /> : '—'}</td>
+            <td className="px-2 py-3 whitespace-nowrap">{slack(row.metrics)}</td>
             <td className="px-2 py-3 whitespace-nowrap">{metric(row.metrics, 'violating_paths')} / {metric(row.metrics, 'reported_paths')} / {metric(row.metrics, 'unconstrained_paths')}</td>
-            <td className="px-2 py-3">{row.parasitics === 'spef' ? 'SPEF' : '미적용'}</td>
-            <td className="px-2 py-3"><Link className="underline" to={`/runs/${row.run_id}`}>run #{row.run_id}</Link><span className="block text-xs text-[var(--text-muted)]">{row.tool_version}</span><Link className="text-xs underline" to={`/runs/${row.run_id}/paths`}>경로 표본</Link></td>
+            <td className="px-2 py-3">{row.parasitics === 'spef' ? 'SPEF' : row.parasitics === 'none' ? '미적용' : '—'}{row.require_spef && <span className="block text-xs text-[var(--text-muted)]">필수</span>}</td>
+            <td className="px-2 py-3">{row.run_id ? <><Link className="underline" to={`/runs/${row.run_id}`}>run #{row.run_id}</Link><span className="block text-xs text-[var(--text-muted)]">{row.tool_version}</span><Link className="text-xs underline" to={`/runs/${row.run_id}/paths`}>경로 표본</Link></> : '—'}</td>
           </tr>)}</tbody>
         </table></div>
         {matrix.data.scenarios.length === 0 && <p className="py-4 text-sm">이 범위에 서버 OpenSTA 실행 기록이 없습니다.</p>}
       </Card>
       <Card title="범위와 에이전트 개입">
         <p className="text-sm">이 화면과 집계 API에는 AI 에이전트가 개입하지 않습니다. 저장된 OpenSTA 실행 근거를 읽기 전용으로 집계합니다.</p>
-        <p className="mt-2 text-xs text-[var(--text-muted)]">최신 실행 / 기록된 시나리오 / 보고된 경로 표본만 포함합니다. 예상 코너·모드가 모두 실행되었는지와 전체 사인오프 커버리지는 별도로 확인해야 합니다.</p>
+        <p className="mt-2 text-xs text-[var(--text-muted)]">기대 세트와 최신 실행을 비교해 누락을 표시합니다. 타이밍 수치는 보고된 경로 표본만 포함하므로 전체 사인오프 커버리지는 별도로 확인해야 합니다.</p>
       </Card>
     </>}
   </div>;
