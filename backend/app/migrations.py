@@ -27,6 +27,11 @@ def initialize_schema(engine):
                 columns = {item["name"] for item in inspect(connection).get_columns(table)}
                 if column not in columns:
                     connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER REFERENCES users(id)"))
+            release_columns = {item['name'] for item in inspect(connection).get_columns('signoff_release_decisions')}
+            if 'gate_snapshot' not in release_columns:
+                connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN gate_snapshot JSON'))
+            if 'decision_sha256' not in release_columns:
+                connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN decision_sha256 VARCHAR(64)'))
             batch_columns = {item["name"] for item in inspect(connection).get_columns("sta_batch_executions")}
             for column, definition in {
                 "cancel_requested": "BOOLEAN NOT NULL DEFAULT 0",
