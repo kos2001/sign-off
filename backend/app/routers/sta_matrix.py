@@ -1,12 +1,18 @@
 import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Domain, RunEvidence, RunStatus, SignoffRun, StaScenarioDefinition, Stage
-from ..schemas import StaMatrixOut, StaScenarioDefinitionOut, StaScenarioSetIn
+from ..auth import require_project
+from ..models import (Domain, RunEvidence, RunStatus, SignoffRun, StaScenarioDefinition,
+                      StaScenarioPlanRevision, Stage)
+from ..schemas import (StaMatrixOut, StaScenarioDefinitionOut, StaScenarioPlanHistoryOut,
+                       StaScenarioPlanOut, StaScenarioSetIn)
+from ..services.sta_scenario_plans import resolve_sta_scenario_plan
 from .projects import get_project_or_404
 
 router = APIRouter(tags=["sta-matrix"])
@@ -22,22 +28,66 @@ def list_sta_scenarios(project_id: int, stage: Stage, db: Session = Depends(get_
     ).order_by(StaScenarioDefinition.name)).all()
 
 
-@router.put("/projects/{project_id}/sta-scenarios/{stage}", response_model=list[StaScenarioDefinitionOut])
+@router.get("/projects/{project_id}/sta-scenario-plan/{stage}", response_model=StaScenarioPlanOut)
+def get_sta_scenario_plan(project_id: int, stage: Stage, db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    return resolve_sta_scenario_plan(db, project_id, stage)
+
+
+@router.put("/projects/{project_id}/sta-scenario-plan/{stage}", response_model=StaScenarioPlanOut)
 def replace_sta_scenarios(
     project_id: int, stage: Stage, payload: StaScenarioSetIn, db: Session = Depends(get_db),
 ):
     get_project_or_404(project_id, db)
+    require_project(db, project_id, 'approver')
+    current = resolve_sta_scenario_plan(db, project_id, stage)
+    if payload.expected_version != current['version']:
+        raise HTTPException(409, detail={'message': 'STA scenario plan changed; reload and retry',
+                                         'current': jsonable_encoder(current)})
+    user = db.info.get('user')
+    scenarios = [item.model_dump() for item in payload.scenarios]
+    db.add(StaScenarioPlanRevision(
+        project_id=project_id, stage=stage, version=current['version'] + 1,
+        scenarios=scenarios, reason=payload.reason,
+        updated_by=user.username if user else 'local operator',
+        updated_by_user_id=user.id if user else None,
+    ))
     db.execute(delete(StaScenarioDefinition).where(
         StaScenarioDefinition.project_id == project_id,
         StaScenarioDefinition.stage == stage,
     ))
-    rows = [StaScenarioDefinition(project_id=project_id, stage=stage,
-        name=item.name, require_spef=item.require_spef) for item in payload.scenarios]
+    rows = [StaScenarioDefinition(project_id=project_id, stage=stage, **item) for item in scenarios]
     db.add_all(rows)
-    db.commit()
-    for row in rows:
-        db.refresh(row)
-    return sorted(rows, key=lambda row: row.name.casefold())
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, detail={'message': 'STA scenario plan changed; reload and retry',
+                                         'current': jsonable_encoder(resolve_sta_scenario_plan(
+                                             db, project_id, stage))}) from None
+    return resolve_sta_scenario_plan(db, project_id, stage)
+
+
+@router.get("/projects/{project_id}/sta-scenario-plan/{stage}/history",
+            response_model=StaScenarioPlanHistoryOut)
+def sta_scenario_plan_history(project_id: int, stage: Stage,
+                              before_id: int | None = Query(None, ge=1),
+                              limit: int = Query(25, ge=1, le=100),
+                              db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    filters = [StaScenarioPlanRevision.project_id == project_id,
+               StaScenarioPlanRevision.stage == stage]
+    if before_id is not None:
+        filters.append(StaScenarioPlanRevision.id < before_id)
+    rows = db.scalars(select(StaScenarioPlanRevision).where(*filters)
+                      .order_by(StaScenarioPlanRevision.id.desc()).limit(limit + 1)).all()
+    items = rows[:limit]
+    return {'items': [{
+        'project_id': row.project_id, 'stage': row.stage, 'version': row.version,
+        'source': 'versioned', 'scenarios': row.scenarios, 'reason': row.reason,
+        'updated_by': row.updated_by, 'updated_by_user_id': row.updated_by_user_id,
+        'created_at': row.created_at,
+    } for row in items], 'next_before_id': items[-1].id if len(rows) > limit else None}
 
 
 def _nonnegative_integer(metrics: dict, name: str) -> int:

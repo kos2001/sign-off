@@ -49,7 +49,8 @@ def validate_claims(domain: str, claims: object) -> dict[str, bool]:
 def build_import_request(*, domain: str, source_text: str, filename: str, project_id: int,
                          stage: str, design_revision: str, scenario: str, tool_version: str,
                          key_id: str, secret: str, claims: object, valid_for_seconds: int = 3600,
-                         import_id: str | None = None, now: datetime | None = None) -> dict:
+                         import_id: str | None = None, now: datetime | None = None,
+                         scenario_plan_version: int | None = None) -> dict:
     """Validate the report and bindings, then return the exact API request body."""
     if not isinstance(secret, str) or not 32 <= len(secret.encode()) <= 512:
         raise ValueError('collector secret must contain 32 to 512 UTF-8 bytes')
@@ -86,6 +87,11 @@ def build_import_request(*, domain: str, source_text: str, filename: str, projec
         'tool': result['tool'], 'tool_version': tool_version, 'scenario': scenario,
         'claims': verified_claims, 'signature': '0' * 64,
     }
+    if domain == 'sta':
+        if scenario_plan_version is not None and (type(scenario_plan_version) is not int
+                                                  or not 0 <= scenario_plan_version <= 2_147_483_647):
+            raise ValueError('scenario_plan_version must be a nonnegative integer')
+        attestation['scenario_plan_version'] = scenario_plan_version
     # Reuse the server schema so UUID, enums and timestamps have exactly the same canonical form.
     from ..routers.imports import CoverageAttestationPayload
     parsed = CoverageAttestationPayload.model_validate(attestation)

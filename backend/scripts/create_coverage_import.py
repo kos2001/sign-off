@@ -22,6 +22,8 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument('--stage', required=True, choices=['rtl', 'synthesis', 'placement', 'routing', 'final'])
     value.add_argument('--design-revision', required=True)
     value.add_argument('--scenario', required=True)
+    value.add_argument('--scenario-plan-version', type=int,
+                       help='Required for STA after a versioned scenario plan is configured.')
     value.add_argument('--tool-version', required=True)
     value.add_argument('--key-id', required=True)
     value.add_argument('--secret-env', default='SIGNOFF_COLLECTOR_HMAC_SECRET')
@@ -47,6 +49,7 @@ def main(argv=None) -> int:
             scenario=args.scenario, tool_version=args.tool_version, key_id=args.key_id,
             secret=secret, claims=claims, valid_for_seconds=args.valid_for_seconds,
             import_id=args.import_id,
+            scenario_plan_version=args.scenario_plan_version,
         )
         encoded = (json.dumps(body, ensure_ascii=False, allow_nan=False, indent=2) + '\n').encode()
         if args.output:

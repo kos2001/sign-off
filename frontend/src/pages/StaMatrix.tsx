@@ -38,19 +38,30 @@ export default function StaMatrix() {
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId) });
   const definitions = useQuery({
     queryKey: ['sta-scenarios', projectId, selectedStage],
-    queryFn: () => api.staScenarios(projectId, selectedStage),
+    queryFn: () => api.staScenarioPlan(projectId, selectedStage),
+    enabled: Number.isSafeInteger(projectId) && projectId > 0,
+  });
+  const planHistory = useQuery({
+    queryKey: ['sta-scenario-plan-history', projectId, selectedStage],
+    queryFn: () => api.staScenarioPlanHistory(projectId, selectedStage),
     enabled: Number.isSafeInteger(projectId) && projectId > 0,
   });
   const [draft, setDraft] = useState<{ name: string; require_spef: boolean }[]>([]);
+  const [planReason, setPlanReason] = useState('');
   useEffect(() => {
-    if (definitions.data) setDraft(definitions.data.map(({ name, require_spef }) => ({ name, require_spef })));
+    if (definitions.data) {
+      setDraft(definitions.data.scenarios.map(({ name, require_spef }) => ({ name, require_spef })));
+      setPlanReason('');
+    }
   }, [definitions.data]);
   const saveDefinitions = useMutation({
     mutationFn: () => api.replaceStaScenarios(projectId, selectedStage,
-      draft.map(item => ({ ...item, name: item.name.trim() })).filter(item => item.name)),
+      { scenarios: draft.map(item => ({ ...item, name: item.name.trim() })).filter(item => item.name),
+        expected_version: definitions.data!.version, reason: planReason.trim() }),
     onSuccess: async () => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['sta-scenarios', projectId, selectedStage] }),
+        qc.invalidateQueries({ queryKey: ['sta-scenario-plan-history', projectId, selectedStage] }),
         qc.invalidateQueries({ queryKey: ['sta-matrix', projectId, selectedStage] }),
       ]);
     },
@@ -78,17 +89,26 @@ export default function StaMatrix() {
         <button className="btn btn-primary">매트릭스 조회</button>
       </form>
     </Card>
-    <Card title={`${STAGE_LABELS[selectedStage]} 기대 시나리오`} subtitle="필수 코너·모드 이름과 post-route SPEF 요구를 정의합니다. 저장 시 이 단계의 기존 세트를 교체합니다.">
+    <Card title={`${STAGE_LABELS[selectedStage]} 기대 시나리오`} subtitle="승인자가 필수 코너·모드와 post-route SPEF 요구를 버전형 계획으로 관리합니다.">
       {definitions.isPending ? <p role="status">시나리오 설정 불러오는 중…</p> : definitions.isError ? <p role="alert">{definitions.error.message}</p> : <div className="space-y-3">
+        <p className="text-xs text-[var(--text-muted)]">계획 v{definitions.data.version} · {definitions.data.source === 'versioned' ? `${definitions.data.updated_by} · ${definitions.data.reason}` : '기존 정의 · 다음 저장부터 변경 이력 보존'}</p>
         {draft.map((item, index) => <div className="flex flex-wrap items-center gap-3" key={index}>
-          <input aria-label={`시나리오 ${index + 1} 이름`} className="input min-w-64 flex-1" maxLength={160} disabled={!auth.can(projectId, 'editor')} value={item.name} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, name: event.target.value } : row))} placeholder="예: slow-setup-functional" />
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!auth.can(projectId, 'editor')} checked={item.require_spef} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, require_spef: event.target.checked } : row))} />SPEF 필수</label>
-          {auth.can(projectId, 'editor') && <button className="btn btn-ghost" onClick={() => setDraft(rows => rows.filter((_, i) => i !== index))}>삭제</button>}
+          <input aria-label={`시나리오 ${index + 1} 이름`} className="input min-w-64 flex-1" maxLength={160} disabled={!auth.can(projectId, 'approver')} value={item.name} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, name: event.target.value } : row))} placeholder="예: slow-setup-functional" />
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!auth.can(projectId, 'approver')} checked={item.require_spef} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, require_spef: event.target.checked } : row))} />SPEF 필수</label>
+          {auth.can(projectId, 'approver') && <button className="btn btn-ghost" onClick={() => setDraft(rows => rows.filter((_, i) => i !== index))}>삭제</button>}
         </div>)}
         {draft.length === 0 && <p className="text-sm text-[var(--text-muted)]">정의된 기대 시나리오가 없습니다. 이 상태에서는 실행 기록을 계획 외로 표시합니다.</p>}
-        {auth.can(projectId, 'editor') && <div className="flex flex-wrap gap-2"><button className="btn btn-ghost" disabled={draft.length >= 100} onClick={() => setDraft(rows => [...rows, { name: '', require_spef: false }])}>시나리오 추가</button><button className="btn btn-primary" disabled={saveDefinitions.isPending || draft.some(item => !item.name.trim())} onClick={() => saveDefinitions.mutate()}>{saveDefinitions.isPending ? '저장 중…' : '기대 시나리오 저장'}</button></div>}
+        {auth.can(projectId, 'approver') && <><Field label="계획 변경 사유"><textarea className="input w-full" rows={2} maxLength={4000} value={planReason} onChange={event => setPlanReason(event.target.value)} /></Field><div className="flex flex-wrap gap-2"><button className="btn btn-ghost" disabled={draft.length >= 100} onClick={() => setDraft(rows => [...rows, { name: '', require_spef: false }])}>시나리오 추가</button><button className="btn btn-primary" disabled={saveDefinitions.isPending || !draft.length || !planReason.trim() || draft.some(item => !item.name.trim())} onClick={() => saveDefinitions.mutate()}>{saveDefinitions.isPending ? '저장 중…' : `계획 v${definitions.data.version + 1} 저장`}</button></div></>}
         {saveDefinitions.isError && <p role="alert">{saveDefinitions.error.message}</p>}
         {saveDefinitions.isSuccess && <p role="status">기대 시나리오 세트를 저장했습니다.</p>}
+        {planHistory.data?.items.length ? <details className="rounded-lg border border-[var(--border)] p-3">
+          <summary className="cursor-pointer text-sm font-semibold">최근 계획 변경 이력</summary>
+          <ol className="mt-3 space-y-2 text-sm">{planHistory.data.items.map(item => <li className="hairline-b pb-2" key={item.version}>
+            <span className="font-semibold">v{item.version}</span> · {item.updated_by} · {item.scenarios.length}개 시나리오
+            <span className="block text-xs text-[var(--text-muted)]">{item.reason} · {item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '시각 미상'}</span>
+          </li>)}</ol>
+          {planHistory.data.next_before_id && <p className="mt-2 text-xs text-[var(--text-muted)]">이전 이력은 API 커서로 조회할 수 있습니다.</p>}
+        </details> : null}
       </div>}
     </Card>
     {!selectedRevision && <Card><p className="text-sm">설계 리비전을 입력하면 기록된 시나리오를 조회합니다.</p></Card>}

@@ -69,6 +69,9 @@ API는 `POST /projects/{id}/imports/commercial-sta/preview`와
 시나리오와 여섯 가지 STA 범위 선언을 검증합니다. 유효한 증명과 함께 위반 및 제약 없는 경로가
 0건인 경우에만 런을 `passed`로 저장하고 STA 도메인의 게이트 근거로 인정합니다.
 
+프로젝트에 버전형 STA 시나리오 계획이 있으면 증명의 `scenario_plan_version`이 현재 계획 버전과
+일치해야 합니다. 계획 변경 뒤 이전 런은 보존되지만 새 계획을 대상으로 다시 수집할 때까지 게이트를 차단합니다.
+
 키 설정, 정확한 JSON 계약과 서명 절차는 [수집기 커버리지 증명](coverage-attestation.md)을
 참고하세요. 증명이 없으면 기존 `reported_paths_only` 정책을 그대로 적용합니다. 이 증명은
 Sign-off Hub 운영자가 등록한 수집기와 요청의 결합을 증명하며 EDA 벤더의 디지털 서명은 아닙니다.

@@ -46,7 +46,8 @@ def resolve_signoff_plan(db, project_id: int, stage: Stage) -> dict:
     }
 
 
-def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None) -> dict:
+def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None,
+                  sta_scenario_plan_version: int = 0) -> dict:
     """Evaluate whether a project's signoff gate is ready at the given stage.
 
     Use latest runs only. Captured coverage and matching declared revisions are
@@ -101,12 +102,21 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None
             and latest.evidence.result.get('coverage_attestation', {}).get('verified') is True
             and latest.evidence.result.get('coverage') == 'collector_attested_complete'
         )
+        attested_scenario_plan_version = None
+        if latest.domain == Domain.sta and latest.evidence:
+            attested_scenario_plan_version = latest.evidence.result.get('coverage_attestation', {}).get('scenario_plan_version')
+            if attested_scenario_plan_version is None:
+                attested_scenario_plan_version = 0
         if latest.domain == Domain.rtl and latest.evidence_source != "rtl_ladder" and not attested_coverage:
             reason = "RTL requires captured ladder evidence; rerun the analysis"
             ready = False
         elif latest.evidence_source in {'opensta_report', 'opensta_execution', 'commercial_sta_report'} and not attested_coverage:
             reason = ('Executed path sample does not establish full STA coverage' if latest.evidence_source == 'opensta_execution'
                       else 'Imported path report does not establish full STA coverage')
+            ready = False
+        elif (latest.domain == Domain.sta and attested_coverage
+              and attested_scenario_plan_version != sta_scenario_plan_version):
+            reason = 'Trusted STA evidence targets an outdated scenario plan'
             ready = False
         elif latest.evidence_source in {'klayout_report', 'commercial_drc_report'} and not attested_coverage:
             reason = 'Imported marker report does not establish full DRC coverage'
@@ -161,6 +171,9 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None
                 "inactive_waivers": inactive_waivers,
                 "evidence_source": latest.evidence_source,
                 "design_revision": latest.evidence.design_revision if latest.evidence else None,
+                **({'scenario_plan_version': attested_scenario_plan_version,
+                    'required_scenario_plan_version': sta_scenario_plan_version}
+                   if latest.domain == Domain.sta else {}),
             }
         )
 
@@ -172,6 +185,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None
     return {
         "stage": stage.value,
         "plan": plan,
+        "sta_scenario_plan_version": sta_scenario_plan_version,
         "ready": all(d["ready"] for d in domains) and revision_state == 'consistent',
         "domains": domains,
         "revision_check": {"status": revision_state, "revisions": revisions, "missing_domains": missing,
