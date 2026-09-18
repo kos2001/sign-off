@@ -12,6 +12,8 @@ import PowerIntegrityImport from './pages/PowerIntegrityImport';
 import PowerIntegrityFindings from './pages/PowerIntegrityFindings';
 import CommercialPowerImport from './pages/CommercialPowerImport';
 import PowerBreakdown from './pages/PowerBreakdown';
+import CommercialThermalImport from './pages/CommercialThermalImport';
+import ThermalHotspots from './pages/ThermalHotspots';
 import ProjectMembers from "./pages/ProjectMembers";
 import { Route, Routes } from "react-router";
 
@@ -42,12 +44,14 @@ export default function App() {
           <Route path="/projects/:id/import/klayout" element={<ReportImport klayout />} />
           <Route path="/projects/:id/import/commercial-emir" element={<PowerIntegrityImport />} />
           <Route path="/projects/:id/import/commercial-power" element={<CommercialPowerImport />} />
+          <Route path="/projects/:id/import/commercial-thermal" element={<CommercialThermalImport />} />
           <Route path="/runs/:runId/structure" element={<DesignStructure />} />
           <Route path="/runs/:runId" element={<RunWorkspace />} />
           <Route path="/runs/:runId/paths" element={<TimingPaths />} />
           <Route path="/runs/:runId/markers" element={<Markers />} />
           <Route path="/runs/:runId/power-integrity" element={<PowerIntegrityFindings />} />
           <Route path="/runs/:runId/power-breakdown" element={<PowerBreakdown />} />
+          <Route path="/runs/:runId/thermal-hotspots" element={<ThermalHotspots />} />
           <Route path="/projects/:id/members" element={<ProjectMembers />} />
           <Route path="/account" element={<Account />} />
           <Route path="/admin/security-events" element={<SecurityEvents />} />

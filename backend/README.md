@@ -53,6 +53,8 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET /runs/{id}/power-integrity-findings` · `GET /runs/{id}/power-integrity-findings/{index}` — 보존된 EM/IR 결과와 위치·연결 위반 탐색
 - `POST /projects/{id}/imports/commercial-power/preview` · `POST /projects/{id}/imports/commercial-power` — PrimePower/Joules/PowerArtist 전력 요약 검증·저장
 - `GET /runs/{id}/power-breakdown` — 보존된 계층별 전력과 글리치 비중 탐색
+- `POST /projects/{id}/imports/commercial-thermal/preview` · `POST /projects/{id}/imports/commercial-thermal` — Celsius/Icepak/Calibre 3DSTACK 열 핫스폿 검증·저장
+- `GET /runs/{id}/thermal-hotspots` — 보존된 온도·제한·3D 위치 탐색
 - `POST /analysis/ir-drop` · `POST /analysis/glitch-power` · `POST /analysis/timing-summary`
 
 DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).
@@ -150,7 +152,7 @@ Linux의 실제 툴 통합 검사는 `Dockerfile.rtl-check`로 재실행할 수 
 - 기록된 분석에는 `run_evidence` 행이 생성됩니다. `GET /runs/{id}/evidence`로 실행한
   단일 `design.sv` 소스(코드 펜스 제거·양끝 공백 정리·마지막 줄바꿈), 소스 SHA-256,
   원래 판정·규칙·단계별 결과와 시간을 조회합니다. SHA-256은 소스 식별용이며 전자서명이 아닙니다.
-- 런 응답의 `evidence_source`는 서버 실행(`rtl_ladder`, `opensta_execution`), 보고서 가져오기(`opensta_report`, `commercial_sta_report`, `klayout_report`, `commercial_drc_report`, `commercial_emir_report`, `commercial_power_report`), `manual`, `legacy`를 구분합니다.
+- 런 응답의 `evidence_source`는 서버 실행(`rtl_ladder`, `opensta_execution`), 보고서 가져오기(`opensta_report`, `commercial_sta_report`, `klayout_report`, `commercial_drc_report`, `commercial_emir_report`, `commercial_power_report`, `commercial_thermal_report`), `manual`, `legacy`를 구분합니다.
 
 ### OpenSTA 실행 워커
 

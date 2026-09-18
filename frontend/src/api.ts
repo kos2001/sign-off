@@ -21,7 +21,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report";
   result_locked: boolean;
 }
 
@@ -31,7 +31,7 @@ export interface RunEvidence {
   source_text: string | null;
   source_sha256: string | null;
   design_revision: string | null;
-  result: Partial<RtlSignoffResult> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & {
+  result: Partial<RtlSignoffResult> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & {
     metadata?: { filename: string; tool_version: string; scenario: string; parasitics?: 'spef' | 'none' };
     submitted_by?: { user_id: number; username: string } | null;
     input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc' | 'spef', { sha256: string; byte_length: number }>>;
@@ -126,6 +126,9 @@ export interface PowerIntegrityDetail {
 export interface PowerBreakdownItem { index?:number; path:string; total_power_mw:number; internal_power_mw:number; switching_power_mw:number; leakage_power_mw:number; glitch_power_mw:number; glitch_share:number; violated:boolean; fingerprint?:string }
 export interface CommercialPowerPreview { parser:string;tool:string;tool_version:string;status:'failed'|'incomplete';source_sha256:string;glitch_share_limit:number;metrics:{total_power_mw:number;internal_power_mw:number;switching_power_mw:number;leakage_power_mw:number;glitch_power_mw:number;glitch_share:number;reported_hierarchy_rows:number;violating_hierarchy_rows:number};summary:PowerBreakdownItem;items:PowerBreakdownItem[] }
 export interface PowerBreakdownPage {run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;summary:PowerBreakdownItem;glitch_share_limit:number;reported_total:number;total:number;violated_total:number;offset:number;limit:number;items:PowerBreakdownItem[]}
+export interface ThermalHotspot{index:number;component:string;layer:string;x_um:string;y_um:string;z_um:string;temperature_c:number;limit_c:number;severity:Severity;violated:boolean;message:string;fingerprint:string}
+export interface ThermalPreview{parser:string;tool:string;tool_version:string;status:'failed'|'incomplete';source_sha256:string;metrics:{reported_hotspots:number;violated_hotspots:number;maximum_temperature_c:number|null};items:ThermalHotspot[]}
+export interface ThermalPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;reported_total:number;total:number;violated_total:number;bounds_um:{xmin:number;xmax:number;ymin:number;ymax:number;zmin:number;zmax:number}|null;offset:number;limit:number;items:ThermalHotspot[]}
 
 export type TimingPath = ReportPreview['paths'][number] & { status: 'violated' | 'met' | 'unconstrained' };
 export interface TimingPathSummary {
@@ -520,6 +523,9 @@ export const api = {
   previewCommercialPower: (projectId:number,body:ReportImportInput)=>request<CommercialPowerPreview>(`/projects/${projectId}/imports/commercial-power/preview`,{method:'POST',body:JSON.stringify(body)}),
   importCommercialPower: (projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-power`,{method:'POST',body:JSON.stringify(body)}),
   powerBreakdown: (runId:number,filters:Record<string,string>)=>request<PowerBreakdownPage>(`/runs/${runId}/power-breakdown?${new URLSearchParams(filters)}`),
+  previewCommercialThermal:(projectId:number,body:ReportImportInput)=>request<ThermalPreview>(`/projects/${projectId}/imports/commercial-thermal/preview`,{method:'POST',body:JSON.stringify(body)}),
+  importCommercialThermal:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-thermal`,{method:'POST',body:JSON.stringify(body)}),
+  thermalHotspots:(runId:number,filters:Record<string,string>)=>request<ThermalPage>(`/runs/${runId}/thermal-hotspots?${new URLSearchParams(filters)}`),
   previewKLayout: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/klayout/preview`, { method: 'POST', body: JSON.stringify(body) }),
   importKLayout: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/klayout`, { method: 'POST', body: JSON.stringify(body) }),
   markers: (runId: number, filters: Record<string, string>) => request<MarkerPage>(`/runs/${runId}/markers?${new URLSearchParams(filters)}`),
