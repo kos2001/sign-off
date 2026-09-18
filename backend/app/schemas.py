@@ -144,6 +144,7 @@ class RunOut(RunCreate):
     created_at: datetime
     evidence_source: str
     result_locked: bool
+    design_revision: str | None
 
 
 class RunStatusCounts(BaseModel):
@@ -158,6 +159,20 @@ class RunPageOut(BaseModel):
     total: int
     status_counts: RunStatusCounts
     next_before_id: int | None
+
+
+class RunRevisionSummary(BaseModel):
+    design_revision: str
+    run_count: int
+    latest_run_id: int
+
+
+class RunRevisionPage(BaseModel):
+    items: list[RunRevisionSummary]
+    total: int
+    offset: int
+    limit: int
+    unlabeled_runs: int
 
 
 class ProjectSummaryOut(ProjectOut):

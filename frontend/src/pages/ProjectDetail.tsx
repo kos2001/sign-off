@@ -74,10 +74,12 @@ export default function ProjectDetail() {
   const [stage, setStage] = useState<Stage>("placement");
   const [olderRuns, setOlderRuns] = useState<SignoffRun[]>([]);
   const [olderCursor, setOlderCursor] = useState<number | null | undefined>(undefined);
-  const [runFilters, setRunFilters] = useState<{ domain?: Domain; stage?: Stage; status?: RunStatus }>({});
+  const [runFilters, setRunFilters] = useState<{ domain?: Domain; stage?: Stage; status?: RunStatus; revisionScope?: 'all' | 'labeled' | 'unlabeled' }>({});
   const [toolQuery, setToolQuery] = useState('');
   const [appliedToolQuery, setAppliedToolQuery] = useState('');
-  const runFilterKey = JSON.stringify({ ...runFilters, q: appliedToolQuery });
+  const [revisionQuery, setRevisionQuery] = useState('');
+  const [appliedRevisionQuery, setAppliedRevisionQuery] = useState('');
+  const runFilterKey = JSON.stringify({ ...runFilters, q: appliedToolQuery, revision: appliedRevisionQuery });
   const runFilterKeyRef = useRef(runFilterKey);
   runFilterKeyRef.current = runFilterKey;
   useEffect(() => { setOlderRuns([]); setOlderCursor(undefined); }, [runFilterKey]);
@@ -156,12 +158,16 @@ export default function ProjectDetail() {
   // 5s polling keeps runs and gate status live while ladders execute elsewhere
   const runs = useQuery({
     queryKey: ["runs-page", projectId, runFilters, appliedToolQuery],
-    queryFn: () => api.runPage(projectId, { ...runFilters, q: appliedToolQuery || undefined }),
+    queryFn: () => api.runPage(projectId, { ...runFilters, q: appliedToolQuery || undefined, revision: appliedRevisionQuery || undefined }),
     refetchInterval: project.data?.archived_at ? false : 5000,
+  });
+  const runRevisions = useQuery({
+    queryKey: ['run-revisions', projectId], queryFn: () => api.runRevisions(projectId),
   });
   const loadOlderRuns = useMutation({
     mutationFn: ({ beforeId }: { beforeId: number; filterKey: string }) => api.runPage(projectId, {
       ...runFilters, q: appliedToolQuery || undefined, beforeId,
+      revision: appliedRevisionQuery || undefined,
     }),
     onSuccess: (page, variables) => {
       if (variables.filterKey !== runFilterKeyRef.current) return;
@@ -369,14 +375,17 @@ export default function ProjectDetail() {
       </Card>
 
       <Card title="런 이력 필터" subtitle="도메인·단계·상태와 툴 이름으로 서버에서 런 이력을 좁힙니다.">
-        <form className="flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); setAppliedToolQuery(toolQuery.trim()); }}>
+        <form className="flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); setAppliedToolQuery(toolQuery.trim()); setAppliedRevisionQuery(revisionQuery.trim()); }}>
           <Field label="도메인"><select className="input" value={runFilters.domain ?? ''} onChange={event => setRunFilters(current => ({ ...current, domain: event.target.value ? event.target.value as Domain : undefined }))}><option value="">전체</option>{Object.entries(DOMAIN_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
           <Field label="스테이지"><select className="input" value={runFilters.stage ?? ''} onChange={event => setRunFilters(current => ({ ...current, stage: event.target.value ? event.target.value as Stage : undefined }))}><option value="">전체</option>{STAGES.map(value => <option key={value} value={value}>{STAGE_LABELS[value]}</option>)}</select></Field>
           <Field label="상태"><select className="input" value={runFilters.status ?? ''} onChange={event => setRunFilters(current => ({ ...current, status: event.target.value ? event.target.value as RunStatus : undefined }))}><option value="">전체</option><option value="passed">통과</option><option value="failed">실패</option><option value="running">실행 중</option><option value="incomplete">검증 미완료</option></select></Field>
           <Field label="툴 이름"><input className="input" maxLength={80} value={toolQuery} onChange={event => setToolQuery(event.target.value)} placeholder="예: PrimeTime" /></Field>
+          <Field label="리비전 범위"><select className="input" value={runFilters.revisionScope ?? 'all'} onChange={event => { const revisionScope = event.target.value as 'all' | 'labeled' | 'unlabeled'; setRunFilters(current => ({ ...current, revisionScope })); if (revisionScope === 'unlabeled') { setRevisionQuery(''); setAppliedRevisionQuery(''); } }}><option value="all">전체</option><option value="labeled">리비전 기록 있음</option><option value="unlabeled">리비전 미기록</option></select></Field>
+          <Field label="정확한 설계 리비전"><input className="input" list="run-revision-options" maxLength={160} disabled={runFilters.revisionScope === 'unlabeled'} value={revisionQuery} onChange={event => setRevisionQuery(event.target.value)} placeholder="예: git SHA / netlist tag" /><datalist id="run-revision-options">{(runRevisions.data?.items ?? []).map(item => <option key={item.design_revision} value={item.design_revision}>{item.run_count}개 런</option>)}</datalist></Field>
           <button className="btn btn-primary">검색</button>
-          <button type="button" className="btn btn-ghost" onClick={() => { setRunFilters({}); setToolQuery(''); setAppliedToolQuery(''); }}>초기화</button>
+          <button type="button" className="btn btn-ghost" onClick={() => { setRunFilters({}); setToolQuery(''); setAppliedToolQuery(''); setRevisionQuery(''); setAppliedRevisionQuery(''); }}>초기화</button>
         </form>
+        {runRevisions.data && <p className="mt-2 text-xs text-[var(--text-muted)]">기록된 리비전 {runRevisions.data.total}개 · 리비전 미기록 런 {runRevisions.data.unlabeled_runs}개{runRevisions.data.total > runRevisions.data.items.length ? ' · 최근 100개를 자동완성에 표시' : ''}</p>}
       </Card>
       <RunsCard projectId={projectId}
         runs={mergeRuns(runs.data?.items ?? [], olderRuns)}
@@ -538,7 +547,7 @@ function RunRow({ run, onChange, readOnly }: { run: SignoffRun; onChange: () => 
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <span className="text-sm font-semibold">{DOMAIN_LABELS[run.domain]}</span>
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {STAGE_LABELS[run.stage]} · {run.tool} · run #{run.id}
+            {STAGE_LABELS[run.stage]} · {run.tool} · run #{run.id} · 리비전 {run.design_revision || '미기록'}
           </span>
           <StatusBadge
             status={

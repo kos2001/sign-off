@@ -1,5 +1,10 @@
 import uuid
 
+from sqlalchemy import update
+
+from app.db import SessionLocal
+from app.models import RunEvidence
+
 
 def project(client):
     return client.post('/projects', json={
@@ -55,3 +60,34 @@ def test_legacy_run_list_fails_explicitly_above_safety_limit(client, monkeypatch
     response = client.get(f'/projects/{project_id}/runs')
     assert response.status_code == 413
     assert 'runs/page' in response.json()['detail']
+
+
+def test_run_history_filters_and_lists_exact_design_revisions(client):
+    project_id = project(client)
+    runs = [create_run(client, project_id, index) for index in range(5)]
+    with SessionLocal.begin() as db:
+        for run, revision in zip(runs[:4], ['rev-A', 'rev-A', 'rev-B', '%_literal']):
+            db.execute(update(RunEvidence).where(RunEvidence.run_id == run['id'])
+                       .values(design_revision=revision))
+
+    page = client.get(f'/projects/{project_id}/runs/page', params={'revision': 'rev-A'}).json()
+    assert page['total'] == 2
+    assert [item['id'] for item in page['items']] == [runs[1]['id'], runs[0]['id']]
+    assert {item['design_revision'] for item in page['items']} == {'rev-A'}
+    labeled = client.get(f'/projects/{project_id}/runs/page?revision_scope=labeled').json()
+    assert labeled['total'] == 4
+    unlabeled = client.get(f'/projects/{project_id}/runs/page?revision_scope=unlabeled').json()
+    assert unlabeled['total'] == 1 and unlabeled['items'][0]['id'] == runs[4]['id']
+    assert client.get(f'/projects/{project_id}/runs/page', params={
+        'revision': 'rev-A', 'revision_scope': 'unlabeled',
+    }).status_code == 422
+
+    revisions = client.get(f'/projects/{project_id}/run-revisions?limit=2').json()
+    assert revisions['total'] == 3 and revisions['unlabeled_runs'] == 1
+    assert len(revisions['items']) == 2
+    assert revisions['items'][0] == {
+        'design_revision': '%_literal', 'run_count': 1, 'latest_run_id': runs[3]['id'],
+    }
+    filtered = client.get(f'/projects/{project_id}/run-revisions', params={'q': '%_'}).json()
+    assert [item['design_revision'] for item in filtered['items']] == ['%_literal']
+    assert client.get(f'/projects/{project_id}/run-revisions', params={'q': '   '}).status_code == 422
