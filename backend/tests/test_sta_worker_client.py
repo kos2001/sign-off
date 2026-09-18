@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 import time
 
 import pytest
@@ -82,6 +83,24 @@ def test_deadline_stops_process_group_and_cleans_container(docker, monkeypatch):
     with pytest.raises(worker.StaWorkerError, match='deadline'):
         worker.run_sta('n', 'l', 's', 'top')
     assert time.monotonic() - started < 2
+    assert_removed(docker)
+
+
+def test_cancellation_stops_process_group_and_cleans_container(docker, monkeypatch):
+    monkeypatch.setenv('STA_WORKER_TEST_SCENARIO', 'hang')
+    cancel = threading.Event()
+    def cancel_after_start():
+        deadline = time.monotonic() + 2
+        while not docker.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        cancel.set()
+    thread = threading.Thread(target=cancel_after_start)
+    thread.start()
+    try:
+        with pytest.raises(worker.StaWorkerError, match='cancelled'):
+            worker.run_sta('n', 'l', 's', 'top', cancel=cancel)
+    finally:
+        thread.join(timeout=2)
     assert_removed(docker)
 
 
