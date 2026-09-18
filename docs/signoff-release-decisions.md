@@ -61,5 +61,9 @@
 결정 수, 기능 도입 전 비연결 결정 수와 현재 체인 헤드를 반환한다. 연결이나 헤드가 다르면 409다.
 기능 도입 전 결정은 기존 개별 해시 계약으로 검증하며, 첫 새 결정이 그 마지막 해시를 연결한다.
 
+`GET /projects/{project_id}/signoff-releases/audit/export`는 체인 검증에 필요한 서명 메타데이터만
+`signoff/release-decision-ledger/v1` JSON으로 내보낸다. 검증 방법과 외부 헤드 보관 절차는
+[휴대용 결정 감사 원장](release-decision-ledger.md)을 따른다.
+
 기록 수정·삭제 API는 제공하지 않는다. 보관 ZIP은 원본 보고서의 저장 SHA를 생성 시점에
 재검증하지만 벤더의 디지털 서명, 실제 툴 실행 진위 또는 설계 입력 동일성을 대신하지 않는다.

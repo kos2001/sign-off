@@ -823,6 +823,8 @@ export const api = {
     status: 'verified'; decision_count: number; legacy_decision_count: number;
     chained_decision_count: number; chain_head_sha256: string | null; verified_at: string;
   }>(`/projects/${projectId}/signoff-releases/audit`),
+  exportSignoffReleaseLedger: (projectId: number) =>
+    request<Blob>(`/projects/${projectId}/signoff-releases/audit/export`, undefined, 'blob'),
   createSignoffRelease: (projectId: number, body: { stage: Stage; decision: 'approved' | 'rejected'; reason: string; expected_evidence_sha256?: string }) =>
     request<SignoffReleaseDecision>(`/projects/${projectId}/signoff-releases`, { method: 'POST', body: JSON.stringify(body) }),
   downloadSignoffRelease: (projectId: number, releaseId: number) =>
