@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1089개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1093개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 

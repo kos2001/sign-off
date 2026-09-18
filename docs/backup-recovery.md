@@ -58,4 +58,5 @@ mkdir -p /secure/backups
 변경은 포함되지 않습니다. 백업 주기·보존 기간·복구 시간 목표는 운영자가 정하고,
 별도 저장소 복제와 정기 복원 훈련을 운영 작업에 추가해야 합니다.
 
-이 명령은 SQLite 전용입니다. PostgreSQL은 해당 DB의 백업·복구 도구와 별도 검증이 필요합니다.
+이 명령은 SQLite 전용입니다. PostgreSQL 절차와 실제 CI 복구 훈련은
+[PostgreSQL 운영](postgresql.md#백업과-복구-훈련)을 따릅니다.

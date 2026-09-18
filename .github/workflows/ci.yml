@@ -52,6 +52,12 @@ jobs:
           SIGNOFF_POSTGRES_TEST_URL: postgresql+psycopg://signoff:signoff@127.0.0.1:5432/signoff
           PYTHONPATH: .
         run: python scripts/check_postgres_migrations.py
+      - name: Verify PostgreSQL backup and restore
+        env:
+          SIGNOFF_POSTGRES_TEST_URL: postgresql+psycopg://signoff:signoff@127.0.0.1:5432/signoff
+          SIGNOFF_POSTGRES_CLIENT_IMAGE: postgres:17-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+          PYTHONPATH: .
+        run: python scripts/check_postgres_backup.py
       - run: python -m pytest -ra
 
   frontend:
