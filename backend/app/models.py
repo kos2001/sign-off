@@ -165,6 +165,10 @@ class SignoffRun(Base):
         return self.evidence.source if self.evidence else "legacy"
 
     @property
+    def design_revision(self) -> str | None:
+        return self.evidence.design_revision if self.evidence else None
+
+    @property
     def result_locked(self) -> bool:
         return self.evidence_source in {"rtl_ladder", "commercial_rtl_report", "commercial_cdc_report", "commercial_dft_report", "commercial_low_power_report", "opensta_report", "opensta_execution", "commercial_sta_report", "klayout_report", "commercial_drc_report", "commercial_emir_report", "commercial_power_report", "commercial_thermal_report", "commercial_lvs_report", "commercial_lec_report"} or (
             self.evidence is None and self.tool == "rtl-signoff-ladder"

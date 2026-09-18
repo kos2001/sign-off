@@ -17,6 +17,7 @@ from ..schemas import (
     RunCreate,
     RunOut,
     RunPageOut,
+    RunRevisionPage,
     RunEvidenceOut,
     RunUpdate,
     ViolationCreate,
@@ -76,6 +77,8 @@ def list_runs(
 @router.get('/projects/{project_id}/runs/page', response_model=RunPageOut)
 def run_page(project_id: int, domain: Domain | None = None, stage: Stage | None = None,
              status: RunStatus | None = None, q: str | None = Query(None, min_length=1, max_length=80),
+             revision: str | None = Query(None, min_length=1, max_length=160),
+             revision_scope: Literal['all', 'labeled', 'unlabeled'] = 'all',
              before_id: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
              db: Session = Depends(get_db)):
     get_project_or_404(project_id, db)
@@ -91,6 +94,19 @@ def run_page(project_id: int, domain: Domain | None = None, stage: Stage | None 
         if not query:
             raise HTTPException(422, 'q must not be blank')
         filters.append(func.lower(SignoffRun.tool).contains(query.casefold(), autoescape=True))
+    if revision is not None:
+        selected_revision = revision.strip()
+        if not selected_revision:
+            raise HTTPException(422, 'revision must not be blank')
+        if revision_scope == 'unlabeled':
+            raise HTTPException(422, 'revision cannot be combined with unlabeled scope')
+        filters.append(SignoffRun.evidence.has(RunEvidence.design_revision == selected_revision))
+    elif revision_scope == 'labeled':
+        filters.append(SignoffRun.evidence.has(
+            RunEvidence.design_revision.is_not(None) & (RunEvidence.design_revision != '')))
+    elif revision_scope == 'unlabeled':
+        filters.append(~SignoffRun.evidence.has(
+            RunEvidence.design_revision.is_not(None) & (RunEvidence.design_revision != '')))
     page_filters = [*filters]
     if before_id is not None:
         page_filters.append(SignoffRun.id < before_id)
@@ -105,6 +121,34 @@ def run_page(project_id: int, domain: Domain | None = None, stage: Stage | None 
     total = sum(counts.values())
     return {'items': items, 'total': total, 'status_counts': counts,
             'next_before_id': items[-1].id if len(rows) > limit else None}
+
+
+@router.get('/projects/{project_id}/run-revisions', response_model=RunRevisionPage)
+def run_revisions(project_id: int, q: str | None = Query(None, min_length=1, max_length=160),
+                  offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100),
+                  db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    filters = [SignoffRun.project_id == project_id, RunEvidence.design_revision.is_not(None),
+               RunEvidence.design_revision != '']
+    if q is not None:
+        search = q.strip()
+        if not search:
+            raise HTTPException(422, 'q must not be blank')
+        filters.append(func.lower(RunEvidence.design_revision).contains(search.casefold(), autoescape=True))
+    grouped = (select(RunEvidence.design_revision.label('design_revision'),
+                      func.count(SignoffRun.id).label('run_count'),
+                      func.max(SignoffRun.id).label('latest_run_id'))
+               .join(SignoffRun, SignoffRun.id == RunEvidence.run_id).where(*filters)
+               .group_by(RunEvidence.design_revision))
+    total = db.scalar(select(func.count()).select_from(grouped.subquery())) or 0
+    rows = db.execute(grouped.order_by(func.max(SignoffRun.id).desc())
+                      .offset(offset).limit(limit)).all()
+    unlabeled = db.scalar(select(func.count(SignoffRun.id)).outerjoin(
+        RunEvidence, RunEvidence.run_id == SignoffRun.id).where(
+            SignoffRun.project_id == project_id,
+            (RunEvidence.design_revision.is_(None)) | (RunEvidence.design_revision == ''))) or 0
+    return {'items': [dict(row._mapping) for row in rows], 'total': total, 'offset': offset,
+            'limit': limit, 'unlabeled_runs': unlabeled}
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)
