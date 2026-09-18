@@ -10,6 +10,9 @@
 - `approved`는 현재 게이트의 `ready`가 참이고 해당 스테이지의 릴리스 후보 리비전이 고정됐으며,
   게이트의 공통 리비전과 고정된 후보가 정확히 일치할 때만 허용한다. 조건을 충족하지 않으면
   409이며 기록을 만들지 않는다.
+- 승인자는 `GET /projects/{project_id}/signoff-releases/review?stage=final`로 현재 근거를 검토하고
+  응답의 `evidence_snapshot_sha256`을 승인 요청의 `expected_evidence_sha256`으로 제출한다. 승인
+  패키지를 다시 만든 결과가 다르면 서버는 409로 거부해 변경된 근거의 의도하지 않은 승인을 막는다.
 - `rejected`는 차단 또는 준비된 게이트 모두에 사용할 수 있다. 근거 부족 자체를 감사 기록으로 남길 수 있다.
 - 로그인 모드에서는 요청 본문으로 결정자 이름을 받지 않고 세션의 사용자 ID와 이름을 저장한다.
 - 결정 생성과 판정에는 Hermes 또는 다른 AI 모델이 개입하지 않는다.
@@ -33,7 +36,7 @@
 `POST /projects/{project_id}/signoff-releases`
 
 ```json
-{"stage":"final","decision":"rejected","reason":"thermal coverage is incomplete"}
+{"stage":"final","decision":"approved","reason":"all evidence reviewed","expected_evidence_sha256":"64-character lowercase SHA-256"}
 ```
 
 서버는 현재 최신 런을 다시 선택하고 `signoff/evidence-package/v1` 패키지를 만든 뒤 다음을

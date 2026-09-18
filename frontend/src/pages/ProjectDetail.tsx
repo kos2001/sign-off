@@ -2,7 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 
-import type { Domain, RunStatus, Severity, SignoffRun, Stage } from "../api";
+import type { Domain, RunStatus, Severity, SignoffReleaseReview, SignoffRun, Stage } from "../api";
 import { api, DOMAIN_LABELS, STAGE_LABELS, STAGES } from "../api";
 import { useAuth } from "../components/AuthProvider";
 import { RunEvidencePanel } from "../components/RunEvidencePanel";
@@ -118,6 +118,7 @@ export default function ProjectDetail() {
   const [toolQuery, setToolQuery] = useState('');
   const [appliedToolQuery, setAppliedToolQuery] = useState('');
   const [revisionQuery, setRevisionQuery] = useState('');
+  const [releaseReview, setReleaseReview] = useState<SignoffReleaseReview | null>(null);
   const [appliedRevisionQuery, setAppliedRevisionQuery] = useState('');
   const runFilterKey = JSON.stringify({ ...runFilters, q: appliedToolQuery, revision: appliedRevisionQuery });
   const runFilterKeyRef = useRef(runFilterKey);
@@ -158,13 +159,22 @@ export default function ProjectDetail() {
     getNextPageParam: page => page.next_before_id ?? undefined,
     refetchInterval: project.data?.archived_at ? false : 5000,
   });
+  const prepareReleaseReview = useMutation({
+    mutationFn: () => api.signoffReleaseReview(projectId, stage),
+    onSuccess: review => setReleaseReview(review),
+  });
   const releaseDecision = useMutation({
-    mutationFn: (decision: 'approved' | 'rejected') => api.createSignoffRelease(projectId, { stage, decision, reason: releaseReason }),
+    mutationFn: (decision: 'approved' | 'rejected') => api.createSignoffRelease(projectId, {
+      stage, decision, reason: releaseReason,
+      ...(decision === 'approved' && releaseReview ? { expected_evidence_sha256: releaseReview.evidence_snapshot_sha256 } : {}),
+    }),
     onSuccess: async () => {
       setReleaseReason('');
+      setReleaseReview(null);
       await qc.invalidateQueries({ queryKey: ['signoff-releases', projectId] });
     },
   });
+  useEffect(() => { setReleaseReview(null); }, [stage]);
   const archivedPackage = useMutation({
     mutationFn: (releaseId: number) => api.downloadSignoffRelease(projectId, releaseId),
     onSuccess: (blob, releaseId) => {
@@ -365,12 +375,18 @@ export default function ProjectDetail() {
               </div>
               {auth.can(projectId, 'approver') && !p.archived_at && <div className="space-y-2">
                 <textarea className="input w-full" rows={2} maxLength={4000} value={releaseReason} onChange={event => setReleaseReason(event.target.value)} placeholder="결정 사유" aria-label="사인오프 결정 사유" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className="btn btn-ghost" disabled={prepareReleaseReview.isPending} onClick={() => prepareReleaseReview.mutate()}>{prepareReleaseReview.isPending ? '근거 확인 중…' : '현재 승인 근거 검토'}</button>
+                  {releaseReview && <span className="break-all text-xs text-[var(--text-muted)]">검토 SHA-256 {releaseReview.evidence_snapshot_sha256}</span>}
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-primary" disabled={!gate.data.ready || !gate.data.target_revision.design_revision || !releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('approved')}>게이트 승인·동결</button>
+                  <button className="btn btn-primary" disabled={!gate.data.ready || !gate.data.target_revision.design_revision || !releaseReview || !releaseReview.gate.ready || !releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('approved')}>게이트 승인·동결</button>
                   <button className="btn btn-ghost" disabled={!releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('rejected')}>차단 결정·동결</button>
                 </div>
                 {!gate.data.ready && <p className="text-xs text-[var(--text-muted)]">현재 게이트가 차단되어 승인은 사용할 수 없습니다. 근거를 보완하거나 차단 결정을 기록하세요.</p>}
                 {gate.data.ready && !gate.data.target_revision.design_revision && <p className="text-xs text-[var(--text-muted)]">승인 전에 위에서 이 스테이지의 릴리스 후보 리비전을 고정하세요.</p>}
+                {gate.data.ready && gate.data.target_revision.design_revision && !releaseReview && <p className="text-xs text-[var(--text-muted)]">승인할 근거를 명시적으로 검토해 스냅샷 해시를 고정하세요.</p>}
+                {prepareReleaseReview.isError && <p role="alert" className="text-sm text-[var(--status-critical)]">{prepareReleaseReview.error.message}</p>}
                 {releaseDecision.isError && <p role="alert" className="text-sm text-[var(--status-critical)]">{releaseDecision.error.message}</p>}
                 {releaseDecision.isSuccess && <p role="status" className="text-sm">결정과 근거 패키지를 보관했습니다.</p>}
               </div>}
