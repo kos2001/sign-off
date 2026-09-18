@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { useState } from "react";
 import { Link } from "react-router";
 
-import type { SignoffRun } from "../api";
+import type { RunStatus } from "../api";
 import { api } from "../api";
 import { RunStatusBar } from "../components/charts";
 import { Card, Field, StatTile } from "../components/ui";
@@ -14,11 +14,11 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   const list0 = projects.data ?? [];
-  // one lightweight runs fetch per project — feeds the pass/fail glance bar below each card
+  // Fetch one row plus server-side totals; report bodies and full history stay out of the dashboard.
   const runQueries = useQueries({
     queries: list0.map((p) => ({
-      queryKey: ["runs", p.id],
-      queryFn: () => api.listRuns(p.id),
+      queryKey: ["run-summary", p.id],
+      queryFn: () => api.runPage(p.id, undefined, 1),
     })),
   });
 
@@ -33,10 +33,10 @@ export default function Dashboard() {
   });
 
   const list = list0;
-  const runsByProject = new Map(list.map((p, i) => [p.id, runQueries[i]?.data ?? []]));
+  const runsByProject = new Map(list.map((p, i) => [p.id, runQueries[i]?.data]));
   const aggregateCounts = { passed: 0, failed: 0, running: 0, incomplete: 0 };
-  for (const runs of runsByProject.values())
-    for (const r of runs) aggregateCounts[r.status] += 1;
+  for (const page of runsByProject.values()) if (page)
+    for (const status of Object.keys(aggregateCounts) as RunStatus[]) aggregateCounts[status] += page.status_counts[status];
 
   return (
     <div className="space-y-6">
@@ -98,7 +98,7 @@ export default function Dashboard() {
                     ))}
                   </div>
                   <div className="mt-3">
-                    <ProjectRunGlance runs={runsByProject.get(p.id) ?? []} />
+                    <ProjectRunGlance counts={runsByProject.get(p.id)?.status_counts} total={runsByProject.get(p.id)?.total ?? 0} />
                   </div>
                 </Link>
               </li>
@@ -157,17 +157,14 @@ export default function Dashboard() {
 }
 
 /** Compact per-card glance: thin status bar, no legend, so the project grid stays scannable. */
-function ProjectRunGlance({ runs }: { runs: SignoffRun[] }) {
-  if (runs.length === 0) {
+function ProjectRunGlance({ counts, total }: { counts?: Record<RunStatus, number>; total: number }) {
+  if (total === 0 || !counts) {
     return (
       <p className="text-xs" style={{ color: "var(--text-muted)" }}>
         아직 런이 없습니다.
       </p>
     );
   }
-  const counts = { passed: 0, failed: 0, running: 0, incomplete: 0 };
-  for (const r of runs) counts[r.status] += 1;
-  const total = runs.length;
   const order: (keyof typeof counts)[] = ["passed", "failed", "running", "incomplete"];
   const color = { passed: "var(--status-good)", failed: "var(--status-critical)", running: "var(--status-warning)", incomplete: "var(--text-muted)" };
 
