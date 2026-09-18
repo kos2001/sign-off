@@ -117,6 +117,20 @@ class RunOut(RunCreate):
     result_locked: bool
 
 
+class RunStatusCounts(BaseModel):
+    running: int
+    incomplete: int
+    passed: int
+    failed: int
+
+
+class RunPageOut(BaseModel):
+    items: list[RunOut]
+    total: int
+    status_counts: RunStatusCounts
+    next_before_id: int | None
+
+
 class RunEvidenceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

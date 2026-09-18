@@ -36,6 +36,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 
 - `POST/GET /projects` — 프로젝트(칩) 등록: 이름, 공정 노드, 파운드리
 - `POST /projects/{id}/runs` — 사인오프 런 생성 (`domain`, `stage`, `tool`, `metrics`)
+- `GET /projects/{id}/runs/page` — 상태별 전체 집계와 최신순 커서 페이지 (`before_id`, `limit`, `domain`, `stage`); 운영 UI 기본 경로
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
 - `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자·설계 리비전·만료 기록, 상태 waived 전환). 새 웨이버는 기본 90일·최대 365일이며 만료/범위 불일치는 게이트 차단에 재반영

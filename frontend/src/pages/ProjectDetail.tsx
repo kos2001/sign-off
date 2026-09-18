@@ -57,12 +57,23 @@ function gateReasonLabel(reason?: string | null) {
   return inactiveWaiver ? `만료·범위 불일치 웨이버 ${inactiveWaiver[1]}건` : blocking ? `미해결 차단 위반 ${blocking[1]}건` : labels[reason] ?? reason;
 }
 
+function mergeRuns(latest: SignoffRun[], older: SignoffRun[]) {
+  const seen = new Set<number>();
+  return [...latest, ...older].filter(run => {
+    if (seen.has(run.id)) return false;
+    seen.add(run.id);
+    return true;
+  });
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const projectId = Number(id);
   const auth = useAuth();
   const qc = useQueryClient();
   const [stage, setStage] = useState<Stage>("placement");
+  const [olderRuns, setOlderRuns] = useState<SignoffRun[]>([]);
+  const [olderCursor, setOlderCursor] = useState<number | null | undefined>(undefined);
   const [releaseReason, setReleaseReason] = useState("");
   const gateExport = useMutation({
     mutationFn: (input: { projectId: number; stage: Stage }) => api.exportGate(input.projectId, input.stage),
@@ -118,9 +129,20 @@ export default function ProjectDetail() {
   });
   // 5s polling keeps runs and gate status live while ladders execute elsewhere
   const runs = useQuery({
-    queryKey: ["runs", projectId],
-    queryFn: () => api.listRuns(projectId),
+    queryKey: ["runs-page", projectId],
+    queryFn: () => api.runPage(projectId),
     refetchInterval: 5000,
+  });
+  const loadOlderRuns = useMutation({
+    mutationFn: (beforeId: number) => api.runPage(projectId, beforeId),
+    onSuccess: page => {
+      setOlderRuns(current => {
+        const items = new Map(current.map(item => [item.id, item]));
+        for (const item of page.items) items.set(item.id, item);
+        return [...items.values()].sort((a, b) => b.id - a.id);
+      });
+      setOlderCursor(page.next_before_id);
+    },
   });
   const gate = useQuery({
     queryKey: ["gate", projectId, stage],
@@ -129,7 +151,9 @@ export default function ProjectDetail() {
   });
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["runs", projectId] });
+    setOlderRuns([]);
+    setOlderCursor(undefined);
+    qc.invalidateQueries({ queryKey: ["runs-page", projectId] });
     qc.invalidateQueries({ queryKey: ["gate", projectId] });
   };
 
@@ -301,7 +325,14 @@ export default function ProjectDetail() {
         )}
       </Card>
 
-      <RunsCard projectId={projectId} runs={runs.data ?? []} onChange={invalidate} />
+      <RunsCard projectId={projectId}
+        runs={mergeRuns(runs.data?.items ?? [], olderRuns)}
+        total={runs.data?.total ?? 0} statusCounts={runs.data?.status_counts}
+        loading={runs.isPending} error={runs.error?.message}
+        hasMore={(olderCursor === undefined ? runs.data?.next_before_id : olderCursor) != null}
+        loadingMore={loadOlderRuns.isPending} loadError={loadOlderRuns.error?.message}
+        onLoadMore={() => { const cursor = olderCursor === undefined ? runs.data?.next_before_id : olderCursor; if (cursor) loadOlderRuns.mutate(cursor); }}
+        onChange={invalidate} />
     </div>
   );
 }
@@ -309,10 +340,26 @@ export default function ProjectDetail() {
 function RunsCard({
   projectId,
   runs,
+  total,
+  statusCounts,
+  loading,
+  error,
+  hasMore,
+  loadingMore,
+  loadError,
+  onLoadMore,
   onChange,
 }: {
   projectId: number;
   runs: SignoffRun[];
+  total: number;
+  statusCounts?: Record<'passed' | 'failed' | 'running' | 'incomplete', number>;
+  loading: boolean;
+  error?: string;
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadError?: string;
+  onLoadMore: () => void;
   onChange: () => void;
 }) {
   const auth = useAuth();
@@ -329,14 +376,16 @@ function RunsCard({
   });
   const selectedTool = signoffTool(form.domain, form.tool);
 
-  const statusCounts = { passed: 0, failed: 0, running: 0, incomplete: 0 };
-  for (const r of runs) statusCounts[r.status] += 1;
+  const counts = statusCounts ?? { passed: 0, failed: 0, running: 0, incomplete: 0 };
 
   return (
     <Card title="사인오프 런" subtitle="도메인별 런 생성 · 상태 갱신 · 위반/웨이버 관리">
       <div className="mb-4">
-        <RunStatusBar counts={statusCounts} />
+        <RunStatusBar counts={counts} />
+        <p className="mt-2 text-xs text-[var(--text-muted)]">전체 {total}개 중 최신 {runs.length}개 표시</p>
       </div>
+      {loading && <p role="status" className="mb-3 text-sm">런 이력 불러오는 중…</p>}
+      {error && <p role="alert" className="mb-3 text-sm">{error}</p>}
       <form
         className="mb-4 flex flex-wrap items-end gap-3"
         onSubmit={(e) => {
@@ -414,6 +463,8 @@ function RunsCard({
           ))}
         </ul>
       )}
+      {hasMore && <button className="btn btn-ghost mt-4" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? '이전 런 불러오는 중…' : '이전 런 더 보기'}</button>}
+      {loadError && <p role="alert" className="mt-2">{loadError}</p>}
     </Card>
   );
 }
