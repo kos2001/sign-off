@@ -222,6 +222,7 @@ export default function ProjectDetail() {
         <Link className="btn btn-primary" to={`/projects/${projectId}/violations`}>전체 위반 검토</Link>
         <Link className="btn btn-ghost" to={`/projects/${projectId}/compare`}>런 비교</Link>
         <Link className="btn btn-ghost" to={`/projects/${projectId}/sta-matrix`}>STA 시나리오 매트릭스</Link>
+        <Link className="btn btn-ghost" to={`/projects/${projectId}/revision-coverage`}>리비전 검증 매트릭스</Link>
         {auth.can(projectId, "editor") && !p.archived_at && <Link className="btn btn-ghost" to={`/projects/${projectId}/import`}>보고서 가져오기</Link>}
         {auth.state.mode === "required" && auth.can(projectId, "owner") && <Link className="btn btn-ghost" to={`/projects/${projectId}/members`}>접근 권한</Link>}
         {auth.can(projectId, "owner") && <Link className="btn btn-ghost" to={`/projects/${projectId}/collectors`}>수집기 자격증명</Link>}

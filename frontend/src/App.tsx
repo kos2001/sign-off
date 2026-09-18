@@ -38,6 +38,7 @@ import Violations from "./pages/Violations";
 import RunComparison from "./pages/RunComparison";
 import RunWorkspace from "./pages/RunWorkspace";
 import StaMatrix from "./pages/StaMatrix";
+import RevisionCoverage from './pages/RevisionCoverage';
 import { ReviewDraftProvider } from "./components/ReviewDrafts";
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
           <Route path="/projects/:id/violations" element={<Violations />} />
           <Route path="/projects/:id/compare" element={<RunComparison />} />
           <Route path="/projects/:id/sta-matrix" element={<StaMatrix />} />
+          <Route path="/projects/:id/revision-coverage" element={<RevisionCoverage />} />
           <Route path="/projects/:id/import" element={<ReportImport />} />
           <Route path="/projects/:id/import/commercial-sta" element={<ReportImport commercialSta />} />
           <Route path="/projects/:id/import/commercial-drc" element={<ReportImport commercialDrc />} />
