@@ -4,10 +4,15 @@ import { RunReviewHistory } from "./RunReviewHistory";
 import { SimulationDetails } from "./SimulationDetails";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, type SignoffRun } from "../api";
+import { api, type RunEvidence, type SignoffRun } from "../api";
 import { StatusBadge } from "./ui";
 
 export const EVIDENCE_LABELS = { rtl_ladder: "서버 실행 · RTL 분석", commercial_rtl_report: "가져온 보고서 · VCS / Xcelium 회귀", klayout_report: "가져온 보고서 · KLayout DRC", commercial_drc_report: "가져온 보고서 · Calibre / Pegasus", commercial_emir_report: "가져온 보고서 · RedHawk / Voltus / Totem", commercial_power_report: "가져온 보고서 · PrimePower / Joules / PowerArtist", commercial_thermal_report: "가져온 보고서 · Celsius / Icepak / 3DSTACK", opensta_report: "가져온 보고서 · OpenSTA", opensta_execution: "서버 실행 · OpenSTA", commercial_sta_report: "가져온 보고서 · PrimeTime / Tempus", manual: "수동 입력", legacy: "이전 데이터 · 실행 근거 없음" };
+
+function submitterLabel(value: RunEvidence['result']['submitted_by']) {
+  if (!value) return '로컬 모드 · 인증 없음';
+  return 'username' in value ? value.username : `수집기 ${value.name} (#${value.collector_id})`;
+}
 
 export function RunEvidencePanel({ run }: { run: SignoffRun }) {
   const [open, setOpen] = useState(false);
@@ -74,7 +79,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
         </> : (run.evidence_source === "klayout_report" || run.evidence_source === "commercial_drc_report") ? <>
           <p className="font-semibold">{run.evidence_source === 'commercial_drc_report' ? run.tool : 'KLayout DRC'} 보고서 · {evidence.data.result.metadata?.filename}</p>
           <p>설계 리비전: {evidence.data.design_revision} · 입력된 툴 버전: {evidence.data.result.metadata?.tool_version}</p>
-          <p>룰덱 / 실행 조건: {evidence.data.result.metadata?.scenario} · 업로드: {evidence.data.result.submitted_by?.username ?? '로컬 모드'}</p>
+          <p>룰덱 / 실행 조건: {evidence.data.result.metadata?.scenario} · 업로드: {submitterLabel(evidence.data.result.submitted_by)}</p>
           <p>보고된 마커 {evidence.data.result.metrics?.reported_items}개 · 중복 발생 수 합계 {evidence.data.result.metrics?.reported_multiplicity}</p>
           {evidence.data.result.coverage_attestation?.verified ? <div className="rounded-lg border border-[var(--status-good)] p-2 space-y-1"><p className="font-semibold">신뢰된 수집기 전체 DRC 범위 증명</p><p>키 ID: {evidence.data.result.coverage_attestation.key_id} · 유효 기간: {new Date(evidence.data.result.coverage_attestation.issued_at).toLocaleString()} – {new Date(evidence.data.result.coverage_attestation.expires_at).toLocaleString()}</p><p className="break-all">증명 ID: {evidence.data.result.coverage_attestation.attestation_id}</p><p>서버가 서명과 DRC 범위 선언을 검증했습니다. 등록 수집기의 선언이며 EDA 벤더 서명이나 호스트 무결성 증명은 아닙니다. AI는 판정에 개입하지 않습니다.</p></div> : <p>보고된 마커만 보존합니다. 셀 좌표는 계층 변환하지 않습니다. 전체 DRC 범위는 미확인이며 보고된 심각도나 원본 태그는 승인으로 반영하지 않습니다.</p>}
           <p className="break-all">원본 SHA-256: {evidence.data.source_sha256}</p>
@@ -84,7 +89,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
           <p className="font-semibold">{run.tool} 보고서 · {evidence.data.result.metadata?.filename}</p>
           <p>입력된 툴 버전: {evidence.data.result.metadata?.tool_version} · 시나리오: {evidence.data.result.metadata?.scenario}</p>
           <p>설계 리비전: {evidence.data.design_revision} (입력된 식별자)</p>
-          <p>업로드: {evidence.data.result.submitted_by?.username ?? "로컬 모드 · 인증 없음"}</p>
+          <p>업로드: {submitterLabel(evidence.data.result.submitted_by)}</p>
           <p>보고된 경로 {evidence.data.result.metrics?.reported_paths}개 · 위반 {evidence.data.result.metrics?.violating_paths}개 · 제약 없는 경로 {evidence.data.result.metrics?.unconstrained_paths}개</p>
           {run.evidence_source === 'opensta_execution' ? <><p className="break-all">서버 실행: 격리 컨테이너 · 이미지 {evidence.data.result.execution?.image_id} · OpenSTA {evidence.data.result.execution?.opensta_commit}</p><p>배선 기생성분: {evidence.data.result.metadata?.parasitics === 'spef' ? 'SPEF 반영' : '미제공'}</p><p>이 런 생성에는 AI가 개입하지 않았습니다. 저장된 입력으로 서버가 OpenSTA를 실행했습니다. 경로 표본만 생성하므로 이 결과만으로 전체 STA 게이트를 통과하지 않습니다.</p></> : evidence.data.result.coverage_attestation?.verified ? <div className="rounded-lg border border-[var(--status-good)] p-2 space-y-1"><p className="font-semibold">신뢰된 수집기 전체 STA 범위 증명</p><p>키 ID: {evidence.data.result.coverage_attestation.key_id} · 유효 기간: {new Date(evidence.data.result.coverage_attestation.issued_at).toLocaleString()} – {new Date(evidence.data.result.coverage_attestation.expires_at).toLocaleString()}</p><p className="break-all">증명 ID: {evidence.data.result.coverage_attestation.attestation_id}</p><p>서버가 서명과 여섯 범위 선언을 검증했습니다. 이는 등록 수집기의 선언이며 EDA 벤더 서명이나 호스트 무결성 증명은 아닙니다. AI는 판정에 개입하지 않습니다.</p></div> : <p>외부에서 제출된 경로 보고서입니다. 전체 STA 검증 범위와 툴 실행의 진위는 확인되지 않았습니다. 위반 처리 후에도 이 보고서만으로 게이트를 통과하지 않습니다.</p>}
           {run.evidence_source === 'opensta_execution' && <section className="space-y-2" aria-label="OpenSTA 입력 아티팩트"><h4 className="font-semibold">실행 입력 아티팩트</h4><p>대형 입력 원문은 근거 메타데이터와 분리해 저장하며, 다운로드할 때 SHA-256과 바이트 길이를 다시 확인합니다.</p><ul className="space-y-2">{(['netlist', 'liberty', 'sdc', 'spef'] as const).filter(kind => kind !== 'spef' || evidence.data.result.input_artifacts?.spef).map(kind => { const item = evidence.data.result.input_artifacts?.[kind]; const label = { netlist: '게이트 넷리스트', liberty: 'Liberty 라이브러리', sdc: 'SDC 제약', spef: 'SPEF 기생성분' }[kind]; const extension = { netlist: 'v', liberty: 'lib', sdc: 'sdc', spef: 'spef' }[kind]; return <li key={kind} className="rounded-lg bg-[var(--surface-2)] p-2"><p><strong>{label}</strong> · {item?.byte_length?.toLocaleString() ?? '알 수 없음'} bytes</p><p className="break-all">SHA-256: {item?.sha256 ?? '이전 실행 · 메타데이터 없음'}</p><button className="btn btn-ghost mt-1" disabled={artifactDownload.isPending} onClick={() => artifactDownload.mutate({ runId: run.id, kind, extension })}>{artifactDownload.isPending && artifactDownload.variables?.kind === kind ? '확인 중…' : '원본 다운로드'}</button></li>; })}</ul>{artifactDownload.isError && <p role="alert">{artifactDownload.error.message}</p>}</section>}

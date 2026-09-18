@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import AuthSession, Project, ProjectMember, SignoffRun, User, Violation
+from .models import AuthSession, CollectorCredential, Project, ProjectMember, SignoffRun, User, Violation
 
 ROLES = {'viewer': 0, 'editor': 1, 'approver': 2, 'owner': 3}
 COOKIE = 'signoff_session'
@@ -110,6 +110,38 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
     if not required:
         for key in {'project_id', 'run_id', 'violation_id', 'review_id', 'release_id', 'batch_id', 'user_id'} & request.path_params.keys():
             database_id(request.path_params[key], key)
+        return
+    authorization = request.headers.get('Authorization')
+    if authorization is not None:
+        if request.cookies.get(COOKIE) or not authorization.startswith('Bearer ') or authorization.count(' ') != 1:
+            raise HTTPException(401, 'invalid collector credential')
+        token = authorization[7:]
+        if not 32 <= len(token) <= 128:
+            raise HTTPException(401, 'invalid collector credential')
+        credential = db.scalar(select(CollectorCredential).where(
+            CollectorCredential.token_hash == token_hash(token),
+            CollectorCredential.revoked_at.is_(None),
+            CollectorCredential.expires_at > int(time.time()),
+        ))
+        route = request.scope['route'].path
+        allowed = {
+            '/projects/{project_id}/imports/commercial-sta',
+            '/projects/{project_id}/imports/commercial-drc',
+            '/projects/{project_id}/imports/commercial-emir',
+            '/projects/{project_id}/imports/commercial-power',
+            '/projects/{project_id}/imports/commercial-thermal',
+            '/projects/{project_id}/imports/commercial-rtl',
+        }
+        if request.method != 'POST' or route not in allowed:
+            raise HTTPException(401, 'invalid collector credential')
+        project_id = database_id(request.path_params.get('project_id'), 'project_id')
+        if credential is None or credential.project_id != project_id:
+            raise HTTPException(401, 'invalid collector credential')
+        body = await object_body(request)
+        if not isinstance(body.get('coverage_attestation'), dict):
+            raise HTTPException(422, 'collector submissions require a coverage attestation')
+        db.info['collector'] = credential
+        request.state.collector_id = credential.id
         return
     user, session = get_identity(request, db)
     if user is None:
