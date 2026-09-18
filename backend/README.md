@@ -43,6 +43,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET/PUT /projects/{id}/sta-scenarios/{stage}` — 기대 STA 코너·모드와 SPEF 요구 세트 조회·교체
 - `GET /projects/{id}/sta-matrix?stage=routing&design_revision=...` — 기대 세트와 최신 OpenSTA 실행의 누락·요구 충족·경로 표본 집계
 - `POST /analysis/sta-signoff/batch/stream` — 공통 넷리스트와 최대 8개 시나리오별 Liberty·SDC·SPEF를 순차 실행하고 NDJSON 진행 상황과 독립 런을 반환
+- `GET /projects/{id}/sta-batches` · `GET /projects/{id}/sta-batches/{batch_id}` — 배치 접수자·범위·항목별 상태·생성 런을 보존한 실행 매니페스트 조회
 - `POST /analysis/ir-drop` · `POST /analysis/glitch-power` · `POST /analysis/timing-summary`
 
 DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).

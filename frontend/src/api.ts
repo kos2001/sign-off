@@ -55,12 +55,20 @@ export type StaStreamEvent =
   | { event: 'result'; result: StaExecutionResult };
 export interface StaBatchScenarioInput { scenario: string; liberty: string; sdc: string; spef?: string }
 export type StaBatchEvent =
-  | { event: 'batch_start'; total: number }
+  | { event: 'batch_start'; batch_id: number; total: number }
   | { event: 'scenario_start'; index: number; scenario: string }
   | { event: 'scenario_done'; index: number; scenario: string; result: StaExecutionResult }
   | { event: 'scenario_error'; index: number; scenario: string; detail: string }
-  | { event: 'batch_done'; total: number; completed: { scenario: string; run_id: number; status: RunStatus }[];
+  | { event: 'batch_done'; batch_id: number; total: number; completed: { scenario: string; run_id: number; status: RunStatus }[];
       failed: { scenario: string; detail: string }[] };
+export interface StaBatchExecution {
+  id: number; project_id: number; stage: Stage; top_module: string; design_revision: string;
+  status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+  submitted_by_user_id: number | null; submitted_by: string; created_at: string; finished_at: string | null;
+  items: { position: number; scenario: string; require_spef: boolean;
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    run_id: number | null; detail: string | null }[];
+}
 
 export interface KLayoutPreview {
   parser: string; coverage: string; coverage_note: string; status: 'failed' | 'incomplete'; source_sha256: string;
@@ -503,6 +511,10 @@ export const api = {
     })}`),
   staScenarios: (projectId: number, stage: Stage) =>
     request<StaScenarioDefinition[]>(`/projects/${projectId}/sta-scenarios/${stage}`),
+  staBatches: (projectId: number, beforeId?: number) =>
+    request<{ items: StaBatchExecution[]; next_before_id: number | null }>(`/projects/${projectId}/sta-batches${beforeId ? `?before_id=${beforeId}` : ''}`),
+  staBatch: (projectId: number, batchId: number) =>
+    request<StaBatchExecution>(`/projects/${projectId}/sta-batches/${batchId}`),
   replaceStaScenarios: (projectId: number, stage: Stage, scenarios: { name: string; require_spef: boolean }[]) =>
     request<StaScenarioDefinition[]>(`/projects/${projectId}/sta-scenarios/${stage}`, {
       method: 'PUT', body: JSON.stringify({ scenarios }),

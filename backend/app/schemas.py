@@ -371,6 +371,38 @@ class StaBatchRequest(BaseModel):
         return self
 
 
+class StaBatchExecutionItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    position: int
+    scenario: str
+    require_spef: bool
+    status: Literal['pending', 'running', 'completed', 'failed', 'cancelled']
+    run_id: int | None
+    detail: str | None
+
+
+class StaBatchExecutionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    stage: Stage
+    top_module: str
+    design_revision: str
+    status: Literal['running', 'completed', 'partial', 'failed', 'cancelled']
+    submitted_by_user_id: int | None
+    submitted_by: str
+    created_at: datetime
+    finished_at: datetime | None
+    items: list[StaBatchExecutionItemOut] = Field(default_factory=list)
+
+
+class StaBatchExecutionPage(BaseModel):
+    items: list[StaBatchExecutionOut]
+    next_before_id: int | None
+
+
 class TimingCorner(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=160, examples=["ss_0p675v_125c"])
