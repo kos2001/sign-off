@@ -278,13 +278,19 @@ class RunAgentReview(Base):
 
 class StaBatchExecution(Base):
     __tablename__ = 'sta_batch_executions'
-    __table_args__ = (Index('ix_sta_batch_executions_project_id_id', 'project_id', 'id'),)
+    __table_args__ = (
+        Index('ix_sta_batch_executions_project_id_id', 'project_id', 'id'),
+        Index('ux_sta_batch_executions_retry_request_key', 'retry_request_key', unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey('projects.id'))
     stage: Mapped[Stage] = mapped_column(Enum(Stage))
     top_module: Mapped[str] = mapped_column(String(120))
     design_revision: Mapped[str] = mapped_column(String(160))
+    retry_of_batch_id: Mapped[int | None] = mapped_column(ForeignKey('sta_batch_executions.id'), nullable=True)
+    retry_request_key: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    attempt: Mapped[int] = mapped_column(default=1)
     status: Mapped[str] = mapped_column(String(20), default='running')
     cancel_requested: Mapped[bool] = mapped_column(default=False)
     worker_token: Mapped[str | None] = mapped_column(String(32), nullable=True)

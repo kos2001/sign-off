@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from ..db import SessionLocal
@@ -47,6 +48,55 @@ def submit_batch(db, payload, user, expected):
             artifacts.append(_artifact(batch.id, index, 'spef', item.spef))
     db.add_all(artifacts)
     db.commit()
+    db.refresh(batch)
+    _wake.set()
+    return batch
+
+
+def retry_batch(db, source, user, request_key):
+    """Clone an immutable terminal batch and its verified inputs as a new queued attempt."""
+    key = str(request_key)
+    existing = db.scalar(select(StaBatchExecution).where(StaBatchExecution.retry_request_key == key)
+                         .options(selectinload(StaBatchExecution.items)))
+    if existing is not None:
+        if existing.retry_of_batch_id != source.id:
+            raise HTTPException(409, 'retry request key already belongs to another STA batch')
+        return existing
+    if source.status in {'queued', 'running'}:
+        raise HTTPException(409, 'only terminal STA batches can be retried')
+    artifacts = list(db.scalars(select(StaBatchInputArtifact).where(
+        StaBatchInputArtifact.batch_id == source.id).order_by(StaBatchInputArtifact.id)))
+    expected = {(-1, 'netlist'), *((item.position, kind) for item in source.items for kind in ('liberty', 'sdc'))}
+    actual = {(item.position, item.kind) for item in artifacts}
+    if not expected.issubset(actual) or any(
+        item.byte_length != len(item.content_text.encode('utf-8')) or
+        item.sha256 != hashlib.sha256(item.content_text.encode('utf-8')).hexdigest()
+        for item in artifacts
+    ):
+        raise HTTPException(409, 'stored STA batch inputs are incomplete or fail integrity verification')
+    batch = StaBatchExecution(
+        project_id=source.project_id, stage=source.stage, top_module=source.top_module,
+        design_revision=source.design_revision, retry_of_batch_id=source.id,
+        retry_request_key=key, attempt=source.attempt + 1,
+        submitted_by_user_id=user.id if user else None,
+        submitted_by=user.username if user else 'local', status='queued',
+        items=[StaBatchExecutionItem(position=item.position, scenario=item.scenario,
+            require_spef=item.require_spef, status='pending') for item in source.items],
+    )
+    db.add(batch)
+    try:
+        db.flush()
+        db.add_all([StaBatchInputArtifact(batch_id=batch.id, position=item.position, kind=item.kind,
+            content_text=item.content_text, sha256=item.sha256, byte_length=item.byte_length)
+            for item in artifacts])
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(select(StaBatchExecution).where(StaBatchExecution.retry_request_key == key)
+                             .options(selectinload(StaBatchExecution.items)))
+        if existing is None or existing.retry_of_batch_id != source.id:
+            raise
+        return existing
     db.refresh(batch)
     _wake.set()
     return batch

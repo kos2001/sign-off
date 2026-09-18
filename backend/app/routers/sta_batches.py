@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session, selectinload
 from ..db import get_db
 from ..auth import require_project
 from ..models import StaBatchExecution, StaBatchExecutionItem
-from ..schemas import StaBatchExecutionOut, StaBatchExecutionPage
+from ..schemas import StaBatchExecutionOut, StaBatchExecutionPage, StaBatchRetryRequest
+from ..services.sta_batch_queue import retry_batch
 from .projects import get_project_or_404
 
 router = APIRouter(tags=['sta-batches'])
@@ -38,6 +39,20 @@ def get_sta_batch(project_id: int, batch_id: int, db: Session = Depends(get_db))
     if row is None:
         raise HTTPException(404, 'STA batch not found')
     return row
+
+
+@router.post('/projects/{project_id}/sta-batches/{batch_id}/retry', status_code=202,
+             response_model=StaBatchExecutionOut)
+def retry_sta_batch(project_id: int, batch_id: int, payload: StaBatchRetryRequest,
+                    db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    require_project(db, project_id, 'editor')
+    row = db.scalar(select(StaBatchExecution).where(
+        StaBatchExecution.id == batch_id, StaBatchExecution.project_id == project_id,
+    ).options(selectinload(StaBatchExecution.items)))
+    if row is None:
+        raise HTTPException(404, 'STA batch not found')
+    return retry_batch(db, row, db.info.get('user'), payload.request_key)
 
 
 @router.post('/projects/{project_id}/sta-batches/{batch_id}/cancel', response_model=StaBatchExecutionOut)

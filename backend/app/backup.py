@@ -68,6 +68,7 @@ def inspect_database(path):
             ('run_artifacts', 'run_id', 'signoff_runs'),
             ('sta_batch_executions', 'project_id', 'projects'),
             ('sta_batch_executions', 'submitted_by_user_id', 'users'),
+            ('sta_batch_executions', 'retry_of_batch_id', 'sta_batch_executions'),
             ('sta_batch_execution_items', 'batch_id', 'sta_batch_executions'),
             ('sta_batch_execution_items', 'run_id', 'signoff_runs'),
             ('sta_batch_input_artifacts', 'batch_id', 'sta_batch_executions'),
@@ -75,7 +76,7 @@ def inspect_database(path):
         for child, column, parent in references:
             optional = f'c.{quote_identifier(column)} IS NOT NULL AND ' if (child, column) in {
                 ('run_agent_reviews', 'requester_user_id'), ('sta_batch_executions', 'submitted_by_user_id'),
-                ('sta_batch_execution_items', 'run_id'),
+                ('sta_batch_executions', 'retry_of_batch_id'), ('sta_batch_execution_items', 'run_id'),
             } else ''
             orphan = connection.execute(
                 f'SELECT 1 FROM {quote_identifier(child)} c LEFT JOIN {quote_identifier(parent)} p '
