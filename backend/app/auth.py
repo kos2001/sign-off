@@ -8,11 +8,12 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import case, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import AuthSession, CollectorCredential, Project, ProjectMember, SignoffRun, User, Violation
+from .models import AuthSession, CollectorCredential, LoginBucket, Project, ProjectMember, SignoffRun, User, Violation
 
 ROLES = {'viewer': 0, 'editor': 1, 'approver': 2, 'owner': 3}
 COOKIE = 'signoff_session'
@@ -49,6 +50,27 @@ def verify_password(password, encoded):
 
 def token_hash(value):
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def throttle(db, key, limit, *, message='too many login attempts; try again in five minutes'):
+    now = int(time.time())
+    digest = token_hash(key)
+    def increment():
+        return db.execute(update(LoginBucket).where(LoginBucket.key == digest).values(
+            attempts=case((LoginBucket.expires_at <= now, 1), else_=LoginBucket.attempts + 1),
+            expires_at=case((LoginBucket.expires_at <= now, now + 300), else_=LoginBucket.expires_at),
+        )).rowcount
+    if not increment():
+        db.add(LoginBucket(key=digest, attempts=1, expires_at=now + 300))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            increment()
+    db.commit()
+    attempts = db.scalar(select(LoginBucket.attempts).where(LoginBucket.key == digest))
+    if attempts > limit:
+        raise HTTPException(429, message, headers={'Retry-After': '300'})
 
 
 def get_identity(request: Request, db: Session):

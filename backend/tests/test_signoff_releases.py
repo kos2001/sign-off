@@ -9,10 +9,14 @@ import pytest
 from fastapi import Response
 
 from app.db import SessionLocal
-from app.models import RunEvidence, SignoffReleaseDecision, SignoffRun
+from app.models import AccountSecurityEvent, RunEvidence, SignoffReleaseDecision, SignoffRun
 from app.routers.releases import evidence_digest
 from app.release_ledger import verify_ledger
-from test_auth import accounts
+from test_auth import PASSWORD, accounts
+
+
+def confirmed(payload):
+    return {**payload, 'confirmation_password': PASSWORD}
 
 
 def attach_source(run_id: int):
@@ -31,7 +35,7 @@ def test_release_decision_requires_approver_and_preserves_exact_package(accounts
     users, ids, login = accounts
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
-    payload = {'stage': 'final', 'decision': 'rejected', 'reason': 'coverage is incomplete'}
+    payload = confirmed({'stage': 'final', 'decision': 'rejected', 'reason': 'coverage is incomplete'})
     assert login('editor').post(url, json=payload).status_code == 403
     assert login('editor').get(f'{url}/review?stage=final').status_code == 403
     review = login('approver').get(f'{url}/review?stage=final')
@@ -51,6 +55,7 @@ def test_release_decision_requires_approver_and_preserves_exact_package(accounts
     assert item['design_revision'] is None
     assert item['chain_version'] == 1
     assert item['previous_decision_sha256'] is None
+    assert item['credential_confirmed_at'] is not None
 
     viewer = login('viewer')
     page = viewer.get(url).json()
@@ -80,12 +85,31 @@ def test_blocked_gate_cannot_be_approved(accounts):
     attach_source(ids['run'])
     response = login('approver').post(
         f"/projects/{ids['project']}/signoff-releases",
-        json={'stage': 'final', 'decision': 'approved', 'reason': 'attempted approval'},
+        json=confirmed({'stage': 'final', 'decision': 'approved', 'reason': 'attempted approval'}),
     )
     assert response.status_code == 409
     assert '차단된 게이트' in response.json()['detail']
     with SessionLocal() as db:
         assert db.query(SignoffReleaseDecision).filter_by(project_id=ids['project']).count() == 0
+
+
+def test_release_decision_requires_current_password_without_storing_it(accounts):
+    _, ids, login = accounts
+    attach_source(ids['run'])
+    url = f"/projects/{ids['project']}/signoff-releases"
+    approver = login('approver')
+    payload = {'stage': 'final', 'decision': 'rejected', 'reason': 'credential confirmation'}
+    assert approver.post(url, json=payload).status_code == 403
+    secret = 'wrong-private-release-password'
+    response = approver.post(url, json={**payload, 'confirmation_password': secret})
+    assert response.status_code == 403
+    assert response.json()['detail'] == '현재 계정 비밀번호 확인에 실패했습니다.'
+    with SessionLocal() as db:
+        assert db.query(SignoffReleaseDecision).filter_by(project_id=ids['project']).count() == 0
+        events = db.query(AccountSecurityEvent).filter_by(action='release_confirmation_failed').all()
+        assert len(events) == 2
+        assert all(event.actor_user_id is not None for event in events)
+        assert secret not in ''.join(str(event.__dict__) for event in events)
 
 
 def test_ready_gate_approval_records_server_identity(accounts, monkeypatch):
@@ -104,8 +128,8 @@ def test_ready_gate_approval_records_server_identity(accounts, monkeypatch):
     )
     response = login('approver').post(
         f"/projects/{ids['project']}/signoff-releases",
-        json={'stage': 'final', 'decision': 'approved', 'reason': 'all required evidence reviewed',
-              'expected_evidence_sha256': evidence_digest(manifest)},
+        json=confirmed({'stage': 'final', 'decision': 'approved', 'reason': 'all required evidence reviewed',
+                        'expected_evidence_sha256': evidence_digest(manifest)}),
     )
     assert response.status_code == 201
     assert response.json()['decision'] == 'approved'
@@ -134,7 +158,7 @@ def test_ready_gate_approval_requires_pinned_target_revision(accounts, monkeypat
         lambda project_id, stage, db: package_for(None),
     )
     url = f"/projects/{ids['project']}/signoff-releases"
-    payload = {'stage': 'final', 'decision': 'approved', 'reason': 'approve release candidate'}
+    payload = confirmed({'stage': 'final', 'decision': 'approved', 'reason': 'approve release candidate'})
     response = login('approver').post(url, json=payload)
     assert response.status_code == 409
     assert '릴리스 후보 리비전' in response.json()['detail']
@@ -165,7 +189,7 @@ def test_ready_gate_approval_requires_current_review_snapshot(accounts, monkeypa
         lambda project_id, stage, db: Response(output.getvalue(), media_type='application/zip'),
     )
     url = f"/projects/{ids['project']}/signoff-releases"
-    base = {'stage': 'final', 'decision': 'approved', 'reason': 'approve reviewed evidence'}
+    base = confirmed({'stage': 'final', 'decision': 'approved', 'reason': 'approve reviewed evidence'})
 
     response = login('approver').post(url, json=base)
     assert response.status_code == 409
@@ -181,7 +205,7 @@ def test_archived_package_tampering_is_rejected(accounts):
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
     item = login('approver').post(
-        url, json={'stage': 'final', 'decision': 'rejected', 'reason': 'blocked'},
+        url, json=confirmed({'stage': 'final', 'decision': 'rejected', 'reason': 'blocked'}),
     ).json()
     with SessionLocal() as db:
         record = db.get(SignoffReleaseDecision, item['id'])
@@ -197,7 +221,7 @@ def test_archived_decision_tampering_is_rejected(accounts):
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
     item = login('approver').post(
-        url, json={'stage': 'final', 'decision': 'rejected', 'reason': 'original reason'},
+        url, json=confirmed({'stage': 'final', 'decision': 'rejected', 'reason': 'original reason'}),
     ).json()
     with SessionLocal() as db:
         record = db.get(SignoffReleaseDecision, item['id'])
@@ -213,9 +237,9 @@ def test_release_lifecycle_tracks_evidence_changes_and_newer_decisions(accounts)
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
     approver = login('approver')
-    first = approver.post(url, json={
+    first = approver.post(url, json=confirmed({
         'stage': 'final', 'decision': 'rejected', 'reason': 'initial review',
-    }).json()
+    })).json()
     assert first['lifecycle_status'] == 'current'
 
     with SessionLocal() as db:
@@ -225,9 +249,9 @@ def test_release_lifecycle_tracks_evidence_changes_and_newer_decisions(accounts)
     changed = approver.get(f"{url}/{first['id']}").json()
     assert changed['lifecycle_status'] == 'evidence_changed'
 
-    second = approver.post(url, json={
+    second = approver.post(url, json=confirmed({
         'stage': 'final', 'decision': 'rejected', 'reason': 'reviewed changed evidence',
-    }).json()
+    })).json()
     assert second['lifecycle_status'] == 'current'
     page = approver.get(url).json()['items']
     assert [item['lifecycle_status'] for item in page] == ['current', 'superseded_by_decision']
@@ -238,7 +262,7 @@ def test_gate_snapshot_tampering_is_rejected(accounts):
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
     item = login('approver').post(
-        url, json={'stage': 'final', 'decision': 'rejected', 'reason': 'original snapshot'},
+        url, json=confirmed({'stage': 'final', 'decision': 'rejected', 'reason': 'original snapshot'}),
     ).json()
     with SessionLocal() as db:
         record = db.get(SignoffReleaseDecision, item['id'])
@@ -255,7 +279,7 @@ def test_evidence_snapshot_tampering_is_rejected(accounts):
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
     item = login('approver').post(
-        url, json={'stage': 'final', 'decision': 'rejected', 'reason': 'frozen evidence'},
+        url, json=confirmed({'stage': 'final', 'decision': 'rejected', 'reason': 'frozen evidence'}),
     ).json()
     with SessionLocal() as db:
         record = db.get(SignoffReleaseDecision, item['id'])
@@ -273,12 +297,12 @@ def test_release_audit_detects_deleted_middle_decision(accounts):
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
     approver = login('approver')
-    first = approver.post(url, json={
+    first = approver.post(url, json=confirmed({
         'stage': 'final', 'decision': 'rejected', 'reason': 'first review',
-    }).json()
-    second = approver.post(url, json={
+    })).json()
+    second = approver.post(url, json=confirmed({
         'stage': 'final', 'decision': 'rejected', 'reason': 'second review',
-    }).json()
+    })).json()
     assert second['previous_decision_sha256'] == first['decision_sha256']
     with SessionLocal() as db:
         db.delete(db.get(SignoffReleaseDecision, first['id']))
@@ -292,9 +316,9 @@ def test_release_audit_detects_deleted_chain_tail(accounts):
     _, ids, login = accounts
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
-    item = login('approver').post(url, json={
+    item = login('approver').post(url, json=confirmed({
         'stage': 'final', 'decision': 'rejected', 'reason': 'record chain head',
-    }).json()
+    })).json()
     with SessionLocal() as db:
         db.delete(db.get(SignoffReleaseDecision, item['id']))
         db.commit()
@@ -307,9 +331,9 @@ def test_portable_release_ledger_cli_and_tamper_detection(accounts, tmp_path):
     _, ids, login = accounts
     attach_source(ids['run'])
     url = f"/projects/{ids['project']}/signoff-releases"
-    item = login('approver').post(url, json={
+    item = login('approver').post(url, json=confirmed({
         'stage': 'final', 'decision': 'rejected', 'reason': 'portable audit evidence',
-    }).json()
+    })).json()
     ledger = login('viewer').get(f'{url}/audit/export').json()
     path = tmp_path / 'decision-ledger.json'
     path.write_text(json.dumps(ledger, ensure_ascii=False), encoding='utf-8')

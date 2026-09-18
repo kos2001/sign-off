@@ -125,6 +125,7 @@ export default function ProjectDetail() {
   runFilterKeyRef.current = runFilterKey;
   useEffect(() => { setOlderRuns([]); setOlderCursor(undefined); }, [runFilterKey]);
   const [releaseReason, setReleaseReason] = useState("");
+  const [releasePassword, setReleasePassword] = useState('');
   const [lifecycleReason, setLifecycleReason] = useState('');
   const project = useQuery({
     queryKey: ["project", projectId],
@@ -183,6 +184,7 @@ export default function ProjectDetail() {
     mutationFn: (decision: 'approved' | 'rejected') => api.createSignoffRelease(projectId, {
       stage, decision, reason: releaseReason,
       ...(decision === 'approved' && releaseReview ? { expected_evidence_sha256: releaseReview.evidence_snapshot_sha256 } : {}),
+      ...(auth.state.mode === 'required' ? { confirmation_password: releasePassword } : {}),
     }),
     onSuccess: async () => {
       setReleaseReason('');
@@ -192,6 +194,7 @@ export default function ProjectDetail() {
         qc.invalidateQueries({ queryKey: ['signoff-release-audit', projectId] }),
       ]);
     },
+    onSettled: () => setReleasePassword(''),
   });
   useEffect(() => { setReleaseReview(null); }, [stage]);
   const archivedPackage = useMutation({
@@ -398,13 +401,14 @@ export default function ProjectDetail() {
               </div>
               {auth.can(projectId, 'approver') && !p.archived_at && <div className="space-y-2">
                 <textarea className="input w-full" rows={2} maxLength={4000} value={releaseReason} onChange={event => setReleaseReason(event.target.value)} placeholder="결정 사유" aria-label="사인오프 결정 사유" />
+                {auth.state.mode === 'required' && <label className="block text-sm">전자서명 비밀번호 확인<input className="input mt-1 w-full" type="password" autoComplete="current-password" maxLength={256} value={releasePassword} onChange={event => setReleasePassword(event.target.value)} placeholder="현재 계정 비밀번호" /></label>}
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="btn btn-ghost" disabled={prepareReleaseReview.isPending} onClick={() => prepareReleaseReview.mutate()}>{prepareReleaseReview.isPending ? '근거 확인 중…' : '현재 승인 근거 검토'}</button>
                   {releaseReview && <span className="break-all text-xs text-[var(--text-muted)]">검토 SHA-256 {releaseReview.evidence_snapshot_sha256}</span>}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-primary" disabled={!gate.data.ready || !gate.data.target_revision.design_revision || !releaseReview || !releaseReview.gate.ready || !releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('approved')}>게이트 승인·동결</button>
-                  <button className="btn btn-ghost" disabled={!releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('rejected')}>차단 결정·동결</button>
+                  <button className="btn btn-primary" disabled={!gate.data.ready || !gate.data.target_revision.design_revision || !releaseReview || !releaseReview.gate.ready || !releaseReason.trim() || (auth.state.mode === 'required' && !releasePassword) || releaseDecision.isPending} onClick={() => releaseDecision.mutate('approved')}>게이트 승인·동결</button>
+                  <button className="btn btn-ghost" disabled={!releaseReason.trim() || (auth.state.mode === 'required' && !releasePassword) || releaseDecision.isPending} onClick={() => releaseDecision.mutate('rejected')}>차단 결정·동결</button>
                 </div>
                 {!gate.data.ready && <p className="text-xs text-[var(--text-muted)]">현재 게이트가 차단되어 승인은 사용할 수 없습니다. 근거를 보완하거나 차단 결정을 기록하세요.</p>}
                 {gate.data.ready && !gate.data.target_revision.design_revision && <p className="text-xs text-[var(--text-muted)]">승인 전에 위에서 이 스테이지의 릴리스 후보 리비전을 고정하세요.</p>}
@@ -423,7 +427,7 @@ export default function ProjectDetail() {
                     <button className="btn btn-ghost" disabled={archivedPackage.isPending} onClick={() => archivedPackage.mutate(item.id)}>보관 패키지</button>
                   </div>
                   <p className="mt-1 break-words">{item.reason}</p>
-                  <p className="mt-1 break-all text-[var(--text-muted)]">리비전 {item.design_revision || '미확정'} · 패키지 SHA-256 {item.package_sha256}{item.chain_version ? ` · 결정 체인 v${item.chain_version}` : ' · 기존 비연결 기록'}</p>
+                  <p className="mt-1 break-all text-[var(--text-muted)]">리비전 {item.design_revision || '미확정'} · 패키지 SHA-256 {item.package_sha256}{item.chain_version ? ` · 결정 체인 v${item.chain_version}` : ' · 기존 비연결 기록'}{item.credential_confirmed_at ? ` · 비밀번호 재확인 ${new Date(/[Zz]|[+-]\d\d:\d\d$/.test(item.credential_confirmed_at) ? item.credential_confirmed_at : `${item.credential_confirmed_at}Z`).toLocaleString()}` : ' · 자격 증명 재확인 기록 없음'}</p>
                   {item.lifecycle_status === 'evidence_changed' && <p className="mt-1 text-[var(--status-warning)]">현재 런·웨이버·사인오프 계획이 이 결정의 동결 근거와 다릅니다. 현재 게이트를 다시 검토해 새 결정을 기록하세요.</p>}
                 </li>)}
               </ul> : <p className="text-xs text-[var(--text-muted)]">기록된 사인오프 결정이 없습니다.</p>}

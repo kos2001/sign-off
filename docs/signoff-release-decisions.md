@@ -15,6 +15,8 @@
   패키지를 다시 만든 결과가 다르면 서버는 409로 거부해 변경된 근거의 의도하지 않은 승인을 막는다.
 - `rejected`는 차단 또는 준비된 게이트 모두에 사용할 수 있다. 근거 부족 자체를 감사 기록으로 남길 수 있다.
 - 로그인 모드에서는 요청 본문으로 결정자 이름을 받지 않고 세션의 사용자 ID와 이름을 저장한다.
+- 인증 필수 모드에서는 승인과 차단 모두 현재 비밀번호 재확인이 필요하다. 성공 시각은 결정 해시에
+  포함하고 실패 시도는 비밀번호 없이 계정 보안 이력에 남긴다. 로컬 데모 모드는 이를 요구하지 않는다.
 - 결정 생성과 판정에는 Hermes 또는 다른 AI 모델이 개입하지 않는다.
 - 새 결정은 동결한 게이트와 선택 런·메트릭·원본 해시·위반·웨이버 상태의 정규화 SHA-256을
   결정 해시에 직접 결합한다. 조회 시 두 스냅샷 해시를 다시 검증하고 현재 근거와 비교한다.
@@ -39,7 +41,7 @@
 `POST /projects/{project_id}/signoff-releases`
 
 ```json
-{"stage":"final","decision":"approved","reason":"all evidence reviewed","expected_evidence_sha256":"64-character lowercase SHA-256"}
+{"stage":"final","decision":"approved","reason":"all evidence reviewed","expected_evidence_sha256":"64-character lowercase SHA-256","confirmation_password":"current account password in authenticated mode"}
 ```
 
 서버는 현재 최신 런을 다시 선택하고 `signoff/evidence-package/v1` 패키지를 만든 뒤 다음을
