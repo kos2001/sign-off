@@ -48,6 +48,7 @@ def initialize_schema(engine):
                 'archived_at': timestamp_type,
                 'archived_by': 'VARCHAR(80)',
                 'archived_by_user_id': 'INTEGER REFERENCES users(id)',
+                'release_decision_chain_head_sha256': 'VARCHAR(64)',
             }.items():
                 if column not in project_columns:
                     connection.execute(text(f'ALTER TABLE projects ADD COLUMN {column} {definition}'))
@@ -68,6 +69,10 @@ def initialize_schema(engine):
                 connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN evidence_snapshot_sha256 VARCHAR(64)'))
             if 'decision_sha256' not in release_columns:
                 connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN decision_sha256 VARCHAR(64)'))
+            if 'chain_version' not in release_columns:
+                connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN chain_version INTEGER'))
+            if 'previous_decision_sha256' not in release_columns:
+                connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN previous_decision_sha256 VARCHAR(64)'))
             batch_columns = {item["name"] for item in inspect(connection).get_columns("sta_batch_executions")}
             for column, definition in {
                 "cancel_requested": "BOOLEAN NOT NULL DEFAULT 0",

@@ -149,6 +149,8 @@ class SignoffReleaseDecisionOut(BaseModel):
     manifest_sha256: str
     package_sha256: str
     decision_sha256: str
+    chain_version: int | None
+    previous_decision_sha256: str | None
     gate_snapshot_sha256: str | None
     evidence_snapshot_sha256: str | None
     lifecycle_status: Literal['current', 'evidence_changed', 'superseded_by_decision', 'legacy_unbound']
@@ -160,6 +162,15 @@ class SignoffReleaseDecisionOut(BaseModel):
 class SignoffReleaseDecisionPage(BaseModel):
     items: list[SignoffReleaseDecisionOut]
     next_before_id: int | None
+
+
+class SignoffReleaseAuditOut(BaseModel):
+    status: Literal['verified']
+    decision_count: int
+    legacy_decision_count: int
+    chained_decision_count: int
+    chain_head_sha256: str | None
+    verified_at: datetime
 
 
 class RunCreate(BaseModel):

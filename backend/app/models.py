@@ -65,6 +65,7 @@ class Project(Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
     archived_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    release_decision_chain_head_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     runs: Mapped[list["SignoffRun"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
@@ -228,6 +229,8 @@ class SignoffReleaseDecision(Base):
     manifest_sha256: Mapped[str] = mapped_column(String(64))
     package_sha256: Mapped[str] = mapped_column(String(64))
     decision_sha256: Mapped[str] = mapped_column(String(64))
+    chain_version: Mapped[int | None] = mapped_column(nullable=True)
+    previous_decision_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     package_bytes: Mapped[bytes] = mapped_column(LargeBinary)
     byte_length: Mapped[int]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
