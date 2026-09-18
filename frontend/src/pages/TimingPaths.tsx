@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { api, STAGE_LABELS, type TimingPath } from '../api';
+import { api, STAGE_LABELS, type TimingPath, type TimingSection } from '../api';
 import { TimingGroups } from '../components/TimingGroups';
 import { RunEvidencePanel } from '../components/RunEvidencePanel';
 
+const sections = { data: '데이터 경로', source_clock: '시작 클록 경로', target_clock: '끝 클록 경로' };
 const outcomes = { all: '모든 경로', violated: '음수 슬랙', met: '0 이상 슬랙', unconstrained: '제약 없음' };
 const sorts = { slack_asc: '슬랙 낮은 순', slack_desc: '슬랙 높은 순', report: '보고서 순서' };
 function numberParam(value: string | null, maximum: number) { const n = Number(value); return Number.isInteger(n) && n >= 0 && n <= maximum ? n : 0; }
 function validOption(value: string | null, choices: object, fallback: string) { return value && Object.hasOwn(choices, value) ? value : fallback; }
-function ps(value: number | null) { return value === null ? '미보고 / 유효한 값 없음' : `${value} ps`; }
+function ps(value: number | null) { return value === null ? '미보고 / 유효한 값 없음' : `${Number(value.toPrecision(12))} ps`; }
 function deltaPs(value: number | null) { return ps(value === null ? null : Number(value.toPrecision(8))); }
 function pathLabel(path: TimingPath) { return path.status === 'unconstrained' ? '제약 없음' : path.status === 'violated' ? '음수 슬랙' : '0 이상 슬랙'; }
 
@@ -26,6 +27,7 @@ export default function TimingPaths() {
   const [rangeError, setRangeError] = useState('');
   useEffect(() => { setMinimum(slackMin); setMaximum(slackMax); setRangeError(''); }, [slackMin, slackMax]);
   const selected = numberParam(params.get('selected'), 1000);
+  const section = validOption(params.get('section'), sections, 'data') as TimingSection;
   const pointOffset = numberParam(params.get('point_offset'), 10000);
   const offset = numberParam(params.get('offset'), 1000);
   const pathGroup = params.get('path_group');
@@ -47,7 +49,7 @@ export default function TimingPaths() {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   });
-  const detail = useQuery({ queryKey: ['timing-path', runId, selected, pointOffset], queryFn: () => api.timingPath(runId, selected, pointOffset), enabled: selected > 0 && !!paths.data });
+  const detail = useQuery({ queryKey: ['timing-path', runId, selected, pointOffset, section], queryFn: () => api.timingPath(runId, selected, pointOffset, section), enabled: selected > 0 && !!paths.data });
   const detailRegion = useRef<HTMLElement>(null);
   const hasPaths = !!paths.data;
   useEffect(() => {
@@ -61,8 +63,8 @@ export default function TimingPaths() {
       const next = new URLSearchParams(previous);
       if (value) next.set(key, value); else next.delete(key);
       if (key !== 'point_offset') next.delete('point_offset');
-      if (key !== 'selected' && key !== 'point_offset') next.delete('selected');
-      if (!['offset', 'selected', 'point_offset'].includes(key)) next.delete('offset');
+      if (key !== 'selected' && key !== 'point_offset' && key !== 'section') next.delete('selected');
+      if (!['offset', 'selected', 'point_offset', 'section'].includes(key)) next.delete('offset');
       return next;
     });
   }
@@ -81,7 +83,7 @@ export default function TimingPaths() {
       for (const [key, value] of Object.entries({ q: search.trim(), slack_min_ps: lower, slack_max_ps: upper })) {
         if (value) next.set(key, value); else next.delete(key);
       }
-      for (const key of ['offset', 'selected', 'point_offset']) next.delete(key);
+      for (const key of ['offset', 'selected', 'point_offset', 'section']) next.delete(key);
       return next;
     });
   }
@@ -117,7 +119,7 @@ export default function TimingPaths() {
         setParams(previous => {
           const next = new URLSearchParams(previous);
           if (e.target.value) next.set('path_group', JSON.parse(e.target.value)); else next.delete('path_group');
-          for (const key of ['offset', 'selected', 'point_offset']) next.delete(key);
+          for (const key of ['offset', 'selected', 'point_offset', 'section']) next.delete(key);
           return next;
         });
       }}><option value="">모든 그룹</option>{[...new Set([...data.groups.map(group => group.path_group), ...(pathGroup !== null ? [pathGroup] : [])])].sort().map(group => <option key={group} value={JSON.stringify(group)}>{group || '(빈 그룹 이름)'}</option>)}</select></label>
@@ -166,10 +168,29 @@ export default function TimingPaths() {
         <p className="text-sm break-all">{detail.data.path.startpoint} → {detail.data.path.endpoint}</p>
         <p className="text-sm break-words">시작 클록: {detail.data.source_clock ?? '미보고'} · 끝 클록: {detail.data.target_clock ?? '미보고'}</p>
         <p className="text-sm break-all">데이터 도착 시간: {ps(detail.data.arrival_ps)} · 요구 시간: {ps(detail.data.required_ps)} · 슬랙: {ps(detail.data.path.slack_ps)}</p>
-        <p className="text-xs text-[var(--text-secondary)]">보고된 데이터 경로 핀 순서입니다. 도착 시간과 슬루는 원본의 초 단위를 ps로 변환했습니다. 미보고 값은 0으로 대체하지 않습니다.</p>
+        <section aria-label="타이밍 계산 항목" className="rounded-lg bg-[var(--surface-2)] p-3 space-y-3">
+          <h3 className="text-sm font-semibold">타이밍 계산 항목 · 원본 보고 값</h3>
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+            {[
+              ['시작 클록 에지', detail.data.source_clock_edge ?? '미보고'],
+              ['끝 클록 에지', detail.data.target_clock_edge ?? '미보고'],
+              ['공통 클록 경로 비관 보정 (CRPR)', ps(detail.data.check_terms.crpr_ps)],
+              ['검사 마진 (margin)', ps(detail.data.check_terms.margin_ps)],
+              ['경로 마진 (path_margin)', ps(detail.data.check_terms.path_margin_ps)],
+              ['경로 지연 제약 (path_delay)', ps(detail.data.check_terms.path_delay_ps)],
+              ['다중 주기 배수', detail.data.check_terms.multi_cycle_path ?? '미보고 / 유효한 값 없음'],
+            ].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-[var(--text-secondary)]">{label}</dt><dd className="mt-1 break-all font-medium">{value}</dd></div>)}
+          </dl>
+          <p className="text-xs text-[var(--text-secondary)]">보고된 항목만 표시합니다. 제약 파일 전체나 항목 간 부호·적용 순서는 이 보고서만으로 복원하지 않습니다. 슬랙을 재계산하거나 AI를 호출하지 않습니다.</p>
+        </section>
+        <nav aria-label="타이밍 경로 구간" className="flex flex-wrap gap-2">{(Object.keys(sections) as TimingSection[]).map(name => <button key={name} aria-current={section === name ? 'true' : undefined} className={`btn ${section === name ? 'btn-primary' : 'btn-ghost'}`} onClick={() => change('section', name)}>{sections[name]} · {detail.data.sections[name].reported ? `${detail.data.sections[name].point_total}개 핀` : '미보고'}</button>)}</nav>
+        <h3 className="font-semibold">{sections[section]}</h3>
+        <p className="text-xs text-[var(--text-secondary)]">선택한 구간의 보고된 핀 순서입니다. 도착 시간과 슬루는 초에서 ps로 변환합니다. 클록 간 도착 시간 차이를 스큐로 추정하지 않으며, 미보고 값은 0으로 대체하지 않습니다.</p>
+        {!detail.data.section_reported && <p role="status" className="text-sm">이 보고서에는 {sections[section]}가 없습니다. 클록 지연이 0이거나 문제가 없다는 뜻은 아닙니다.</p>}
+        {detail.data.section_reported && detail.data.point_total === 0 && <p role="status" className="text-sm">{sections[section]}가 빈 목록으로 보고되었습니다.</p>}
         <section aria-label="도착 시간 증가 구간" className="rounded-lg border border-[var(--border)] p-3 space-y-2">
           <h3 className="text-sm font-semibold">도착 시간 증가가 큰 구간 · 상위 5개</h3>
-          <p className="text-xs text-[var(--text-secondary)]">현재 경로 전체의 인접 핀 {detail.data.arrival_delta_summary.total_pairs}구간 중 {detail.data.arrival_delta_summary.reported_pairs}구간 계산 가능. 두 핀의 보고된 도착 시간 차이이며, 개별 셀·넷 지연이나 원인을 분리한 값은 아닙니다. 차이는 최대 8자리 유효숫자로 표시합니다.</p>
+          <p className="text-xs text-[var(--text-secondary)]">선택한 구간 전체의 인접 핀 {detail.data.arrival_delta_summary.total_pairs}구간 중 {detail.data.arrival_delta_summary.reported_pairs}구간 계산 가능. 두 핀의 보고된 도착 시간 차이이며, 개별 셀·넷 지연이나 원인을 분리한 값은 아닙니다. 차이는 최대 8자리 유효숫자로 표시합니다.</p>
           <ul className="space-y-2">{detail.data.arrival_delta_summary.largest_increases.map(pair => <li key={pair.to_index} className="text-xs break-all">
             <p title={`도착 시간 차이: ${ps(pair.delta_ps)}`}>#{pair.from_index} {pair.from_pin ?? '핀 미보고'} → #{pair.to_index} {pair.to_pin ?? '핀 미보고'} · +{deltaPs(pair.delta_ps)}</p>
             <button className="btn btn-ghost mt-1" onClick={() => change('point_offset', String(Math.floor((pair.to_index - 1) / 100) * 100))}>핀 #{pair.to_index} 페이지 보기</button>

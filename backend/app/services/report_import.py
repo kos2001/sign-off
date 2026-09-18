@@ -36,6 +36,18 @@ def finite_json_float(raw):
     return value
 
 
+def path_pins(nodes, label, *, allow_empty=False):
+    if not isinstance(nodes, list) or len(nodes) > 10000 or (not nodes and not allow_empty):
+        raise ValueError(f'{label}: expected at most 10000 path pins')
+    pins = []
+    for node in nodes:
+        pin = node.get('pin') if isinstance(node, dict) else None
+        if not isinstance(pin, str) or not pin or len(pin) > 200:
+            raise ValueError(f'{label}: invalid path pin')
+        pins.append(pin)
+    return pins
+
+
 def parse_opensta(source: str) -> dict:
     if len(source.encode('utf-8')) > MAX_BYTES:
         raise ValueError('report exceeds 2 MB')
@@ -65,14 +77,10 @@ def parse_opensta(source: str) -> dict:
         if path_type not in {'min', 'max'}:
             raise ValueError(f'path {index}: unsupported path_type')
         nodes = check.get('source_path')
-        if not isinstance(nodes, list) or not nodes or len(nodes) > 10000:
-            raise ValueError(f'path {index}: source_path must contain path pins')
-        pins = []
-        for node in nodes:
-            pin = node.get('pin') if isinstance(node, dict) else None
-            if not isinstance(pin, str) or not pin or len(pin) > 200:
-                raise ValueError(f'path {index}: invalid source_path pin')
-            pins.append(pin)
+        pins = path_pins(nodes, f'path {index}: source_path')
+        for field in ('source_clock_path', 'target_clock_path'):
+            if field in check:
+                path_pins(check[field], f'path {index}: {field}', allow_empty=True)
         if pins[0] != start or pins[-1] != end:
             raise ValueError(f'path {index}: source_path does not match startpoint/endpoint')
         slack = check.get('slack')

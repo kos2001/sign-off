@@ -83,7 +83,12 @@ export interface TimingPathExport {
   filters: { q: string; path_group: string | null; path_type: string | null; status: string; slack_min_ps: number | null; slack_max_ps: number | null; sort: string };
   units: { slack_ps: 'ps' }; reported_total: number; total: number; items: TimingPath[]; summary: TimingPathSummary;
 }
+export type TimingSection = 'data' | 'source_clock' | 'target_clock';
 export interface TimingPathDetail {
+  section: TimingSection; section_reported: boolean;
+  sections: Record<TimingSection, { reported: boolean; point_total: number }>;
+  source_clock_edge: string | null; target_clock_edge: string | null;
+  check_terms: { crpr_ps: number | null; margin_ps: number | null; path_margin_ps: number | null; path_delay_ps: number | null; multi_cycle_path: number | null };
   path: TimingPath; source_clock: string | null; target_clock: string | null;
   arrival_ps: number | null; required_ps: number | null;
   point_total: number; point_offset: number; point_limit: number;
@@ -408,7 +413,7 @@ export const api = {
   timingPaths: (runId: number, filters: Record<string, string>) => request<TimingPathPage>(`/runs/${runId}/timing-paths?${new URLSearchParams(filters)}`),
   exportTimingPaths: (runId: number, filters: Record<string, string>) => request<TimingPathExport>(`/runs/${runId}/timing-paths/export?${new URLSearchParams(filters)}`),
   exportTimingPathsCsv: (runId: number, filters: Record<string, string>) => request<string>(`/runs/${runId}/timing-paths/export?${new URLSearchParams({ ...filters, format: 'csv' })}`, undefined, 'text'),
-  timingPath: (runId: number, index: number, pointOffset: number) => request<TimingPathDetail>(`/runs/${runId}/timing-paths/${index}?point_offset=${pointOffset}`),
+  timingPath: (runId: number, index: number, pointOffset: number, section: TimingSection = 'data') => request<TimingPathDetail>(`/runs/${runId}/timing-paths/${index}?point_offset=${pointOffset}&section=${section}`),
   previewOpenSta: (projectId: number, body: ReportImportInput) => request<ReportPreview>(`/projects/${projectId}/imports/opensta/preview`, { method: "POST", body: JSON.stringify(body) }),
   importOpenSta: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/opensta`, { method: "POST", body: JSON.stringify(body) }),
   previewKLayout: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/klayout/preview`, { method: 'POST', body: JSON.stringify(body) }),

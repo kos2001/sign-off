@@ -3,6 +3,7 @@ import json
 import csv
 import io
 import math
+import hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..schemas import RunOut
+from ..services.report_import import parse_opensta
 from .runs import get_run_or_404
 
 router = APIRouter(tags=['timing-paths'])
@@ -183,6 +185,7 @@ def arrival_deltas(nodes):
 @router.get('/runs/{run_id}/timing-paths/{path_index}')
 def path_detail(
     run_id: int, path_index: int = Path(ge=1),
+    section: Literal['data', 'source_clock', 'target_clock'] = 'data',
     point_offset: int = Query(default=0, ge=0, le=10000),
     point_limit: int = Query(default=100, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -192,15 +195,29 @@ def path_detail(
     if path_index > len(paths):
         raise HTTPException(404, 'timing path not found')
     try:
-        check = json.loads(run.evidence.source_text.removeprefix('\ufeff'))['checks'][path_index - 1]
-    except (ValueError, AttributeError, KeyError, IndexError, TypeError):
+        source = run.evidence.source_text
+        if hashlib.sha256(source.encode('utf-8')).hexdigest() != run.evidence.source_sha256:
+            raise ValueError('source integrity mismatch')
+        parsed = parse_opensta(source)
+        if parsed['paths'] != paths:
+            raise ValueError('captured paths do not match source')
+        check = json.loads(source.removeprefix('\ufeff'))['checks'][path_index - 1]
+    except (ValueError, AttributeError, KeyError, IndexError, TypeError, RecursionError):
         raise HTTPException(409, 'captured report is unreadable') from None
-    nodes = check['source_path']
+    field = {'data': 'source_path', 'source_clock': 'source_clock_path', 'target_clock': 'target_clock_path'}[section]
+    nodes = check.get(field, [])
     deltas, delta_summary = arrival_deltas(nodes)
     return {
+        'section': section, 'section_reported': field in check,
+        'sections': {name: {'reported': key in check, 'point_total': len(check.get(key, []))}
+                     for name, key in [('data', 'source_path'), ('source_clock', 'source_clock_path'), ('target_clock', 'target_clock_path')]},
         'path': {**paths[path_index - 1], 'status': outcome(paths[path_index - 1])},
         'source_clock': optional_text(check.get('source_clock')),
         'target_clock': optional_text(check.get('target_clock')),
+        'source_clock_edge': optional_text(check.get('source_clock_edge')),
+        'target_clock_edge': optional_text(check.get('target_clock_edge')),
+        'check_terms': {**{key + '_ps': finite_ps(check.get(key)) for key in ['crpr', 'margin', 'path_margin', 'path_delay']},
+                        'multi_cycle_path': check.get('multi_cycle_path') if type(check.get('multi_cycle_path')) is int and abs(check['multi_cycle_path']) <= 2**53 - 1 else None},
         'arrival_ps': finite_ps(check.get('data_arrival_time')),
         'required_ps': finite_ps(check.get('required_time')),
         'point_total': len(nodes), 'point_offset': point_offset, 'point_limit': point_limit,
