@@ -11,6 +11,7 @@ from test_commercial_emir import report as emir_report
 from test_commercial_power import attest_power, payload as power_payload, report as power_report
 from test_commercial_thermal import attest_thermal, payload as thermal_payload, report as thermal_report
 from test_commercial_lvs import attest_lvs, matched as lvs_matched, payload as lvs_payload
+from test_commercial_lec import attest as attest_lec, equivalent as lec_equivalent, payload as lec_payload
 from test_report_import import attest_sta, commercial_payload, commercial_report
 
 
@@ -22,6 +23,7 @@ def test_same_revision_trusted_reports_open_and_archive_final_gate(client, monke
         'qa-power-collector': 'power-collector-secret-with-at-least-32-bytes',
         'qa-thermal-collector': 'thermal-collector-secret-with-at-least-32-bytes',
         'qa-lvs-collector': 'lvs-collector-secret-with-at-least-32-bytes',
+        'qa-lec': 'lec-collector-secret-with-at-least-32-bytes',
     }
     monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({
         key_id: {'secret': secret, 'domains': [domain]}
@@ -32,6 +34,7 @@ def test_same_revision_trusted_reports_open_and_archive_final_gate(client, monke
             ('qa-power-collector', keys['qa-power-collector'], 'glitch_power'),
             ('qa-thermal-collector', keys['qa-thermal-collector'], 'thermal'),
             ('qa-lvs-collector', keys['qa-lvs-collector'], 'lvs'),
+            ('qa-lec', keys['qa-lec'], 'lec'),
         ]
     }))
     project = client.post('/projects', json={
@@ -48,7 +51,8 @@ def test_same_revision_trusted_reports_open_and_archive_final_gate(client, monke
     power = power_payload(power_document)
     thermal = thermal_payload({**thermal_report(), 'hotspots': []})
     lvs = lvs_payload(lvs_matched())
-    payloads = [sta, drc, emir, power, thermal, lvs]
+    lec = lec_payload(lec_equivalent())
+    payloads = [sta, drc, emir, power, thermal, lvs, lec]
     for body in payloads:
         body['stage'] = 'final'
         body['design_revision'] = revision
@@ -58,12 +62,13 @@ def test_same_revision_trusted_reports_open_and_archive_final_gate(client, monke
     power['coverage_attestation'] = attest_power(power, pid, keys['qa-power-collector'])
     thermal['coverage_attestation'] = attest_thermal(thermal, pid, keys['qa-thermal-collector'])
     lvs['coverage_attestation'] = attest_lvs(lvs, pid, keys['qa-lvs-collector'])
+    lec['coverage_attestation'] = attest_lec(lec, pid, keys['qa-lec'])
 
-    endpoints = ['commercial-sta', 'commercial-drc', 'commercial-emir', 'commercial-power', 'commercial-thermal', 'commercial-lvs']
+    endpoints = ['commercial-sta', 'commercial-drc', 'commercial-emir', 'commercial-power', 'commercial-thermal', 'commercial-lvs', 'commercial-lec']
     responses = [client.post(f'/projects/{pid}/imports/{endpoint}', json=body)
                  for endpoint, body in zip(endpoints, payloads)]
-    assert [response.status_code for response in responses] == [201] * 6
-    assert [response.json()['status'] for response in responses] == ['passed'] * 6
+    assert [response.status_code for response in responses] == [201] * 7
+    assert [response.json()['status'] for response in responses] == ['passed'] * 7
 
     gate = client.get(f'/projects/{pid}/signoff-status?stage=final').json()
     assert gate['ready'] is True
@@ -80,6 +85,6 @@ def test_same_revision_trusted_reports_open_and_archive_final_gate(client, monke
         manifest = json.loads(archive.read('manifest.json'))
         assert manifest['gate']['ready'] is True
         assert {row['domain'] for row in manifest['runs']} == {
-            'sta', 'pv', 'emir', 'lvs', 'glitch_power', 'thermal',
+            'sta', 'pv', 'emir', 'lvs', 'lec', 'glitch_power', 'thermal',
         }
-        assert len(manifest['files']) == 6
+        assert len(manifest['files']) == 7

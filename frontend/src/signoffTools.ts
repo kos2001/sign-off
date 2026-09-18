@@ -34,6 +34,10 @@ export const SIGNOFF_TOOLS: Record<Domain, readonly SignoffToolOption[]> = {
     { value: 'Siemens Calibre nmLVS', label: 'Siemens Calibre nmLVS · 추천', description: '레이아웃과 회로도 넷리스트의 연결·소자 일치를 검증합니다.', workflow: '검증된 상용 LVS 결과 JSON 가져오기를 지원합니다.' },
     { value: 'Cadence Pegasus LVS', label: 'Cadence Pegasus LVS', description: 'Pegasus LVS 비교 결과의 출처를 기록합니다.', workflow: '검증된 상용 LVS 결과 JSON 가져오기를 지원합니다.' },
   ],
+  lec: [
+    { value: 'Synopsys Formality', label: 'Synopsys Formality · 추천', description: 'RTL reference와 합성·ECO implementation의 논리 등가성을 검증합니다.', workflow: '검증된 상용 LEC 결과 JSON 가져오기를 지원합니다.' },
+    { value: 'Cadence Conformal', label: 'Cadence Conformal', description: 'compare point별 논리 등가성 결과를 기록합니다.', workflow: '검증된 상용 LEC 결과 JSON 가져오기를 지원합니다.' },
+  ],
   glitch_power: [
     { value: 'Synopsys PrimePower', label: 'Synopsys PrimePower · 추천', description: '글리치와 동적 전력 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 전력 요약 JSON 가져오기를 지원합니다.' },
     { value: 'Cadence Joules', label: 'Cadence Joules', description: 'RTL·게이트 전력 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 전력 요약 JSON 가져오기를 지원합니다.' },
