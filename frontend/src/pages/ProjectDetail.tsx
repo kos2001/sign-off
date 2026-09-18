@@ -10,6 +10,7 @@ import { ViolationActions } from "../components/ViolationActions";
 import { AgentReviewPanel } from "../components/AgentReviewPanel";
 import { ReadyProgress, RunStatusBar } from "../components/charts";
 import { Card, Field, StatusBadge } from "../components/ui";
+import { defaultSignoffTool, SIGNOFF_TOOLS, signoffTool } from "../signoffTools";
 
 function gateReasonLabel(reason?: string | null) {
   const labels: Record<string, string> = {
@@ -211,15 +212,15 @@ function RunsCard({
   const [form, setForm] = useState({
     domain: "sta" as Domain,
     stage: "placement" as Stage,
-    tool: "",
+    tool: defaultSignoffTool("sta"),
   });
   const create = useMutation({
     mutationFn: () => api.createRun(projectId, form),
     onSuccess: () => {
-      setForm({ ...form, tool: "" });
       onChange();
     },
   });
+  const selectedTool = signoffTool(form.domain, form.tool);
 
   const statusCounts = { passed: 0, failed: 0, running: 0, incomplete: 0 };
   for (const r of runs) statusCounts[r.status] += 1;
@@ -240,7 +241,10 @@ function RunsCard({
           <select
             className="input"
             value={form.domain}
-            onChange={(e) => setForm({ ...form, domain: e.target.value as Domain })}
+            onChange={(e) => {
+              const domain = e.target.value as Domain;
+              setForm({ ...form, domain, tool: defaultSignoffTool(domain) });
+            }}
           >
             {Object.entries(DOMAIN_LABELS).map(([v, l]) => (
               <option key={v} value={v}>
@@ -262,19 +266,29 @@ function RunsCard({
             ))}
           </select>
         </Field>
-        <Field label="툴">
-          <input
-            className="input w-36"
+        <Field label="결과 생성 툴">
+          <select
+            aria-describedby="run-tool-help"
+            className="input min-w-56"
             value={form.tool}
             onChange={(e) => setForm({ ...form, tool: e.target.value })}
-            placeholder="PrimeTime"
             required
-          />
+          >
+            {SIGNOFF_TOOLS[form.domain].map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
         </Field>
         <button className="btn btn-primary" disabled={create.isPending || !auth.can(projectId, "editor")}>
           런 생성
         </button>
       </form>
+
+      <section id="run-tool-help" aria-label="선택한 툴 안내" className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm space-y-1">
+        <p className="font-semibold">{selectedTool.label}</p>
+        <p>{selectedTool.description}</p>
+        <p className="text-xs text-[var(--text-secondary)]">{selectedTool.workflow} 여기서 런을 생성하면 툴을 실행하지 않고 수동 런의 출처만 기록하며, 검증 근거가 없어 게이트를 통과시키지 않습니다.</p>
+        {form.domain === 'rtl' && <Link className="text-xs underline" to="/analysis#rtl">RTL 분석 실행으로 이동</Link>}
+        {(form.domain === 'sta' || form.domain === 'pv') && <Link className="text-xs underline" to={`/projects/${projectId}/import${form.domain === 'pv' ? '/klayout' : ''}`}>{form.domain === 'sta' ? 'OpenSTA' : 'KLayout DRC'} 보고서 가져오기로 이동</Link>}
+      </section>
 
       {create.isError && <p role="alert">{create.error.message}</p>}
       {runs.length === 0 ? (
