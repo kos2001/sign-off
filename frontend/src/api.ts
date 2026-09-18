@@ -421,6 +421,10 @@ export interface SignoffReleaseDecision {
   byte_length: number; created_at: string; gate: GateStatus;
 }
 
+export interface SignoffReleaseReview {
+  stage: Stage; evidence_snapshot_sha256: string; captured_at: string; gate: GateStatus;
+}
+
 export interface IrDropResult {
   grid_shape: number[];
   vdd: number;
@@ -812,7 +816,9 @@ export const api = {
     request<Blob>(`/projects/${projectId}/signoff-package?stage=${stage}`, undefined, 'blob'),
   signoffReleases: (projectId: number, beforeId: number | null = null) =>
     request<{ items: SignoffReleaseDecision[]; next_before_id: number | null }>(`/projects/${projectId}/signoff-releases${beforeId ? `?before_id=${beforeId}` : ''}`),
-  createSignoffRelease: (projectId: number, body: { stage: Stage; decision: 'approved' | 'rejected'; reason: string }) =>
+  signoffReleaseReview: (projectId: number, stage: Stage) =>
+    request<SignoffReleaseReview>(`/projects/${projectId}/signoff-releases/review?stage=${stage}`),
+  createSignoffRelease: (projectId: number, body: { stage: Stage; decision: 'approved' | 'rejected'; reason: string; expected_evidence_sha256?: string }) =>
     request<SignoffReleaseDecision>(`/projects/${projectId}/signoff-releases`, { method: 'POST', body: JSON.stringify(body) }),
   downloadSignoffRelease: (projectId: number, releaseId: number) =>
     request<Blob>(`/projects/${projectId}/signoff-releases/${releaseId}/package`, undefined, 'blob'),

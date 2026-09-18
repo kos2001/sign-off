@@ -85,9 +85,11 @@ def test_same_revision_trusted_reports_open_and_archive_final_gate(client, monke
         'reason': 'Pin final release candidate.',
     })
     assert pin.status_code == 200, pin.text
+    reviewed = client.get(f'/projects/{pid}/signoff-releases/review?stage=final').json()
     decision = client.post(f'/projects/{pid}/signoff-releases', json={
         'stage': 'final', 'decision': 'approved',
         'reason': 'Trusted collectors completed the final signoff scope.',
+        'expected_evidence_sha256': reviewed['evidence_snapshot_sha256'],
     })
     assert decision.status_code == 201, decision.text
     package = client.get(f"/projects/{pid}/signoff-releases/{decision.json()['id']}/package")

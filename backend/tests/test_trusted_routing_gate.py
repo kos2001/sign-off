@@ -64,9 +64,11 @@ def test_same_revision_trusted_reports_open_and_archive_routing_gate(client, mon
         'reason': 'Pin routing release candidate.',
     })
     assert pin.status_code == 200, pin.text
+    reviewed = client.get(f'/projects/{pid}/signoff-releases/review?stage=routing').json()
     decision = client.post(f'/projects/{pid}/signoff-releases', json={
         'stage': 'routing', 'decision': 'approved',
         'reason': 'Trusted collectors completed the routing signoff scope.',
+        'expected_evidence_sha256': reviewed['evidence_snapshot_sha256'],
     })
     assert decision.status_code == 201, decision.text
     saved = decision.json()

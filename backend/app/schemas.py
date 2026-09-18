@@ -125,6 +125,14 @@ class SignoffReleaseDecisionCreate(BaseModel):
     stage: Stage
     decision: Literal['approved', 'rejected']
     reason: str = Field(min_length=1, max_length=4000)
+    expected_evidence_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+
+
+class SignoffReleaseReviewOut(BaseModel):
+    stage: Stage
+    evidence_snapshot_sha256: str
+    captured_at: datetime
+    gate: dict
 
 
 class SignoffReleaseDecisionOut(BaseModel):
