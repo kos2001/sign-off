@@ -13,10 +13,11 @@ from sqlalchemy.exc import IntegrityError
 from .auth import token_hash
 from .db import SessionLocal, engine
 from .migrations import initialize_schema
-from .models import CollectorCredential, Project
+from .models import CollectorCredential, CollectorCredentialEvent, Project
 
 
-def issue_credential(db, project_id: int, name: str, valid_days: int) -> tuple[CollectorCredential, str]:
+def issue_credential(db, project_id: int, name: str, valid_days: int, *, actor='local operator',
+                     actor_user_id=None) -> tuple[CollectorCredential, str]:
     if db.get(Project, project_id) is None:
         raise ValueError('project not found')
     if re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,63}', name) is None:
@@ -33,6 +34,11 @@ def issue_credential(db, project_id: int, name: str, valid_days: int) -> tuple[C
         db.flush()
     except IntegrityError:
         raise ValueError('collector name already exists for this project') from None
+    db.add(CollectorCredentialEvent(
+        project_id=project_id, credential_id=credential.id, credential_name=name,
+        action='issued', actor=actor, actor_user_id=actor_user_id,
+        expires_at=credential.expires_at,
+    ))
     return credential, token
 
 
@@ -68,6 +74,11 @@ def main(argv=None):
                 raise ValueError('collector credential not found')
             if credential.revoked_at is None:
                 credential.revoked_at = datetime.now(timezone.utc)
+                db.add(CollectorCredentialEvent(
+                    project_id=args.project_id, credential_id=credential.id,
+                    credential_name=credential.name, action='revoked', actor='operator CLI',
+                    actor_user_id=None, expires_at=credential.expires_at,
+                ))
             db.commit()
             print('Collector credential revoked.')
             return

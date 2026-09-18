@@ -18,6 +18,11 @@ export SIGNOFF_COLLECTOR_HMAC_SECRET='비밀 관리 시스템이 주입한 32바
 인증이 필요한 서버에는 프로젝트 전용 API 자격증명을 운영자가 발급한다. 토큰은 생성 응답에서
 한 번만 표시되며 DB에는 SHA-256만 저장된다.
 
+프로젝트 소유자는 웹의 **수집기 자격증명** 화면에서 같은 방식으로 발급·목록 확인·즉시 폐기를
+수행할 수 있다. 화면과 API는 발급·폐기 처리자와 만료 시점을 append-only 감사 이력으로 보존하며,
+최근 인증 사용 시각을 표시한다. 토큰 원문은 재조회하거나 감사 이력에 기록하지 않는다. 아래 CLI는
+서버 운영자가 사용하는 대체 경로다.
+
 ```sh
 cd backend
 PYTHONPATH=. .venv/bin/python -m app.collectors create 42 primetime-prod --valid-days 90

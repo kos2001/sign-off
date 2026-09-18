@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import time
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
@@ -148,6 +149,8 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
             body = await object_body(request)
             if not isinstance(body.get('coverage_attestation'), dict):
                 raise HTTPException(422, 'collector submissions require a coverage attestation')
+        credential.last_used_at = datetime.now(timezone.utc)
+        db.commit()
         db.info['collector'] = credential
         request.state.collector_id = credential.id
         return
@@ -178,7 +181,8 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
             require_project(db, project_id, 'approver' if approval else 'editor')
             return
     if project_id is not None:
-        require_project(db, int(project_id), 'owner' if '/members' in path else 'viewer' if request.method == 'GET' else 'editor')
+        administration = '/members' in path or '/collectors' in path
+        require_project(db, int(project_id), 'owner' if administration else 'viewer' if request.method == 'GET' else 'editor')
         return
     if path == '/projects':
         return  # Listing is filtered, and the creator becomes owner.
