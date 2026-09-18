@@ -14,10 +14,10 @@ from .evidence import rtl_result_status
 
 REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
     Stage.rtl: (Domain.rtl, Domain.cdc, Domain.sta),
-    Stage.synthesis: (Domain.sta, Domain.glitch_power, Domain.lec),
+    Stage.synthesis: (Domain.sta, Domain.glitch_power, Domain.lec, Domain.dft),
     Stage.placement: (Domain.sta, Domain.emir, Domain.pv),
     Stage.routing: (Domain.sta, Domain.emir, Domain.pv, Domain.lvs),
-    Stage.final: (Domain.sta, Domain.emir, Domain.pv, Domain.lvs, Domain.lec, Domain.glitch_power, Domain.thermal),
+    Stage.final: (Domain.sta, Domain.emir, Domain.pv, Domain.lvs, Domain.lec, Domain.dft, Domain.glitch_power, Domain.thermal),
 }
 
 BLOCKING_SEVERITIES = (Severity.error, Severity.critical)
@@ -56,6 +56,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             Domain.lvs: 'commercial_lvs_report',
             Domain.lec: 'commercial_lec_report',
             Domain.cdc: 'commercial_cdc_report',
+            Domain.dft: 'commercial_dft_report',
         }.get(latest.domain)
         attested_coverage = bool(
             attested_source
@@ -91,6 +92,9 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             ready = False
         elif latest.evidence_source == 'commercial_cdc_report' and not attested_coverage:
             reason = 'Imported CDC/RDC findings do not establish full crossing coverage'
+            ready = False
+        elif latest.evidence_source == 'commercial_dft_report' and not attested_coverage:
+            reason = 'Imported DFT result does not establish full scan and ATPG coverage'
             ready = False
         elif latest.domain == Domain.rtl and latest.evidence_source == 'rtl_ladder' and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
             reason = f"RTL evidence is {rtl_result_status(evidence_result).value}; required stages must all pass"

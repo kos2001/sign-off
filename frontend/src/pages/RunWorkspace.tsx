@@ -81,6 +81,7 @@ export default function RunWorkspace() {
         {item.evidence_source === 'commercial_lvs_report' && <Link className="btn btn-primary" to={`/runs/${item.id}/lvs-mismatches`}>LVS 불일치 탐색</Link>}
         {item.evidence_source === 'commercial_lec_report' && <Link className="btn btn-primary" to={`/runs/${item.id}/lec-failures`}>LEC 실패 탐색</Link>}
         {item.evidence_source === 'commercial_cdc_report' && <Link className="btn btn-primary" to={`/runs/${item.id}/cdc-findings`}>CDC·RDC finding 탐색</Link>}
+        {item.evidence_source === 'commercial_dft_report' && <Link className="btn btn-primary" to={`/runs/${item.id}/dft-findings`}>DFT finding 탐색</Link>}
         {item.evidence_source === 'rtl_ladder' && <Link className="btn btn-primary" to={`/runs/${item.id}/structure`}>합성 구조 탐색</Link>}
         <Link className="btn btn-ghost" to={`/projects/${item.project_id}/compare?candidate=${item.id}`}>다른 런과 비교</Link>
       </div>

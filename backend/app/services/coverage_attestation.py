@@ -81,6 +81,12 @@ REQUIRED_CDC_CLAIMS = {
     'hierarchy_complete', 'structural_analysis_complete', 'functional_analysis_complete',
     'cdc_analysis_complete', 'rdc_analysis_complete', 'findings_complete',
 }
+REQUIRED_DFT_CLAIMS = {
+    'tool_run_completed', 'dft_insertion_complete', 'scan_chains_complete',
+    'rule_checks_complete', 'fault_models_complete', 'atpg_complete',
+    'fault_simulation_complete', 'coverage_complete', 'pattern_validation_complete',
+    'findings_complete',
+}
 REQUIRED_CLAIMS = {
     'sta': REQUIRED_STA_CLAIMS,
     'pv': REQUIRED_DRC_CLAIMS,
@@ -91,6 +97,7 @@ REQUIRED_CLAIMS = {
     'lvs': REQUIRED_LVS_CLAIMS,
     'lec': REQUIRED_LEC_CLAIMS,
     'cdc': REQUIRED_CDC_CLAIMS,
+    'dft': REQUIRED_DFT_CLAIMS,
 }
 
 
@@ -222,3 +229,7 @@ def verify_lec_attestation(attestation, **context):
 
 def verify_cdc_attestation(attestation, **context):
     return verify_attestation(attestation, domain='cdc', **context)
+
+
+def verify_dft_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='dft', **context)
