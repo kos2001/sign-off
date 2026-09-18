@@ -9,9 +9,9 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, defer
 
-from ..auth import require_project
+from ..auth import auth_required, require_project, throttle, verify_password
 from ..db import get_db
-from ..models import Project, SignoffReleaseDecision, Stage
+from ..models import Project, SignoffReleaseDecision, Stage, User
 from ..schemas import (
     SignoffReleaseDecisionCreate,
     SignoffReleaseDecisionOut,
@@ -21,6 +21,7 @@ from ..schemas import (
 )
 from ..release_ledger import FORMAT as LEDGER_FORMAT, canonical_digest, verify_ledger
 from .runs import export_gate, export_signoff_package
+from ..services.account_security import record_security_event
 
 router = APIRouter(prefix='/projects/{project_id}/signoff-releases', tags=['signoff-releases'])
 
@@ -69,6 +70,11 @@ def release_decision_payload(record: SignoffReleaseDecision) -> dict:
     if record.chain_version is not None:
         payload['chain_version'] = record.chain_version
         payload['previous_decision_sha256'] = record.previous_decision_sha256
+    if record.credential_confirmed_at is not None:
+        confirmed_at = record.credential_confirmed_at
+        if confirmed_at.tzinfo is None:
+            confirmed_at = confirmed_at.replace(tzinfo=timezone.utc)
+        payload['credential_confirmed_at'] = confirmed_at.astimezone(timezone.utc).isoformat()
     return payload
 
 
@@ -99,6 +105,7 @@ def release_out(record: SignoffReleaseDecision, *, current_evidence_sha256: str,
         package_sha256=record.package_sha256, decision_sha256=record.decision_sha256,
         chain_version=record.chain_version,
         previous_decision_sha256=record.previous_decision_sha256,
+        credential_confirmed_at=record.credential_confirmed_at,
         gate_snapshot_sha256=record.gate_snapshot_sha256,
         evidence_snapshot_sha256=record.evidence_snapshot_sha256, lifecycle_status=lifecycle,
         byte_length=record.byte_length,
@@ -129,6 +136,22 @@ def create_release_decision(
         raise HTTPException(409, '사인오프 결정 해시 체인 헤드가 누락되었습니다.')
     if previous is not None and (not previous.decision_sha256 or decision_digest(previous) != previous.decision_sha256):
         raise HTTPException(409, '이전 사인오프 결정 무결성 검증에 실패했습니다.')
+    confirmed_at = None
+    if auth_required():
+        user = db.info.get('user')
+        if payload.confirmation_password is None or not verify_password(payload.confirmation_password, user.password_hash):
+            throttle(db, f'release-confirmation:{user.id}', 8,
+                     message='사인오프 자격 증명 확인 시도가 너무 많습니다. 5분 뒤 다시 시도하세요.')
+            record_security_event(db, 'release_confirmation_failed', subject=user, actor=user)
+            db.commit()
+            raise HTTPException(403, '현재 계정 비밀번호 확인에 실패했습니다.')
+        guarded = db.execute(update(User).where(
+            User.id == user.id, User.password_hash == user.password_hash, User.disabled.is_(False),
+        ).values(password_hash=user.password_hash))
+        if guarded.rowcount != 1:
+            db.rollback()
+            raise HTTPException(409, '계정 상태가 변경되었습니다. 다시 로그인한 뒤 결정하세요.')
+        confirmed_at = datetime.now(timezone.utc)
     package = export_signoff_package(project_id, payload.stage, db)
     content = bytes(package.body)
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
@@ -164,6 +187,7 @@ def create_release_decision(
         package_bytes=content, byte_length=len(content), created_at=datetime.now(timezone.utc),
         chain_version=1,
         previous_decision_sha256=previous.decision_sha256 if previous else None,
+        credential_confirmed_at=confirmed_at,
     )
     record.decision_sha256 = decision_digest(record)
     db.add(record)

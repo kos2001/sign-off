@@ -3,7 +3,7 @@ from ..models import AccountSecurityEvent
 
 ACTIONS = {'login', 'login_failed', 'logout', 'password_changed', 'other_sessions_revoked',
            'account_created', 'admin_account_created', 'password_reset', 'account_disabled', 'account_enabled',
-           'all_sessions_revoked'}
+           'all_sessions_revoked', 'release_confirmation_failed'}
 
 
 def record_security_event(db, action, *, subject=None, actor=None, source='api', revoked_sessions=None, submitted_username=None):

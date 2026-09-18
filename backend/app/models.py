@@ -231,6 +231,7 @@ class SignoffReleaseDecision(Base):
     decision_sha256: Mapped[str] = mapped_column(String(64))
     chain_version: Mapped[int | None] = mapped_column(nullable=True)
     previous_decision_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    credential_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     package_bytes: Mapped[bytes] = mapped_column(LargeBinary)
     byte_length: Mapped[int]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
