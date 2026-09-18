@@ -46,10 +46,17 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             if v.severity in BLOCKING_SEVERITIES and v.status == ViolationStatus.open
         ]
         evidence_result = latest.evidence.result if latest.evidence_source == "rtl_ladder" else latest.metrics
+        attested_coverage = bool(
+            latest.domain == Domain.sta
+            and latest.evidence_source == 'commercial_sta_report'
+            and latest.evidence
+            and latest.evidence.result.get('coverage_attestation', {}).get('verified') is True
+            and latest.evidence.result.get('coverage') == 'collector_attested_complete'
+        )
         if latest.domain == Domain.rtl and latest.evidence_source != "rtl_ladder":
             reason = "RTL requires captured ladder evidence; rerun the analysis"
             ready = False
-        elif latest.evidence_source in {'opensta_report', 'opensta_execution', 'commercial_sta_report'}:
+        elif latest.evidence_source in {'opensta_report', 'opensta_execution', 'commercial_sta_report'} and not attested_coverage:
             reason = ('Executed path sample does not establish full STA coverage' if latest.evidence_source == 'opensta_execution'
                       else 'Imported path report does not establish full STA coverage')
             ready = False
@@ -74,7 +81,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
         elif blocking:
             reason = f"{len(blocking)} open blocking violation(s)"
             ready = False
-        elif latest.evidence_source != 'rtl_ladder' or latest.domain != Domain.rtl:
+        elif not attested_coverage and (latest.evidence_source != 'rtl_ladder' or latest.domain != Domain.rtl):
             reason = 'Captured verification coverage required; manual status is not evidence'
             ready = False
         else:
