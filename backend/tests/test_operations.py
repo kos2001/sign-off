@@ -4,6 +4,7 @@ import re
 import pytest
 
 from app.db import Base
+from app.main import create_app
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -74,6 +75,55 @@ def test_expected_validation_error_keeps_status_and_request_id(client):
     assert response.status_code == 422
     assert isinstance(response.json()['detail'], list)
     assert re.fullmatch('[a-f0-9]{32}', response.headers['x-request-id'])
+
+
+def test_metrics_is_hidden_until_a_scrape_token_is_configured(client, monkeypatch):
+    monkeypatch.delenv('SIGNOFF_METRICS_TOKEN', raising=False)
+    response = client.get('/metrics')
+    assert response.status_code == 404
+    assert response.json() == {'detail': 'not found'}
+
+
+def test_metrics_rejects_weak_scrape_token_before_startup(monkeypatch):
+    monkeypatch.setenv('SIGNOFF_METRICS_TOKEN', 'too-short')
+    with pytest.raises(RuntimeError, match='32 to 256 printable ASCII characters'):
+        create_app()
+
+
+def test_metrics_uses_bounded_route_labels_and_bearer_auth(client, monkeypatch):
+    token = 'metrics-test-token-with-at-least-32-bytes'
+    monkeypatch.setenv('SIGNOFF_METRICS_TOKEN', token)
+    assert client.get('/metrics').status_code == 401
+    denied = client.get('/metrics', headers={'Authorization': 'Bearer wrong-secret-that-is-long-enough'})
+    assert denied.status_code == 401
+    assert denied.headers['www-authenticate'] == 'Bearer'
+    client.get('/health?private=never-export-this')
+    client.get('/projects/987654321')
+    client.get('/does-not-exist')
+    response = client.get('/metrics', headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 200
+    assert response.headers['cache-control'] == 'no-store'
+    assert response.headers['content-type'].startswith('text/plain; version=0.0.4')
+    assert 'signoff_http_requests_total' in response.text
+    assert 'route="/health"' in response.text
+    assert 'route="/projects/{project_id}"' in response.text
+    assert 'route="unmatched"' in response.text
+    assert 'status_class="2xx"' in response.text
+    assert 'status_class="4xx"' in response.text
+    assert all(value not in response.text for value in [token, '987654321', 'never-export-this'])
+
+
+def test_metrics_reports_readiness_without_failure_details(client, monkeypatch):
+    token = 'readiness-metrics-test-token-32-bytes'
+    secret = 'private-database-failure-details'
+    monkeypatch.setenv('SIGNOFF_METRICS_TOKEN', token)
+    def broken_session():
+        raise RuntimeError(secret)
+    monkeypatch.setattr('app.main.SessionLocal', broken_session)
+    assert client.get('/ready').status_code == 503
+    response = client.get('/metrics', headers={'Authorization': f'Bearer {token}'})
+    assert 'signoff_readiness_checks_total{result="not_ready",component="database"}' in response.text
+    assert secret not in response.text
 
 
 @pytest.mark.parametrize('table_name', sorted(Base.metadata.tables))
