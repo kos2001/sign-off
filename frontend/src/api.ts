@@ -21,7 +21,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report";
   result_locked: boolean;
 }
 
@@ -31,7 +31,7 @@ export interface RunEvidence {
   source_text: string | null;
   source_sha256: string | null;
   design_revision: string | null;
-  result: Partial<RtlSignoffResult> & Partial<ReportPreview> & Partial<KLayoutPreview> & {
+  result: Partial<RtlSignoffResult> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & {
     metadata?: { filename: string; tool_version: string; scenario: string; parasitics?: 'spef' | 'none' };
     submitted_by?: { user_id: number; username: string } | null;
     input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc' | 'spef', { sha256: string; byte_length: number }>>;
@@ -97,6 +97,31 @@ export interface MarkerDetail {
   geometry: { shapes: { value_index: number; closed: boolean; contours: number[][][] }[];
     bounds_um: { xmin: string; xmax: string; ymin: string; ymax: string } | null;
     rendered_values: number; unrendered_values: number[] };
+}
+
+export interface PowerIntegrityFinding {
+  index: number; analysis: 'static_ir' | 'dynamic_ir' | 'em'; metric: 'voltage_drop' | 'current_density';
+  check: string; instance: string; net: string; layer: string; x_um: string; y_um: string;
+  severity: Severity; value: number; limit: number; unit: 'mV' | 'A/um2'; violated: boolean;
+  message: string; fingerprint: string;
+}
+export interface PowerIntegrityPreview {
+  parser: string; tool: string; tool_version: string; coverage: string; coverage_note: string;
+  status: 'failed' | 'incomplete'; source_sha256: string;
+  metrics: { reported_findings: number; violated_findings: number; static_ir_findings: number; dynamic_ir_findings: number; em_findings: number };
+  items: PowerIntegrityFinding[];
+}
+export interface PowerIntegrityPage {
+  run: SignoffRun; metadata: { filename?: string; tool_version?: string; scenario?: string };
+  source_sha256: string; design_revision: string | null; reported_total: number; total: number;
+  violated_total: number; offset: number; limit: number;
+  bounds_um: { xmin: number; xmax: number; ymin: number; ymax: number } | null;
+  facets: Record<'analysis' | 'metric' | 'severity', { value: string; count: number }[]>;
+  items: PowerIntegrityFinding[];
+}
+export interface PowerIntegrityDetail {
+  item: PowerIntegrityFinding;
+  violation_match: { status: 'not_applicable' | 'unique' | 'missing' | 'ambiguous'; items: { id: number; status: ViolationStatus; version: number }[] };
 }
 
 export type TimingPath = ReportPreview['paths'][number] & { status: 'violated' | 'met' | 'unconstrained' };
@@ -485,6 +510,10 @@ export const api = {
   importCommercialSta: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/commercial-sta`, { method: 'POST', body: JSON.stringify(body) }),
   previewCommercialDrc: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/commercial-drc/preview`, { method: 'POST', body: JSON.stringify(body) }),
   importCommercialDrc: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/commercial-drc`, { method: 'POST', body: JSON.stringify(body) }),
+  previewCommercialEmir: (projectId: number, body: ReportImportInput) => request<PowerIntegrityPreview>(`/projects/${projectId}/imports/commercial-emir/preview`, { method: 'POST', body: JSON.stringify(body) }),
+  importCommercialEmir: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/commercial-emir`, { method: 'POST', body: JSON.stringify(body) }),
+  powerIntegrityFindings: (runId: number, filters: Record<string, string>) => request<PowerIntegrityPage>(`/runs/${runId}/power-integrity-findings?${new URLSearchParams(filters)}`),
+  powerIntegrityFinding: (runId: number, index: number) => request<PowerIntegrityDetail>(`/runs/${runId}/power-integrity-findings/${index}`),
   previewKLayout: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/klayout/preview`, { method: 'POST', body: JSON.stringify(body) }),
   importKLayout: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/klayout`, { method: 'POST', body: JSON.stringify(body) }),
   markers: (runId: number, filters: Record<string, string>) => request<MarkerPage>(`/runs/${runId}/markers?${new URLSearchParams(filters)}`),

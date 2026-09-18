@@ -8,6 +8,8 @@ import SecurityEvents from './pages/SecurityEvents';
 import ReportImport from "./pages/ReportImport";
 import TimingPaths from "./pages/TimingPaths";
 import Markers from './pages/Markers';
+import PowerIntegrityImport from './pages/PowerIntegrityImport';
+import PowerIntegrityFindings from './pages/PowerIntegrityFindings';
 import ProjectMembers from "./pages/ProjectMembers";
 import { Route, Routes } from "react-router";
 
@@ -36,10 +38,12 @@ export default function App() {
           <Route path="/projects/:id/import/commercial-sta" element={<ReportImport commercialSta />} />
           <Route path="/projects/:id/import/commercial-drc" element={<ReportImport commercialDrc />} />
           <Route path="/projects/:id/import/klayout" element={<ReportImport klayout />} />
+          <Route path="/projects/:id/import/commercial-emir" element={<PowerIntegrityImport />} />
           <Route path="/runs/:runId/structure" element={<DesignStructure />} />
           <Route path="/runs/:runId" element={<RunWorkspace />} />
           <Route path="/runs/:runId/paths" element={<TimingPaths />} />
           <Route path="/runs/:runId/markers" element={<Markers />} />
+          <Route path="/runs/:runId/power-integrity" element={<PowerIntegrityFindings />} />
           <Route path="/projects/:id/members" element={<ProjectMembers />} />
           <Route path="/account" element={<Account />} />
           <Route path="/admin/security-events" element={<SecurityEvents />} />
