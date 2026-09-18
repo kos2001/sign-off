@@ -103,7 +103,7 @@ class SignoffRun(Base):
 
     @property
     def result_locked(self) -> bool:
-        return self.evidence_source in {"rtl_ladder", "opensta_report", "opensta_execution", "commercial_sta_report", "klayout_report", "commercial_drc_report", "commercial_emir_report"} or (
+        return self.evidence_source in {"rtl_ladder", "opensta_report", "opensta_execution", "commercial_sta_report", "klayout_report", "commercial_drc_report", "commercial_emir_report", "commercial_power_report"} or (
             self.evidence is None and self.tool == "rtl-signoff-ladder"
         )
 

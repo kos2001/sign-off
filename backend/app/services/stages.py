@@ -59,6 +59,9 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
         elif latest.evidence_source == 'commercial_emir_report':
             reason = 'Imported power-integrity findings do not establish full EM/IR coverage'
             ready = False
+        elif latest.evidence_source == 'commercial_power_report':
+            reason = 'Imported power summary does not establish full activity and mode coverage'
+            ready = False
         elif latest.domain == Domain.rtl and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
             reason = f"RTL evidence is {rtl_result_status(evidence_result).value}; required stages must all pass"
             ready = False

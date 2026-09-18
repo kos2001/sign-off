@@ -14,6 +14,7 @@ from ..schemas import RunOut
 from ..services.report_import import parse_commercial_sta, parse_opensta
 from ..services.commercial_drc import parse_commercial_drc
 from ..services.commercial_emir import parse_commercial_emir
+from ..services.commercial_power import parse_commercial_power
 from ..services.klayout_report import parse_klayout
 
 router = APIRouter(tags=['report-imports'])
@@ -97,6 +98,55 @@ def store_timing_report(project_id, payload, result, digest, tool, evidence_sour
         db.rollback()
         if run := existing():
             return run
+        raise
+    return run
+
+
+@router.post('/projects/{project_id}/imports/commercial-power/preview')
+def preview_commercial_power(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = parse(payload, parse_commercial_power)
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    return result
+
+
+@router.post('/projects/{project_id}/imports/commercial-power', response_model=RunOut, status_code=201)
+def import_commercial_power(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = parse(payload, parse_commercial_power)
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    digest = hashlib.sha256(json.dumps({'format': 'commercial-power', 'payload': payload.model_dump(mode='json')},
+                                      sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    def existing():
+        receipt = db.scalar(select(ReportImport).where(ReportImport.project_id == project_id, ReportImport.import_key == str(payload.import_id)))
+        if receipt:
+            if receipt.payload_sha256 != digest:
+                raise HTTPException(409, 'import identifier already used with different content')
+            return db.get(SignoffRun, receipt.run_id)
+    if run := existing(): return run
+    user = db.info.get('user')
+    result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
+    result['metadata']['report_format'] = result['parser']
+    result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
+    run = SignoffRun(project_id=project_id, domain='glitch_power', stage=payload.stage, tool=result['tool'], status=result['status'], metrics=result['metrics'])
+    run.evidence = RunEvidence(source='commercial_power_report', source_text=payload.source_text,
+        source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
+    prefix = {'Synopsys PrimePower': 'primepower', 'Cadence Joules': 'joules', 'Ansys PowerArtist': 'powerartist'}[result['tool']]
+    for item in [result['summary'], *result['items']]:
+        if item['violated']:
+            fingerprint = hashlib.sha256(item['path'].encode()).hexdigest()
+            run.violations.append(Violation(check_name=f'{prefix}/glitch-share/{fingerprint[:32]}', severity='error',
+                location=item['path'], description=f"Glitch share: {item['glitch_share']:.6g} · limit: {result['glitch_share_limit']:.6g}\nGlitch: {item['glitch_power_mw']:.6g} mW · total: {item['total_power_mw']:.6g} mW"))
+    db.add(run)
+    try:
+        db.flush(); db.add(ReportImport(project_id=project_id, import_key=str(payload.import_id), payload_sha256=digest, run_id=run.id)); db.commit()
+    except IntegrityError:
+        db.rollback()
+        if run := existing(): return run
         raise
     return run
 
