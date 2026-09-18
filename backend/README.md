@@ -40,6 +40,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
 - `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자 기록, 상태 waived 전환)
 - `GET /projects/{id}/signoff-status?stage=placement` — shift-left 게이트 판정: 해당 스테이지의 필수 도메인이 모두 passed이고 미웨이버 error/critical 위반이 없어야 ready
+- `GET /projects/{id}/signoff-plan` · `PUT /projects/{id}/signoff-plan/{stage}` · `GET /projects/{id}/signoff-plan/history` — 단계별 필수 도메인 계획의 현재 버전·낙관적 갱신·append-only 감사 이력
 - `GET/PUT /projects/{id}/sta-scenarios/{stage}` — 기대 STA 코너·모드와 SPEF 요구 세트 조회·교체
 - `GET /projects/{id}/sta-matrix?stage=routing&design_revision=...` — 기대 세트와 최신 OpenSTA 실행의 누락·요구 충족·경로 표본 집계
 - `POST /analysis/sta-signoff/batch` — 공통 넷리스트와 최대 8개 시나리오 입력을 영속 작업 큐에 접수하고 `202` 배치 매니페스트 반환

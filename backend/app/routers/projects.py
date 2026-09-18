@@ -1,12 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..services.access import change_membership
+from ..services.stages import resolve_signoff_plan
 from ..auth import auth_required
-from ..models import Project, ProjectMember
-from ..schemas import ProjectCreate, ProjectOut
+from ..auth import require_project
+from ..models import Project, ProjectMember, ProjectSignoffPlanRevision, Stage
+from ..schemas import (ProjectCreate, ProjectOut, SignoffPlanHistoryOut,
+                       SignoffPlanOut, SignoffPlanStageOut, SignoffPlanUpdate)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -45,3 +50,61 @@ def list_projects(db: Session = Depends(get_db)):
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(project_id: int, db: Session = Depends(get_db)):
     return get_project_or_404(project_id, db)
+
+
+@router.get("/{project_id}/signoff-plan", response_model=SignoffPlanOut)
+def get_signoff_plan(project_id: int, db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    return {"project_id": project_id, "stages": [
+        SignoffPlanStageOut.model_validate(resolve_signoff_plan(db, project_id, stage))
+        for stage in Stage
+    ]}
+
+
+@router.get("/{project_id}/signoff-plan/history", response_model=SignoffPlanHistoryOut)
+def get_signoff_plan_history(project_id: int, stage: Stage | None = None,
+                             before_id: int | None = Query(None, ge=1),
+                             limit: int = Query(25, ge=1, le=100),
+                             db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    filters = [ProjectSignoffPlanRevision.project_id == project_id]
+    if stage is not None:
+        filters.append(ProjectSignoffPlanRevision.stage == stage)
+    if before_id is not None:
+        filters.append(ProjectSignoffPlanRevision.id < before_id)
+    rows = db.scalars(select(ProjectSignoffPlanRevision).where(*filters)
+                      .order_by(ProjectSignoffPlanRevision.id.desc()).limit(limit + 1)).all()
+    items = rows[:limit]
+    return {"items": [{
+        "id": item.id, "stage": item.stage, "version": item.version, "source": "custom",
+        "required_domains": item.required_domains, "reason": item.reason,
+        "updated_by": item.updated_by, "updated_by_user_id": item.updated_by_user_id,
+        "created_at": item.created_at,
+    } for item in items], "next_before_id": items[-1].id if len(rows) > limit else None}
+
+
+@router.put("/{project_id}/signoff-plan/{stage}", response_model=SignoffPlanStageOut)
+def update_signoff_plan(project_id: int, stage: Stage, payload: SignoffPlanUpdate,
+                        db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    require_project(db, project_id, "approver")
+    current = resolve_signoff_plan(db, project_id, stage)
+    if payload.expected_version != current["version"]:
+        raise HTTPException(409, detail={"message": "sign-off plan changed; reload and retry",
+                                         "current": jsonable_encoder(current)})
+    user = db.info.get("user")
+    revision = ProjectSignoffPlanRevision(
+        project_id=project_id, stage=stage, version=current["version"] + 1,
+        required_domains=[domain.value for domain in payload.required_domains],
+        reason=payload.reason.strip(), updated_by=user.username if user else "local operator",
+        updated_by_user_id=user.id if user else None,
+    )
+    db.add(revision)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        latest = resolve_signoff_plan(db, project_id, stage)
+        raise HTTPException(409, detail={"message": "sign-off plan changed; reload and retry",
+                                         "current": jsonable_encoder(latest)}) from None
+    return SignoffPlanStageOut.model_validate(resolve_signoff_plan(db, project_id, stage))
