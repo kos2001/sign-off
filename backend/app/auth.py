@@ -108,7 +108,7 @@ async def object_body(request):
 async def authorize(request: Request, db: Session = Depends(get_db)):
     required = auth_required()
     if not required:
-        for key in {'project_id', 'run_id', 'violation_id', 'review_id', 'user_id'} & request.path_params.keys():
+        for key in {'project_id', 'run_id', 'violation_id', 'review_id', 'batch_id', 'user_id'} & request.path_params.keys():
             database_id(request.path_params[key], key)
         return
     user, session = get_identity(request, db)
@@ -118,7 +118,7 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
     request.state.user_id = user.id
     if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
         check_csrf(request, session)
-    for key in {'project_id', 'run_id', 'violation_id', 'review_id', 'user_id'} & request.path_params.keys():
+    for key in {'project_id', 'run_id', 'violation_id', 'review_id', 'batch_id', 'user_id'} & request.path_params.keys():
         database_id(request.path_params[key], key)
     path = request.scope['route'].path
     project_id = request.path_params.get('project_id')

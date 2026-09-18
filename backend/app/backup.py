@@ -66,9 +66,16 @@ def inspect_database(path):
             ('run_agent_reviews', 'requester_user_id', 'users'),
             ('violation_events', 'violation_id', 'violations'), ('run_evidence', 'run_id', 'signoff_runs'),
             ('run_artifacts', 'run_id', 'signoff_runs'),
+            ('sta_batch_executions', 'project_id', 'projects'),
+            ('sta_batch_executions', 'submitted_by_user_id', 'users'),
+            ('sta_batch_execution_items', 'batch_id', 'sta_batch_executions'),
+            ('sta_batch_execution_items', 'run_id', 'signoff_runs'),
         ] if table in tables]
         for child, column, parent in references:
-            optional = f'c.{quote_identifier(column)} IS NOT NULL AND ' if (child, column) == ('run_agent_reviews', 'requester_user_id') else ''
+            optional = f'c.{quote_identifier(column)} IS NOT NULL AND ' if (child, column) in {
+                ('run_agent_reviews', 'requester_user_id'), ('sta_batch_executions', 'submitted_by_user_id'),
+                ('sta_batch_execution_items', 'run_id'),
+            } else ''
             orphan = connection.execute(
                 f'SELECT 1 FROM {quote_identifier(child)} c LEFT JOIN {quote_identifier(parent)} p '
                 f'ON c.{quote_identifier(column)} = p.id WHERE {optional}p.id IS NULL LIMIT 1'

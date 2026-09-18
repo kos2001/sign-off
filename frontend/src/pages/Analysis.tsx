@@ -1,7 +1,7 @@
 import { useAuth } from "../components/AuthProvider";
 import { PULSE_TESTBENCH } from "./pulseTestbench";
 import { SimulationDetails } from "../components/SimulationDetails";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 
@@ -182,6 +182,7 @@ export default function Analysis() {
 
 function StaSignoffSection() {
   const auth = useAuth();
+  const qc = useQueryClient();
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
   const [projectId, setProjectId] = useState<number | "">("");
   const [stage, setStage] = useState("synthesis");
@@ -200,11 +201,18 @@ function StaSignoffSection() {
   const [batchRows, setBatchRows] = useState<BatchRow[]>([]);
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchId, setBatchId] = useState<number | null>(null);
   const [batchProgress, setBatchProgress] = useState<Record<string, { status: 'pending' | 'running' | 'passed' | 'failed'; detail?: string; runId?: number }>>({});
   const expectedScenarios = useQuery({
     queryKey: ['sta-scenarios', projectId, stage],
     queryFn: () => api.staScenarios(Number(projectId), stage as 'rtl' | 'synthesis' | 'placement' | 'routing' | 'final'),
     enabled: projectId !== '',
+  });
+  const batchHistory = useQuery({
+    queryKey: ['sta-batches', projectId],
+    queryFn: () => api.staBatches(Number(projectId)),
+    enabled: projectId !== '',
+    refetchInterval: query => query.state.data?.items.some(item => item.status === 'running') ? 2000 : false,
   });
   const fields = [
     { label: "게이트 레벨 Verilog 넷리스트", value: netlist, set: setNetlist, accept: ".v,.sv", max: 1_000_000 },
@@ -241,16 +249,18 @@ function StaSignoffSection() {
     void file.text().then(value => updateBatch(index, { [key]: value }));
   }
   async function executeBatch() {
-    setBatchRunning(true); setBatchError(null);
+    setBatchRunning(true); setBatchError(null); setBatchId(null);
     setBatchProgress(Object.fromEntries(batchRows.map(row => [row.scenario.trim(), { status: 'pending' as const }])));
     try {
       await api.staBatchStream({ project_id: Number(projectId), stage: stage as 'rtl' | 'synthesis' | 'placement' | 'routing' | 'final',
         top_module: topModule.trim(), design_revision: revision.trim(), netlist,
         scenarios: batchRows.map(row => ({ scenario: row.scenario.trim(), liberty: row.liberty,
           sdc: row.sdc, ...(row.spef.trim() ? { spef: row.spef } : {}) })) }, event => {
+        if (event.event === 'batch_start') { setBatchId(event.batch_id); void qc.invalidateQueries({ queryKey: ['sta-batches', projectId] }); }
         if (event.event === 'scenario_start') setBatchProgress(previous => ({ ...previous, [event.scenario]: { status: 'running' } }));
         if (event.event === 'scenario_done') setBatchProgress(previous => ({ ...previous, [event.scenario]: { status: 'passed', runId: event.result.run_id } }));
         if (event.event === 'scenario_error') setBatchProgress(previous => ({ ...previous, [event.scenario]: { status: 'failed', detail: event.detail } }));
+        if (event.event === 'batch_done') void qc.invalidateQueries({ queryKey: ['sta-batches', projectId] });
       });
     } catch (reason) {
       setBatchError((reason as Error).message);
@@ -298,7 +308,18 @@ function StaSignoffSection() {
       {batchRows.length === 0 && <p className="mt-3 text-sm text-[var(--text-muted)]">기대 세트를 불러오거나 시나리오를 추가하세요.</p>}
       {new Set(batchNames).size !== batchNames.length && batchRows.length > 1 && <p role="alert" className="mt-2 text-sm">시나리오 이름은 대소문자를 무시하고 고유해야 합니다.</p>}
       <button className="btn btn-primary mt-3" disabled={!batchValid || batchRunning} onClick={executeBatch}>{batchRunning ? '배치 실행 중…' : `${batchRows.length}개 시나리오 실행 및 기록`}</button>
+      {batchId && <p role="status" className="mt-2 text-xs">배치 #{batchId} · 실행 매니페스트 저장됨</p>}
       {batchError && <p role="alert" className="mt-3 text-sm">{batchError}</p>}
+      <section className="mt-5 border-t border-[var(--border)] pt-4" aria-label="최근 STA 배치 이력">
+        <h3 className="text-sm font-semibold">최근 배치 이력</h3>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">접수한 시나리오와 성공·실패·취소 상태를 서버 DB에서 조회합니다. 입력 파일 본문은 각 성공 런의 실행 근거에 저장됩니다.</p>
+        {batchHistory.isPending && projectId !== '' ? <p role="status" className="mt-3 text-sm">배치 이력 불러오는 중…</p> : batchHistory.isError ? <p role="alert" className="mt-3 text-sm">{batchHistory.error.message}</p> : <ul className="mt-3 space-y-3">{(batchHistory.data?.items ?? []).slice(0, 5).map(batch => <li className="rounded-lg border border-[var(--border)] p-3" key={batch.id}>
+          <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">배치 #{batch.id} · {batch.design_revision}</p><StatusBadge status={batch.status === 'completed' ? 'good' : batch.status === 'running' ? 'warning' : batch.status === 'partial' ? 'serious' : 'critical'} label={{ running: '실행 중', completed: '완료', partial: '부분 성공', failed: '실패', cancelled: '취소' }[batch.status]} /></div>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">{batch.stage} · {batch.top_module} · {batch.submitted_by} · {new Date(batch.created_at.endsWith('Z') || /[+-]\d\d:\d\d$/.test(batch.created_at) ? batch.created_at : batch.created_at + 'Z').toLocaleString('ko-KR')}</p>
+          <div className="mt-2 flex flex-wrap gap-2">{batch.items.map(item => <span className="rounded border border-[var(--border)] px-2 py-1 text-xs" key={item.position}>{item.scenario} · {item.run_id ? <Link className="underline" to={`/runs/${item.run_id}`}>run #{item.run_id}</Link> : item.status === 'running' ? '실행 중' : item.status === 'pending' ? '대기' : item.status === 'cancelled' ? '취소' : '실패'}</span>)}</div>
+        </li>)}</ul>}
+        {batchHistory.data?.items.length === 0 && <p className="mt-3 text-sm text-[var(--text-muted)]">저장된 배치 실행이 없습니다.</p>}
+      </section>
     </details>
   </Card>;
 }

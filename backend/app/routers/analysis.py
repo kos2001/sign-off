@@ -4,13 +4,16 @@ import logging
 import math
 import threading
 from contextlib import closing
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from ..db import SessionLocal, get_db
 from ..auth import require_project
-from ..models import Domain, Project, RunArtifact, RunEvidence, Severity, SignoffRun, Stage, Violation
+from ..models import (Domain, Project, RunArtifact, RunEvidence, Severity, SignoffRun,
+                      StaBatchExecution, StaBatchExecutionItem, StaScenarioDefinition, Stage, Violation)
 from ..schemas import (
     GlitchPowerRequest,
     IrDropRequest,
@@ -220,6 +223,40 @@ def _record_sta_run(db, payload, worker, result, image_id, submitted_by):
     return {'run_id': run.id, **result}
 
 
+def _update_batch_item(batch_id, position, status, *, run_id=None, detail=None):
+    with SessionLocal() as session:
+        session.execute(update(StaBatchExecutionItem).where(
+            StaBatchExecutionItem.batch_id == batch_id,
+            StaBatchExecutionItem.position == position,
+        ).values(status=status, run_id=run_id, detail=detail).execution_options(synchronize_session=False))
+        session.commit()
+
+
+def _finish_sta_batch(batch_id, outcome):
+    with SessionLocal() as session:
+        unfinished = session.scalars(select(StaBatchExecutionItem).where(
+            StaBatchExecutionItem.batch_id == batch_id,
+            StaBatchExecutionItem.status.in_(['pending', 'running']),
+        )).all()
+        if outcome != 'normal':
+            state = 'cancelled' if outcome == 'cancelled' else 'failed'
+            detail = 'Batch request was cancelled.' if outcome == 'cancelled' else 'Batch execution was interrupted.'
+            for item in unfinished:
+                item.status, item.detail = state, detail
+        statuses = list(session.scalars(select(StaBatchExecutionItem.status).where(
+            StaBatchExecutionItem.batch_id == batch_id,
+        )))
+        if outcome == 'cancelled':
+            status = 'cancelled'
+        else:
+            completed = statuses.count('completed')
+            status = 'completed' if completed == len(statuses) else 'partial' if completed else 'failed'
+        session.execute(update(StaBatchExecution).where(StaBatchExecution.id == batch_id).values(
+            status=status, finished_at=datetime.now(timezone.utc),
+        ).execution_options(synchronize_session=False))
+        session.commit()
+
+
 @router.post('/sta-signoff/stream')
 def sta_signoff_stream(payload: StaSignoffRequest, db: Session = Depends(get_db)):
     """Stream OpenSTA lifecycle events and cancel the worker on disconnect."""
@@ -268,48 +305,88 @@ def sta_signoff_batch_stream(payload: StaBatchRequest, db: Session = Depends(get
     user = db.info.get('user')
     submitted_by = {'user_id': user.id, 'username': user.username} if user else None
     cancel = threading.Event()
+    slot = acquire_slot()
+    try:
+        expected = {row.name: row.require_spef for row in db.scalars(select(StaScenarioDefinition).where(
+            StaScenarioDefinition.project_id == payload.project_id,
+            StaScenarioDefinition.stage == payload.stage,
+        ))}
+        batch = StaBatchExecution(
+            project_id=payload.project_id, stage=payload.stage, top_module=payload.top_module,
+            design_revision=payload.design_revision.strip(), submitted_by_user_id=user.id if user else None,
+            submitted_by=user.username if user else 'local', status='running',
+            items=[StaBatchExecutionItem(position=index, scenario=item.scenario.strip(),
+                require_spef=expected.get(item.scenario.strip(), False), status='pending')
+                for index, item in enumerate(payload.scenarios)],
+        )
+        db.add(batch)
+        db.commit()
+        db.refresh(batch)
+    except BaseException:
+        db.rollback()
+        slot.close()
+        raise
+    batch_id = batch.id
 
     def gen():
         completed, failed = [], []
-        yield json.dumps({'event': 'batch_start', 'total': len(payload.scenarios)}) + '\n'
-        for index, scenario in enumerate(payload.scenarios):
-            if cancel.is_set():
-                return
-            name = scenario.scenario.strip()
-            yield json.dumps({'event': 'scenario_start', 'index': index, 'scenario': name}) + '\n'
-            single = StaSignoffRequest(
-                project_id=payload.project_id, stage=payload.stage, top_module=payload.top_module,
-                design_revision=payload.design_revision, scenario=name, netlist=payload.netlist,
-                liberty=scenario.liberty, sdc=scenario.sdc, spef=scenario.spef,
-            )
-            try:
-                worker, result, image_id = run_sta(single.netlist, single.liberty, single.sdc,
-                                                    single.top_module, single.spef, cancel=cancel)
+        normal = finalized = False
+        try:
+            yield json.dumps({'event': 'batch_start', 'batch_id': batch_id,
+                              'total': len(payload.scenarios)}) + '\n'
+            for index, scenario in enumerate(payload.scenarios):
                 if cancel.is_set():
                     return
-                session = SessionLocal()
+                name = scenario.scenario.strip()
+                _update_batch_item(batch_id, index, 'running')
+                yield json.dumps({'event': 'scenario_start', 'index': index, 'scenario': name}) + '\n'
+                single = StaSignoffRequest(
+                    project_id=payload.project_id, stage=payload.stage, top_module=payload.top_module,
+                    design_revision=payload.design_revision, scenario=name, netlist=payload.netlist,
+                    liberty=scenario.liberty, sdc=scenario.sdc, spef=scenario.spef,
+                )
                 try:
-                    recorded = _record_sta_run(session, single, worker, result, image_id, submitted_by)
-                finally:
-                    session.close()
-                completed.append({'scenario': name, 'run_id': recorded['run_id'],
-                                  'status': recorded['status']})
-                yield json.dumps({'event': 'scenario_done', 'index': index, 'scenario': name,
-                                  'result': recorded}) + '\n'
-            except StaWorkerError as error:
-                if cancel.is_set():
-                    return
-                failed.append({'scenario': name, 'detail': str(error)})
-                yield json.dumps({'event': 'scenario_error', 'index': index, 'scenario': name,
-                                  'detail': str(error)}) + '\n'
-            except Exception as error:
-                logger.error('sta_batch_persist_failed project_id=%s scenario_index=%s failure=%s',
-                             payload.project_id, index, type(error).__name__)
-                failed.append({'scenario': name, 'detail': 'STA result could not be recorded.'})
-                yield json.dumps({'event': 'scenario_error', 'index': index, 'scenario': name,
-                                  'detail': 'STA result could not be recorded.'}) + '\n'
-        if not cancel.is_set():
-            yield json.dumps({'event': 'batch_done', 'total': len(payload.scenarios),
-                              'completed': completed, 'failed': failed}) + '\n'
+                    worker, result, image_id = run_sta(single.netlist, single.liberty, single.sdc,
+                                                        single.top_module, single.spef, cancel=cancel)
+                    if cancel.is_set():
+                        return
+                    session = SessionLocal()
+                    try:
+                        recorded = _record_sta_run(session, single, worker, result, image_id, submitted_by)
+                    finally:
+                        session.close()
+                    _update_batch_item(batch_id, index, 'completed', run_id=recorded['run_id'])
+                    completed.append({'scenario': name, 'run_id': recorded['run_id'],
+                                      'status': recorded['status']})
+                    yield json.dumps({'event': 'scenario_done', 'index': index, 'scenario': name,
+                                      'result': recorded}) + '\n'
+                except StaWorkerError as error:
+                    if cancel.is_set():
+                        return
+                    _update_batch_item(batch_id, index, 'failed', detail=str(error)[:2000])
+                    failed.append({'scenario': name, 'detail': str(error)})
+                    yield json.dumps({'event': 'scenario_error', 'index': index, 'scenario': name,
+                                      'detail': str(error)}) + '\n'
+                except Exception as error:
+                    logger.error('sta_batch_persist_failed project_id=%s scenario_index=%s failure=%s',
+                                 payload.project_id, index, type(error).__name__)
+                    detail = 'STA result could not be recorded.'
+                    _update_batch_item(batch_id, index, 'failed', detail=detail)
+                    failed.append({'scenario': name, 'detail': detail})
+                    yield json.dumps({'event': 'scenario_error', 'index': index, 'scenario': name,
+                                      'detail': detail}) + '\n'
+            normal = True
+            _finish_sta_batch(batch_id, 'normal')
+            finalized = True
+            yield json.dumps({'event': 'batch_done', 'batch_id': batch_id,
+                              'total': len(payload.scenarios), 'completed': completed,
+                              'failed': failed}) + '\n'
+        finally:
+            if not finalized:
+                _finish_sta_batch(batch_id, 'cancelled' if cancel.is_set() else 'normal' if normal else 'interrupted')
 
-    return AdmittedStreamingResponse(gen(), acquire_slot(), on_close=cancel.set)
+    try:
+        return AdmittedStreamingResponse(gen(), slot, on_close=cancel.set)
+    except BaseException:
+        _finish_sta_batch(batch_id, 'cancelled')
+        raise
