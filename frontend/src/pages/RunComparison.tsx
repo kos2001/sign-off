@@ -50,7 +50,7 @@ export default function RunComparison() {
   const project = useQuery({ queryKey: ["project", projectId], queryFn: () => api.getProject(projectId) });
   const runs = useInfiniteQuery({
     queryKey: ['comparison-runs', projectId],
-    queryFn: ({ pageParam }) => api.runPage(projectId, pageParam, 100),
+    queryFn: ({ pageParam }) => api.runPage(projectId, { beforeId: pageParam, limit: 100 }),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: page => page.next_before_id ?? undefined,
     enabled: !!project.data,

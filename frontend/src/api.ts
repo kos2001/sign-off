@@ -656,9 +656,11 @@ export const api = {
   getProject: (id: number) => request<Project>(`/projects/${id}`),
   listRuns: (projectId: number) =>
     request<SignoffRun[]>(`/projects/${projectId}/runs`),
-  runPage: (projectId: number, beforeId?: number, limit = 50) =>
+  runPage: (projectId: number, options: { beforeId?: number; limit?: number; domain?: Domain; stage?: Stage; status?: RunStatus; q?: string } = {}) =>
     request<RunPage>(`/projects/${projectId}/runs/page?${new URLSearchParams({
-      limit: String(limit), ...(beforeId ? { before_id: String(beforeId) } : {}),
+      limit: String(options.limit ?? 50), ...(options.beforeId ? { before_id: String(options.beforeId) } : {}),
+      ...(options.domain ? { domain: options.domain } : {}), ...(options.stage ? { stage: options.stage } : {}),
+      ...(options.status ? { status: options.status } : {}), ...(options.q ? { q: options.q } : {}),
     })}`),
   getRun: (runId: number) => request<SignoffRun>(`/runs/${runId}`),
   runStructure: (runId: number) => request<DesignStructure>(`/runs/${runId}/evidence/structure`),
