@@ -3,6 +3,7 @@
 from sqlalchemy import inspect, text
 
 from .db import Base
+from .models import Domain
 
 
 def initialize_schema(engine):
@@ -12,6 +13,19 @@ def initialize_schema(engine):
                 connection.exec_driver_sql("BEGIN IMMEDIATE")
             elif engine.dialect.name == "postgresql":
                 connection.execute(text("SELECT pg_advisory_xact_lock(738421905)"))
+                # create_all does not extend an existing PostgreSQL enum. Add
+                # newly shipped domains in their own committed transaction so
+                # later startup work can use them immediately on every
+                # supported PostgreSQL version.
+                domain_type_exists = connection.execute(text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'domain')"
+                )).scalar_one()
+                if domain_type_exists:
+                    for value in Domain:
+                        literal = value.value.replace("'", "''")
+                        connection.execute(text(f"ALTER TYPE domain ADD VALUE IF NOT EXISTS '{literal}'"))
+                    connection.commit()
+                    connection.execute(text("SELECT pg_advisory_xact_lock(738421905)"))
             Base.metadata.create_all(connection)
             # create_all skips indexes for tables that already exist. Upgrade
             # those tables under the same startup lock as schema additions.

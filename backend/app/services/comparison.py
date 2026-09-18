@@ -100,13 +100,13 @@ def compare_runs(baseline: SignoffRun, candidate: SignoffRun) -> dict:
         result = run.evidence.result if run.evidence and isinstance(run.evidence.result, dict) else {}
         attested_import = (run.evidence_source in {'commercial_sta_report', 'commercial_drc_report', 'commercial_emir_report',
                                                    'commercial_power_report', 'commercial_thermal_report', 'commercial_rtl_report',
-                                                   'commercial_lvs_report'}
+                                                   'commercial_lvs_report', 'commercial_lec_report'}
                            and result.get('coverage') == 'collector_attested_complete'
                            and result.get('coverage_attestation', {}).get('verified') is True)
         imported_partial = run.evidence_source in {
             'commercial_rtl_report', 'opensta_report', 'opensta_execution', 'commercial_sta_report',
             'klayout_report', 'commercial_drc_report', 'commercial_emir_report',
-            'commercial_power_report', 'commercial_thermal_report', 'commercial_lvs_report',
+            'commercial_power_report', 'commercial_thermal_report', 'commercial_lvs_report', 'commercial_lec_report',
         }
         return run.status in (RunStatus.running, RunStatus.incomplete) or imported_partial and not attested_import
 

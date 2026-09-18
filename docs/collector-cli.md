@@ -29,7 +29,7 @@ PYTHONPATH=. .venv/bin/python -m app.collectors revoke 42 primetime-prod
 ```
 
 API 토큰은 전송자를 인증하고 HMAC 키는 보고서와 전체 실행 범위 claim을 결합한다. 서로 다른
-비밀값을 사용한다. API 토큰은 지정 프로젝트의 일곱 `commercial-*` 저장 POST에만 사용할 수
+비밀값을 사용한다. API 토큰은 지정 프로젝트의 여덟 `commercial-*` 저장 POST에만 사용할 수
 있고 미리보기, 조회, 위반 처리, 게이트 승인에는 사용할 수 없다. 만료·폐기 또는 다른 프로젝트의
 토큰은 일반적인 401로 거부된다. 머신 제출은 coverage attestation이 없는 요청도 거부하므로
 서비스 자격증명만으로 서명 없는 최신 런을 만들어 게이트를 방해할 수 없다.
@@ -71,8 +71,8 @@ curl --fail-with-body \
   https://signoff.example/projects/42/imports/commercial-sta
 ```
 
-`--domain`은 `sta`, `pv`, `lvs`, `emir`, `glitch_power`, `thermal`, `rtl` 중 하나다. 제출 URL은 각각
-`commercial-sta`, `commercial-drc`, `commercial-lvs`, `commercial-emir`, `commercial-power`,
+`--domain`은 `sta`, `pv`, `lvs`, `lec`, `emir`, `glitch_power`, `thermal`, `rtl` 중 하나다. 제출 URL은 각각
+`commercial-sta`, `commercial-drc`, `commercial-lvs`, `commercial-lec`, `commercial-emir`, `commercial-power`,
 `commercial-thermal`, `commercial-rtl`이다. 기본 유효 시간은 1시간이며
 `--valid-for-seconds`로 1초부터 7일까지 지정할 수 있다.
 
