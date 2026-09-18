@@ -1,4 +1,4 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 
@@ -9,34 +9,27 @@ import { Card, Field, StatTile } from "../components/ui";
 
 export default function Dashboard() {
   const qc = useQueryClient();
-  const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
+  const projects = useQuery({ queryKey: ['project-summaries'], queryFn: api.projectSummaries });
   const [form, setForm] = useState({ name: "", process_node: "", foundry: "" });
   const [error, setError] = useState<string | null>(null);
-
-  const list0 = projects.data ?? [];
-  // Fetch one row plus server-side totals; report bodies and full history stay out of the dashboard.
-  const runQueries = useQueries({
-    queries: list0.map((p) => ({
-      queryKey: ["run-summary", p.id],
-      queryFn: () => api.runPage(p.id, undefined, 1),
-    })),
-  });
 
   const create = useMutation({
     mutationFn: api.createProject,
     onSuccess: () => {
       setForm({ name: "", process_node: "", foundry: "" });
       setError(null);
-      qc.invalidateQueries({ queryKey: ["projects"] });
+      void Promise.all([
+        qc.invalidateQueries({ queryKey: ['project-summaries'] }),
+        qc.invalidateQueries({ queryKey: ['projects'] }),
+      ]);
     },
     onError: (e: Error) => setError(e.message),
   });
 
-  const list = list0;
-  const runsByProject = new Map(list.map((p, i) => [p.id, runQueries[i]?.data]));
+  const list = projects.data ?? [];
   const aggregateCounts = { passed: 0, failed: 0, running: 0, incomplete: 0 };
-  for (const page of runsByProject.values()) if (page)
-    for (const status of Object.keys(aggregateCounts) as RunStatus[]) aggregateCounts[status] += page.status_counts[status];
+  for (const project of list)
+    for (const status of Object.keys(aggregateCounts) as RunStatus[]) aggregateCounts[status] += project.status_counts[status];
 
   return (
     <div className="space-y-6">
@@ -98,7 +91,7 @@ export default function Dashboard() {
                     ))}
                   </div>
                   <div className="mt-3">
-                    <ProjectRunGlance counts={runsByProject.get(p.id)?.status_counts} total={runsByProject.get(p.id)?.total ?? 0} />
+                    <ProjectRunGlance counts={p.status_counts} total={p.total_runs} />
                   </div>
                 </Link>
               </li>

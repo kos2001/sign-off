@@ -184,8 +184,8 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
         administration = '/members' in path or '/collectors' in path
         require_project(db, int(project_id), 'owner' if administration else 'viewer' if request.method == 'GET' else 'editor')
         return
-    if path == '/projects':
-        return  # Listing is filtered, and the creator becomes owner.
+    if path in {'/projects', '/projects/summary'}:
+        return  # Listings are filtered, and the creator becomes owner.
     if path.startswith('/analysis/'):
         body = await object_body(request)
         if isinstance(body, dict) and body.get('project_id') is not None:

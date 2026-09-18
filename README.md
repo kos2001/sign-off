@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1065개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1066개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -70,6 +70,8 @@ Dependabot이 backend(pip)/frontend(npm)/GitHub Actions 의존성을 매주 점�
 이전 런은 요청할 때 커서 페이지로 불러오므로 장기 운영 프로젝트에서도 조회 비용이 전체 이력에
 비례해 계속 증가하지 않습니다. 대시보드는 프로젝트별 서버 집계만 읽고, 런 비교는 최신 100개부터
 필요할 때 이전 이력을 추가하며 공유 URL에 지정된 오래된 런은 ID로 직접 복원합니다.
+대시보드는 접근 가능한 프로젝트와 런 상태 집계를 단일 API 호출로 받아 프로젝트 수에 비례한
+추가 HTTP 요청과 evidence 조회를 만들지 않습니다.
 
 ## 실행 결과 비교
 

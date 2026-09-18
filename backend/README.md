@@ -35,6 +35,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 ## API 개요
 
 - `POST/GET /projects` — 프로젝트(칩) 등록: 이름, 공정 노드, 파운드리
+- `GET /projects/summary` — 접근 가능한 프로젝트와 전체 런 상태 집계를 한 번에 조회하는 대시보드 전용 요약
 - `POST /projects/{id}/runs` — 사인오프 런 생성 (`domain`, `stage`, `tool`, `metrics`)
 - `GET /projects/{id}/runs/page` — 상태별 전체 집계와 최신순 커서 페이지 (`before_id`, `limit`, `domain`, `stage`); 운영 UI 기본 경로
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
