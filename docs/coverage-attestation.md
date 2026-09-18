@@ -12,7 +12,8 @@ SIGNOFF_COVERAGE_HMAC_KEYS='{"sta-collector-2026q3":{"secret":"32-bytes-minimum-
 ```
 
 JSON 객체의 키는 `key_id`이며 각 값은 `secret`과 `domains`를 정확히 포함한다. `secret`은 최소
-32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `emir` 중 이 키가 서명할 수 있는 범위다. 빈 범위,
+32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `emir`, `glitch_power`, `thermal` 중 이 키가
+서명할 수 있는 범위다. 빈 범위,
 중복 또는 알 수 없는 도메인은 거부한다. 최대 16개 키를 동시에 등록해 교체 기간을 운영할 수 있다.
 실제 키는 저장소나 보고서에 넣지 말고 비밀 관리 시스템에서
 API 서버와 수집기에 주입한다. 설정이 존재하지만 JSON 또는 키가 잘못되면 API 서버 시작을
@@ -101,3 +102,19 @@ RedHawk-SC/Voltus/Totem 증명은 `domain: "emir"`와 다음 키를 정확히 �
 `modes_corners_complete`, `activity_vectors_complete`, `extraction_complete`,
 `checks_complete`, `findings_complete`. 제출된 값과 제한은 서버가 다시 비교한다. 제한 초과
 finding이 하나라도 있으면 범위 증명이 유효해도 `failed`이며 웨이버로 자동 변환하지 않는다.
+
+### 전력 분석 claim 집합
+
+PrimePower/Joules/PowerArtist 증명은 `domain: "glitch_power"`와 다음 키를 정확히 사용하며
+모두 `true`여야 한다: `tool_run_completed`, `modes_corners_complete`,
+`activity_vectors_complete`, `power_models_complete`, `hierarchy_complete`,
+`findings_complete`. TOP 또는 계층 항목의 글리치 비중이 제출된 제한을 넘으면 유효한 증명이
+있어도 `failed`다.
+
+### 열 해석 claim 집합
+
+Celsius/Icepak/Calibre 3DSTACK 증명은 `domain: "thermal"`과 다음 키를 정확히 사용하며 모두
+`true`여야 한다: `tool_run_completed`, `material_models_complete`,
+`boundary_conditions_complete`, `power_map_complete`, `package_stack_complete`,
+`analysis_scope_complete`, `mesh_convergence_complete`, `findings_complete`. 제한을 넘은 온도
+finding이 하나라도 있으면 유효한 증명이 있어도 `failed`다.
