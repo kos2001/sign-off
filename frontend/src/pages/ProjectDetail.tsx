@@ -46,6 +46,17 @@ export default function ProjectDetail() {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   });
+  const evidencePackage = useMutation({
+    mutationFn: (input: { projectId: number; stage: Stage }) => api.exportSignoffPackage(input.projectId, input.stage),
+    onSuccess: (blob, input) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `project-${input.projectId}-${input.stage}-evidence.zip`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  });
 
   const project = useQuery({
     queryKey: ["project", projectId],
@@ -106,8 +117,14 @@ export default function ProjectDetail() {
         subtitle="도메인별 최신 런의 검증 범위와 설계 리비전을 확인합니다. 수동 통과 상태만으로는 게이트를 통과할 수 없습니다."
       >
         <div className="mb-4 space-y-2 text-sm">
-          <button className="btn btn-ghost" disabled={gateExport.isPending} onClick={() => gateExport.mutate({ projectId, stage })}>{gateExport.isPending ? `${STAGE_LABELS[gateExport.variables.stage]} 근거 파일 준비 중…` : '게이트·근거 JSON 다운로드'}</button>
-          <p className="text-[var(--text-muted)]">다운로드 시점의 선택 스테이지 게이트·최신 런 결과·현재 위반과 웨이버를 포함합니다. 원본 파일·변경 이력·AI 의견은 별도입니다. 최대 8 MiB / 위반 10,000건.</p>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-primary" disabled={evidencePackage.isPending} onClick={() => evidencePackage.mutate({ projectId, stage })}>{evidencePackage.isPending ? `${STAGE_LABELS[evidencePackage.variables.stage]} 패키지 준비 중…` : '검증된 근거 패키지 다운로드'}</button>
+            <button className="btn btn-ghost" disabled={gateExport.isPending} onClick={() => gateExport.mutate({ projectId, stage })}>{gateExport.isPending ? `${STAGE_LABELS[gateExport.variables.stage]} 근거 파일 준비 중…` : '게이트 JSON 다운로드'}</button>
+          </div>
+          <p className="text-[var(--text-muted)]">근거 패키지는 현재 게이트가 선택한 최신 런의 원본 보고서를 SHA-256으로 검증해 매니페스트와 함께 ZIP으로 보존합니다. 원본이나 저장 해시가 없거나 변조되었으면 생성을 거부합니다.</p>
+          <p className="text-[var(--text-muted)]">게이트 JSON은 다운로드 시점의 판정·최신 런·현재 위반과 웨이버를 포함하며 원본 파일은 제외합니다. JSON 최대 8 MiB, 패키지 최대 32 MiB, 위반 10,000건.</p>
+          {evidencePackage.variables?.projectId === projectId && evidencePackage.variables.stage === stage && evidencePackage.isError && <p role="alert">{evidencePackage.error.message}</p>}
+          {evidencePackage.variables?.projectId === projectId && evidencePackage.variables.stage === stage && evidencePackage.isSuccess && <p role="status">검증된 근거 패키지 다운로드를 시작했습니다.</p>}
           {gateExport.variables?.projectId === projectId && gateExport.variables.stage === stage && gateExport.isError && <p role="alert">{gateExport.error.message}</p>}
           {gateExport.variables?.projectId === projectId && gateExport.variables.stage === stage && gateExport.isSuccess && <p role="status">게이트 근거 다운로드를 시작했습니다.</p>}
         </div>
