@@ -31,9 +31,9 @@ export const SIGNOFF_TOOLS: Record<Domain, readonly SignoffToolOption[]> = {
     { value: 'Cadence Pegasus', label: 'Cadence Pegasus', description: '상용 DRC 결과의 출처를 기록합니다.', workflow: '검증된 상용 DRC 마커 JSON 가져오기를 지원합니다.' },
   ],
   glitch_power: [
-    { value: 'Synopsys PrimePower', label: 'Synopsys PrimePower · 추천', description: '글리치와 동적 전력 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
-    { value: 'Cadence Joules', label: 'Cadence Joules', description: 'RTL·게이트 전력 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
-    { value: 'Ansys PowerArtist', label: 'Ansys PowerArtist', description: 'RTL 전력 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
+    { value: 'Synopsys PrimePower', label: 'Synopsys PrimePower · 추천', description: '글리치와 동적 전력 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 전력 요약 JSON 가져오기를 지원합니다.' },
+    { value: 'Cadence Joules', label: 'Cadence Joules', description: 'RTL·게이트 전력 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 전력 요약 JSON 가져오기를 지원합니다.' },
+    { value: 'Ansys PowerArtist', label: 'Ansys PowerArtist', description: 'RTL 전력 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 전력 요약 JSON 가져오기를 지원합니다.' },
   ],
   thermal: [
     { value: 'Cadence Celsius', label: 'Cadence Celsius · 추천', description: '칩·패키지 열 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },

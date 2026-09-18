@@ -182,7 +182,7 @@ def export_evidence_source(run_id: int, db: Session = Depends(get_db)):
     if evidence is None:
         raise HTTPException(404, 'no captured evidence for this legacy run')
     extensions = {'opensta_report': 'json', 'opensta_execution': 'json', 'commercial_sta_report': 'json',
-                  'commercial_drc_report': 'json', 'commercial_emir_report': 'json',
+                  'commercial_drc_report': 'json', 'commercial_emir_report': 'json', 'commercial_power_report': 'json',
                   'rtl_ladder': 'sv', 'klayout_report': 'lyrdb'}
     if evidence.source not in extensions or evidence.source_text is None:
         raise HTTPException(409, '이 런에는 다운로드할 원본 입력이 없습니다.')
