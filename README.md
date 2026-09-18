@@ -11,7 +11,7 @@
 
 ## 구조
 
-- `backend/` — FastAPI + SQLAlchemy + SQLite. 사인오프 런/위반/웨이버 관리, shift-left 스테이지
+- `backend/` — FastAPI + SQLAlchemy + SQLite/PostgreSQL. 사인오프 런/위반/웨이버 관리, shift-left 스테이지
   게이트, 분석 API 4종. RTL 사인오프 래더(verilator lint → CDC/리셋/FSM 설계 룰 → yosys 합성 →
   SIGNED_OFF/CONDITIONAL/REJECTED)는 `~/gitspace/ai_driven_rtl`의 결정론적 검증 모듈을 이식한 것.
   hermes-agent 기반 6-역할 LLM 분석 파이프라인(`app/hermes.py`, `app/routers/agents.py`)도
@@ -136,6 +136,8 @@ API 연동에서는 위반 응답의 `version`을 수정·웨이버 요청의 `e
 
 SQLite 운영 데이터는 온라인 백업·검증·새 경로 복원을 지원합니다.
 [백업 및 복구 안내](docs/backup-recovery.md)
+[PostgreSQL 운영](docs/postgresql.md)은 연결 설정, 자동 스키마 업그레이드 검증 범위와 PostgreSQL
+자체 백업 도구를 사용하는 운영 경계를 설명합니다.
 
 RTL 테스트벤치 입력, 실제 Icarus 실행, 컴파일·실행 로그와 소스 해시 보존을 지원합니다.
 [테스트벤치 사용 및 서버 설정](docs/rtl-simulation.md)

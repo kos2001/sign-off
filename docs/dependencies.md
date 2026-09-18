@@ -51,6 +51,8 @@ uv pip compile requirements.in --universal --python-version 3.11 \
 macOS ARM64의 새 Python 3.11 환경에서 설치/호환성 및 전체 백엔드 검사를 수행합니다.
 Linux ARM64 컨테이너에서도 같은 잠금 파일로 pip 해시 검증 설치와 실제 RTL 툴 검사를 수행합니다.
 잘못된 해시를 가진 임시 요구사항은 빈 환경에서 설치가 거절되는지도 확인합니다.
+CI는 고정 digest PostgreSQL 17 컨테이너와 psycopg 3 드라이버를 사용해 격리된 스키마에서 신규 설치,
+레거시 enum·프로젝트 업그레이드, 동시·반복 초기화와 새 enum 값 저장을 실행합니다.
 
 이 파일은 Python 패키지를 고정합니다. 운영체제의 apt 저장소·EDA 패키지 버전, 설치 도구 자체,
 다른 CPU/운영체제의 실제 실행 검증까지 고정하거나 증명하지 않습니다. Docker 기본 이미지 digest는

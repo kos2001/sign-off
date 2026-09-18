@@ -9,6 +9,20 @@ jobs:
   backend:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+        env:
+          POSTGRES_USER: signoff
+          POSTGRES_PASSWORD: signoff
+          POSTGRES_DB: signoff
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U signoff -d signoff"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     defaults:
       run:
         working-directory: backend
@@ -33,6 +47,10 @@ jobs:
       - run: pip install --require-hashes -r requirements.txt
       - run: pip check
       - run: python scripts/check_dependencies.py
+      - name: Verify PostgreSQL fresh and legacy migrations
+        env:
+          SIGNOFF_POSTGRES_TEST_URL: postgresql+psycopg://signoff:signoff@127.0.0.1:5432/signoff
+        run: python scripts/check_postgres_migrations.py
       - run: python -m pytest -ra
 
   frontend:
