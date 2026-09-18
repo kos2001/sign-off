@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1063개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1065개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -65,6 +65,10 @@ Dependabot이 backend(pip)/frontend(npm)/GitHub Actions 의존성을 매주 점�
 
 진행 상태: [서비스 개선 기록](docs/service-improvement.md).
 브라우저 검증 재현: [검증 가이드](docs/browser-verification.md).
+
+프로젝트 상세의 런 이력은 상태별 전체 집계를 유지하면서 최신 50개만 주기적으로 갱신합니다.
+이전 런은 요청할 때 커서 페이지로 불러오므로 장기 운영 프로젝트에서도 조회 비용이 전체 이력에
+비례해 계속 증가하지 않습니다.
 
 ## 실행 결과 비교
 

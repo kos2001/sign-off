@@ -24,6 +24,11 @@ export interface SignoffRun {
   evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "commercial_cdc_report" | "commercial_dft_report" | "commercial_low_power_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report";
   result_locked: boolean;
 }
+export interface RunPage {
+  items: SignoffRun[]; total: number;
+  status_counts: Record<RunStatus, number>;
+  next_before_id: number | null;
+}
 
 export interface RunEvidence {
   run_id: number;
@@ -646,6 +651,8 @@ export const api = {
   getProject: (id: number) => request<Project>(`/projects/${id}`),
   listRuns: (projectId: number) =>
     request<SignoffRun[]>(`/projects/${projectId}/runs`),
+  runPage: (projectId: number, beforeId?: number) =>
+    request<RunPage>(`/projects/${projectId}/runs/page${beforeId ? `?before_id=${beforeId}` : ''}`),
   getRun: (runId: number) => request<SignoffRun>(`/runs/${runId}`),
   runStructure: (runId: number) => request<DesignStructure>(`/runs/${runId}/evidence/structure`),
   runNetlist: (runId: number) => request<Blob>(`/runs/${runId}/evidence/netlist`, undefined, 'blob'),

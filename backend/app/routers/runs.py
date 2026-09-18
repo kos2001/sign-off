@@ -12,10 +12,11 @@ from sqlalchemy import select, update, func, or_
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 from ..db import get_db
-from ..models import Domain, RunArtifact, RunEvidence, Severity, SignoffRun, Stage, Violation, ViolationStatus, Waiver, ViolationEvent
+from ..models import Domain, RunArtifact, RunEvidence, RunStatus, Severity, SignoffRun, Stage, Violation, ViolationStatus, Waiver, ViolationEvent
 from ..schemas import (
     RunCreate,
     RunOut,
+    RunPageOut,
     RunEvidenceOut,
     RunUpdate,
     ViolationCreate,
@@ -32,6 +33,7 @@ from .projects import get_project_or_404
 router = APIRouter(tags=["signoff-runs"])
 MAX_GATE_EXPORT_BYTES = 8 * 1024 * 1024
 MAX_EVIDENCE_PACKAGE_BYTES = 32 * 1024 * 1024
+MAX_LEGACY_RUN_LIST = 1000
 
 
 def get_run_or_404(run_id: int, db: Session) -> SignoffRun:
@@ -64,7 +66,37 @@ def list_runs(
         query = query.where(SignoffRun.domain == domain)
     if stage is not None:
         query = query.where(SignoffRun.stage == stage)
-    return db.scalars(query.options(selectinload(SignoffRun.evidence)).order_by(SignoffRun.id)).all()
+    rows = db.scalars(query.options(selectinload(SignoffRun.evidence).defer(RunEvidence.source_text))
+                      .order_by(SignoffRun.id).limit(MAX_LEGACY_RUN_LIST + 1)).all()
+    if len(rows) > MAX_LEGACY_RUN_LIST:
+        raise HTTPException(413, f'run history exceeds the legacy list limit; use /projects/{project_id}/runs/page')
+    return rows
+
+
+@router.get('/projects/{project_id}/runs/page', response_model=RunPageOut)
+def run_page(project_id: int, domain: Domain | None = None, stage: Stage | None = None,
+             before_id: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
+             db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    filters = [SignoffRun.project_id == project_id]
+    if domain is not None:
+        filters.append(SignoffRun.domain == domain)
+    if stage is not None:
+        filters.append(SignoffRun.stage == stage)
+    page_filters = [*filters]
+    if before_id is not None:
+        page_filters.append(SignoffRun.id < before_id)
+    rows = db.scalars(select(SignoffRun).where(*page_filters)
+                      .options(selectinload(SignoffRun.evidence).defer(RunEvidence.source_text))
+                      .order_by(SignoffRun.id.desc()).limit(limit + 1)).all()
+    items = rows[:limit]
+    counts = {status.value: 0 for status in RunStatus}
+    for status, count in db.execute(select(SignoffRun.status, func.count()).where(*filters)
+                                    .group_by(SignoffRun.status)):
+        counts[status.value] = count
+    total = sum(counts.values())
+    return {'items': items, 'total': total, 'status_counts': counts,
+            'next_before_id': items[-1].id if len(rows) > limit else None}
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)
