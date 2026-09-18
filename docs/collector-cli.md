@@ -15,6 +15,25 @@ cd backend
 export SIGNOFF_COLLECTOR_HMAC_SECRET='비밀 관리 시스템이 주입한 32바이트 이상의 값'
 ```
 
+인증이 필요한 서버에는 프로젝트 전용 API 자격증명을 운영자가 발급한다. 토큰은 생성 응답에서
+한 번만 표시되며 DB에는 SHA-256만 저장된다.
+
+```sh
+cd backend
+PYTHONPATH=. .venv/bin/python -m app.collectors create 42 primetime-prod --valid-days 90
+export SIGNOFF_COLLECTOR_API_TOKEN='위 명령이 한 번 표시한 soct_ 토큰'
+
+# 비밀값 없이 상태 확인 및 즉시 폐기
+PYTHONPATH=. .venv/bin/python -m app.collectors list 42
+PYTHONPATH=. .venv/bin/python -m app.collectors revoke 42 primetime-prod
+```
+
+API 토큰은 전송자를 인증하고 HMAC 키는 보고서와 전체 실행 범위 claim을 결합한다. 서로 다른
+비밀값을 사용한다. API 토큰은 지정 프로젝트의 여섯 `commercial-*` 저장 POST에만 사용할 수
+있고 미리보기, 조회, 위반 처리, 게이트 승인에는 사용할 수 없다. 만료·폐기 또는 다른 프로젝트의
+토큰은 일반적인 401로 거부된다. 머신 제출은 coverage attestation이 없는 요청도 거부하므로
+서비스 자격증명만으로 서명 없는 최신 런을 만들어 게이트를 방해할 수 없다.
+
 claim 파일은 해당 도메인의 [정확한 claim 집합](coverage-attestation.md)을 한 번씩 포함하고,
 수집기가 실제 실행 로그와 입력 목록을 확인한 항목만 `true`여야 한다. 누락, 추가, `false`, 숫자
 또는 문자열 값은 거부된다. 예를 들어 STA 파일은 다음과 같다.
@@ -46,6 +65,7 @@ PYTHONPATH=. .venv/bin/python scripts/create_coverage_import.py \
   --output /collector/out/signoff-import.json
 
 curl --fail-with-body \
+  -H "Authorization: Bearer $SIGNOFF_COLLECTOR_API_TOKEN" \
   -H 'Content-Type: application/json' \
   --data-binary @/collector/out/signoff-import.json \
   https://signoff.example/projects/42/imports/commercial-sta
@@ -65,3 +85,7 @@ CLI는 UTF-8 원본 바이트, 툴과 버전, claim 집합을 검증한 후 요�
 이 도구는 claim의 철자와 서명을 검증하지만 실제 상용 툴을 실행하거나 라이선스·호스트 무결성을
 증명하지 않는다. 수집기 자동화는 툴 종료 코드, 입력 manifest, 모드/코너 목록과 커버리지 보고서를
 확인한 뒤 claim 파일을 만들어야 한다.
+
+운영 전송은 HTTPS를 사용하고 HMAC 키와 API 토큰을 서로 분리된 비밀 항목으로 관리한다. 저장된
+실행 근거에는 사용자 대신 `collector_id`와 이름이 기록되며 API 토큰과 HMAC 비밀값은 기록되지
+않는다. 키 교체 시 새 이름으로 자격증명을 발급하고 수집기를 전환한 뒤 이전 이름을 폐기한다.

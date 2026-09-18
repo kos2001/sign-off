@@ -237,6 +237,22 @@ class AuthSession(Base):
     expires_at: Mapped[int] = mapped_column()
 
 
+class CollectorCredential(Base):
+    """Project-scoped machine credential; only its SHA-256 digest is stored."""
+    __tablename__ = 'collector_credentials'
+    __table_args__ = (
+        UniqueConstraint('project_id', 'name'),
+        Index('ix_collector_credentials_project_id_id', 'project_id', 'id'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('projects.id'))
+    name: Mapped[str] = mapped_column(String(64))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[int] = mapped_column()
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class AccountSecurityEvent(Base):
     __tablename__ = 'account_security_events'
     id: Mapped[int] = mapped_column(primary_key=True)

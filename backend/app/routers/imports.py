@@ -28,6 +28,14 @@ from ..services.klayout_report import parse_klayout
 router = APIRouter(tags=['report-imports'])
 
 
+def submitter(db):
+    if user := db.info.get('user'):
+        return {'user_id': user.id, 'username': user.username}
+    if collector := db.info.get('collector'):
+        return {'collector_id': collector.id, 'name': collector.name}
+    return None
+
+
 def slack_text(value: float) -> str:
     # Keep existing short descriptions where lossless, but never hide a change
     # between distinct captured floats behind the former 12-digit rounding.
@@ -228,10 +236,9 @@ def store_timing_report(project_id, payload, result, digest, tool, evidence_sour
             return db.get(SignoffRun, receipt.run_id)
     if run := existing():
         return run
-    user = db.info.get('user')
     result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
     result['metadata']['report_format'] = result['parser']
-    result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
+    result['submitted_by'] = submitter(db)
     run = SignoffRun(project_id=project_id, domain='sta', stage=payload.stage, tool=tool,
                      status=result['status'], metrics=result['metrics'])
     run.evidence = RunEvidence(source=evidence_source, source_text=payload.source_text,
@@ -282,10 +289,9 @@ def import_commercial_power(project_id: int, payload: CommercialPowerImportPaylo
     result = apply_power_attestation(project_id, payload, parse(payload, parse_commercial_power))
     if result['tool_version'] != payload.tool_version.strip():
         raise HTTPException(422, 'tool_version must match the version captured in the report')
-    user = db.info.get('user')
     result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
     result['metadata']['report_format'] = result['parser']
-    result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
+    result['submitted_by'] = submitter(db)
     run = SignoffRun(project_id=project_id, domain='glitch_power', stage=payload.stage, tool=result['tool'], status=result['status'], metrics=result['metrics'])
     run.evidence = RunEvidence(source='commercial_power_report', source_text=payload.source_text,
         source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
@@ -325,7 +331,7 @@ def import_commercial_thermal(project_id:int,payload:CommercialThermalImportPayl
     if run:=existing():return run
     result=apply_thermal_attestation(project_id,payload,parse(payload,parse_commercial_thermal))
     if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
-    user=db.info.get('user');result['metadata']={key:getattr(payload,key) for key in ['filename','tool_version','scenario']};result['metadata']['report_format']=result['parser'];result['submitted_by']={'user_id':user.id,'username':user.username}if user else None
+    result['metadata']={key:getattr(payload,key) for key in ['filename','tool_version','scenario']};result['metadata']['report_format']=result['parser'];result['submitted_by']=submitter(db)
     run=SignoffRun(project_id=project_id,domain='thermal',stage=payload.stage,tool=result['tool'],status=result['status'],metrics=result['metrics']);run.evidence=RunEvidence(source='commercial_thermal_report',source_text=payload.source_text,source_sha256=result['source_sha256'],design_revision=payload.design_revision,result=result)
     prefix={'Cadence Celsius':'celsius','Ansys Icepak':'icepak','Siemens Calibre 3DSTACK':'calibre3d'}[result['tool']]
     for item in result['items']:
@@ -357,7 +363,7 @@ def import_commercial_rtl(project_id:int,payload:CommercialRtlImportPayload,db:S
  if run:=existing():return run
  result=apply_rtl_attestation(project_id,payload,parse(payload,parse_commercial_rtl))
  if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
- user=db.info.get('user');result['metadata']={k:getattr(payload,k)for k in['filename','tool_version','scenario']};result['metadata']['report_format']=result['parser'];result['submitted_by']={'user_id':user.id,'username':user.username}if user else None
+ result['metadata']={k:getattr(payload,k)for k in['filename','tool_version','scenario']};result['metadata']['report_format']=result['parser'];result['submitted_by']=submitter(db)
  run=SignoffRun(project_id=project_id,domain='rtl',stage=payload.stage,tool=result['tool'],status=result['status'],metrics=result['metrics']);run.evidence=RunEvidence(source='commercial_rtl_report',source_text=payload.source_text,source_sha256=result['source_sha256'],design_revision=payload.design_revision,result=result);prefix='vcs'if result['tool']=='Synopsys VCS'else'xcelium'
  if result['compile_status']=='failed':run.violations.append(Violation(check_name=f'{prefix}/compile',severity='error',location=None,description='Commercial simulator compilation failed.\n'+result['compile_log_excerpt']))
  for item in result['items']:
@@ -428,9 +434,8 @@ def store_drc_report(project_id, payload, result, digest, tool, evidence_source,
             return db.get(SignoffRun, receipt.run_id)
     if run := existing():
         return run
-    user = db.info.get('user')
     result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
-    result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
+    result['submitted_by'] = submitter(db)
     result['metadata']['report_format'] = result['parser']
     run = SignoffRun(project_id=project_id, domain='pv', stage=payload.stage, tool=tool, status=result['status'], metrics=result['metrics'])
     run.evidence = RunEvidence(source=evidence_source, source_text=payload.source_text, source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
@@ -508,10 +513,9 @@ def import_commercial_emir(project_id: int, payload: CommercialEmirImportPayload
     result = apply_emir_attestation(project_id, payload, parse(payload, parse_commercial_emir))
     if result['tool_version'] != payload.tool_version.strip():
         raise HTTPException(422, 'tool_version must match the version captured in the report')
-    user = db.info.get('user')
     result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
     result['metadata']['report_format'] = result['parser']
-    result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
+    result['submitted_by'] = submitter(db)
     run = SignoffRun(project_id=project_id, domain='emir', stage=payload.stage, tool=result['tool'],
                      status=result['status'], metrics=result['metrics'])
     run.evidence = RunEvidence(source='commercial_emir_report', source_text=payload.source_text,
