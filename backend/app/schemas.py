@@ -311,6 +311,21 @@ class StaScenarioPlanHistoryOut(BaseModel):
     next_before_id: int | None
 
 
+class CollectorDomainContractOut(BaseModel):
+    domain: Domain
+    import_path: str
+    required_claims: list[str]
+
+
+class CollectorContextOut(BaseModel):
+    format: Literal['signoff/collector-context/v1']
+    project_id: int
+    stage: Stage
+    signoff_plan: SignoffPlanStageOut
+    sta_scenario_plan: StaScenarioPlanOut
+    domains: list[CollectorDomainContractOut]
+
+
 class WaiverCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 

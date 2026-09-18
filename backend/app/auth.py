@@ -137,14 +137,17 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
             '/projects/{project_id}/imports/commercial-dft',
             '/projects/{project_id}/imports/commercial-low-power',
         }
-        if request.method != 'POST' or route not in allowed:
+        discovery = '/projects/{project_id}/collector-context/{stage}'
+        if not ((request.method == 'POST' and route in allowed)
+                or (request.method == 'GET' and route == discovery)):
             raise HTTPException(401, 'invalid collector credential')
         project_id = database_id(request.path_params.get('project_id'), 'project_id')
         if credential is None or credential.project_id != project_id:
             raise HTTPException(401, 'invalid collector credential')
-        body = await object_body(request)
-        if not isinstance(body.get('coverage_attestation'), dict):
-            raise HTTPException(422, 'collector submissions require a coverage attestation')
+        if request.method == 'POST':
+            body = await object_body(request)
+            if not isinstance(body.get('coverage_attestation'), dict):
+                raise HTTPException(422, 'collector submissions require a coverage attestation')
         db.info['collector'] = credential
         request.state.collector_id = credential.id
         return
