@@ -50,6 +50,7 @@ jobs:
       - name: Verify PostgreSQL fresh and legacy migrations
         env:
           SIGNOFF_POSTGRES_TEST_URL: postgresql+psycopg://signoff:signoff@127.0.0.1:5432/signoff
+          PYTHONPATH: .
         run: python scripts/check_postgres_migrations.py
       - run: python -m pytest -ra
 
