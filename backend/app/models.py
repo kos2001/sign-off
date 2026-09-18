@@ -286,9 +286,13 @@ class StaBatchExecution(Base):
     top_module: Mapped[str] = mapped_column(String(120))
     design_revision: Mapped[str] = mapped_column(String(160))
     status: Mapped[str] = mapped_column(String(20), default='running')
+    cancel_requested: Mapped[bool] = mapped_column(default=False)
+    worker_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    lease_expires_at: Mapped[int | None] = mapped_column(nullable=True)
     submitted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
     submitted_by: Mapped[str] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     items: Mapped[list['StaBatchExecutionItem']] = relationship(
         back_populates='batch', cascade='all, delete-orphan', order_by='StaBatchExecutionItem.position'
@@ -308,3 +312,16 @@ class StaBatchExecutionItem(Base):
     run_id: Mapped[int | None] = mapped_column(ForeignKey('signoff_runs.id'), nullable=True)
     detail: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     batch: Mapped[StaBatchExecution] = relationship(back_populates='items')
+
+
+class StaBatchInputArtifact(Base):
+    __tablename__ = 'sta_batch_input_artifacts'
+    __table_args__ = (UniqueConstraint('batch_id', 'position', 'kind'),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey('sta_batch_executions.id'), index=True)
+    position: Mapped[int]
+    kind: Mapped[str] = mapped_column(String(20))
+    content_text: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_length: Mapped[int]

@@ -390,10 +390,12 @@ class StaBatchExecutionOut(BaseModel):
     stage: Stage
     top_module: str
     design_revision: str
-    status: Literal['running', 'completed', 'partial', 'failed', 'cancelled']
+    status: Literal['queued', 'running', 'completed', 'partial', 'failed', 'cancelled']
+    cancel_requested: bool
     submitted_by_user_id: int | None
     submitted_by: str
     created_at: datetime
+    started_at: datetime | None
     finished_at: datetime | None
     items: list[StaBatchExecutionItemOut] = Field(default_factory=list)
 

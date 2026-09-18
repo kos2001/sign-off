@@ -27,6 +27,15 @@ def initialize_schema(engine):
                 columns = {item["name"] for item in inspect(connection).get_columns(table)}
                 if column not in columns:
                     connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER REFERENCES users(id)"))
+            batch_columns = {item["name"] for item in inspect(connection).get_columns("sta_batch_executions")}
+            for column, definition in {
+                "cancel_requested": "BOOLEAN NOT NULL DEFAULT 0",
+                "worker_token": "VARCHAR(32)",
+                "started_at": "DATETIME",
+                "lease_expires_at": "INTEGER",
+            }.items():
+                if column not in batch_columns:
+                    connection.execute(text(f"ALTER TABLE sta_batch_executions ADD COLUMN {column} {definition}"))
             connection.commit()
         except Exception:
             connection.rollback()

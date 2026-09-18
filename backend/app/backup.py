@@ -70,6 +70,7 @@ def inspect_database(path):
             ('sta_batch_executions', 'submitted_by_user_id', 'users'),
             ('sta_batch_execution_items', 'batch_id', 'sta_batch_executions'),
             ('sta_batch_execution_items', 'run_id', 'signoff_runs'),
+            ('sta_batch_input_artifacts', 'batch_id', 'sta_batch_executions'),
         ] if table in tables]
         for child, column, parent in references:
             optional = f'c.{quote_identifier(column)} IS NOT NULL AND ' if (child, column) in {

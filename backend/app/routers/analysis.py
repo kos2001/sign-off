@@ -4,20 +4,20 @@ import logging
 import math
 import threading
 from contextlib import closing
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import SessionLocal, get_db
 from ..auth import require_project
-from ..models import (Domain, Project, RunArtifact, RunEvidence, Severity, SignoffRun,
-                      StaBatchExecution, StaBatchExecutionItem, StaScenarioDefinition, Stage, Violation)
+from ..models import (Domain, Project, RunEvidence, Severity, SignoffRun, StaBatchExecution,
+                      StaBatchExecutionItem, StaScenarioDefinition, Stage, Violation)
 from ..schemas import (
     GlitchPowerRequest,
     IrDropRequest,
     RtlSignoffRequest,
+    StaBatchExecutionOut,
     StaBatchRequest,
     StaSignoffRequest,
     TimingSummaryRequest,
@@ -30,7 +30,8 @@ from ..services.rtl.tools import strip_fences
 from ..services.rtl.admission import acquire_slot, AdmittedStreamingResponse
 from ..services.rtl.worker_client import container_mode, stream_worker, WorkerError
 from ..services.sta_worker_client import run_sta, StaWorkerError
-from .imports import slack_text
+from ..services.sta_execution import finish_sta_batch, record_sta_run, update_batch_item
+from ..services.sta_batch_queue import submit_batch
 from ..services.timing import summarize_corners
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -192,69 +193,8 @@ def sta_signoff(payload: StaSignoffRequest, db: Session = Depends(get_db)):
         except StaWorkerError as error:
             raise HTTPException(503, str(error)) from None
     user = db.info.get('user')
-    return _record_sta_run(db, payload, worker, result, image_id,
+    return record_sta_run(db, payload, worker, result, image_id,
                            {'user_id': user.id, 'username': user.username} if user else None)
-
-
-def _record_sta_run(db, payload, worker, result, image_id, submitted_by):
-    result['metadata'] = {'filename': 'server-generated-report.json', 'tool_version': f"OpenSTA {worker['opensta_commit'][:12]}",
-                          'scenario': payload.scenario, 'top_module': payload.top_module,
-                          'parasitics': 'spef' if payload.spef is not None else 'none'}
-    result['execution'] = {'backend': 'container', 'image_id': image_id, 'opensta_commit': worker['opensta_commit'],
-                           'agent_involved': False, 'log': worker['log'], 'inputs': worker['inputs']}
-    result['input_artifacts'] = worker['inputs']
-    result['submitted_by'] = submitted_by
-    run = SignoffRun(project_id=payload.project_id, domain=Domain.sta, stage=payload.stage, tool='OpenSTA',
-                     status=result['status'], metrics=result['metrics'])
-    run.evidence = RunEvidence(source='opensta_execution', source_text=worker['report'],
-                               source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
-    run.artifacts = [RunArtifact(kind=key, content_text=getattr(payload, key), **metadata)
-                     for key, metadata in worker['inputs'].items()]
-    for path in result['paths']:
-        if path['slack_ps'] is None or path['slack_ps'] < 0:
-            run.violations.append(Violation(
-                check_name=f"opensta/{path['path_type']}/{path['fingerprint'][:32]}",
-                severity=Severity.warning if path['slack_ps'] is None else Severity.error,
-                location=path['endpoint'],
-                description=f"{payload.scenario} · {path['path_group']} · {path['startpoint']} → {path['endpoint']}\n" +
-                            ('Unconstrained path' if path['slack_ps'] is None else f"Reported slack: {slack_text(path['slack_ps'])} ps")))
-    db.add(run)
-    db.commit()
-    return {'run_id': run.id, **result}
-
-
-def _update_batch_item(batch_id, position, status, *, run_id=None, detail=None):
-    with SessionLocal() as session:
-        session.execute(update(StaBatchExecutionItem).where(
-            StaBatchExecutionItem.batch_id == batch_id,
-            StaBatchExecutionItem.position == position,
-        ).values(status=status, run_id=run_id, detail=detail).execution_options(synchronize_session=False))
-        session.commit()
-
-
-def _finish_sta_batch(batch_id, outcome):
-    with SessionLocal() as session:
-        unfinished = session.scalars(select(StaBatchExecutionItem).where(
-            StaBatchExecutionItem.batch_id == batch_id,
-            StaBatchExecutionItem.status.in_(['pending', 'running']),
-        )).all()
-        if outcome != 'normal':
-            state = 'cancelled' if outcome == 'cancelled' else 'failed'
-            detail = 'Batch request was cancelled.' if outcome == 'cancelled' else 'Batch execution was interrupted.'
-            for item in unfinished:
-                item.status, item.detail = state, detail
-        statuses = list(session.scalars(select(StaBatchExecutionItem.status).where(
-            StaBatchExecutionItem.batch_id == batch_id,
-        )))
-        if outcome == 'cancelled':
-            status = 'cancelled'
-        else:
-            completed = statuses.count('completed')
-            status = 'completed' if completed == len(statuses) else 'partial' if completed else 'failed'
-        session.execute(update(StaBatchExecution).where(StaBatchExecution.id == batch_id).values(
-            status=status, finished_at=datetime.now(timezone.utc),
-        ).execution_options(synchronize_session=False))
-        session.commit()
 
 
 @router.post('/sta-signoff/stream')
@@ -279,7 +219,7 @@ def sta_signoff_stream(payload: StaSignoffRequest, db: Session = Depends(get_db)
             yield json.dumps({'event': 'stage_start', 'stage': 'persist'}) + '\n'
             session = SessionLocal()
             try:
-                recorded = _record_sta_run(session, payload, worker, result, image_id, submitted_by)
+                recorded = record_sta_run(session, payload, worker, result, image_id, submitted_by)
             finally:
                 session.close()
             if not cancel.is_set():
@@ -338,7 +278,7 @@ def sta_signoff_batch_stream(payload: StaBatchRequest, db: Session = Depends(get
                 if cancel.is_set():
                     return
                 name = scenario.scenario.strip()
-                _update_batch_item(batch_id, index, 'running')
+                update_batch_item(batch_id, index, 'running')
                 yield json.dumps({'event': 'scenario_start', 'index': index, 'scenario': name}) + '\n'
                 single = StaSignoffRequest(
                     project_id=payload.project_id, stage=payload.stage, top_module=payload.top_module,
@@ -352,10 +292,10 @@ def sta_signoff_batch_stream(payload: StaBatchRequest, db: Session = Depends(get
                         return
                     session = SessionLocal()
                     try:
-                        recorded = _record_sta_run(session, single, worker, result, image_id, submitted_by)
+                        recorded = record_sta_run(session, single, worker, result, image_id, submitted_by)
                     finally:
                         session.close()
-                    _update_batch_item(batch_id, index, 'completed', run_id=recorded['run_id'])
+                    update_batch_item(batch_id, index, 'completed', run_id=recorded['run_id'])
                     completed.append({'scenario': name, 'run_id': recorded['run_id'],
                                       'status': recorded['status']})
                     yield json.dumps({'event': 'scenario_done', 'index': index, 'scenario': name,
@@ -363,7 +303,7 @@ def sta_signoff_batch_stream(payload: StaBatchRequest, db: Session = Depends(get
                 except StaWorkerError as error:
                     if cancel.is_set():
                         return
-                    _update_batch_item(batch_id, index, 'failed', detail=str(error)[:2000])
+                    update_batch_item(batch_id, index, 'failed', detail=str(error)[:2000])
                     failed.append({'scenario': name, 'detail': str(error)})
                     yield json.dumps({'event': 'scenario_error', 'index': index, 'scenario': name,
                                       'detail': str(error)}) + '\n'
@@ -371,22 +311,35 @@ def sta_signoff_batch_stream(payload: StaBatchRequest, db: Session = Depends(get
                     logger.error('sta_batch_persist_failed project_id=%s scenario_index=%s failure=%s',
                                  payload.project_id, index, type(error).__name__)
                     detail = 'STA result could not be recorded.'
-                    _update_batch_item(batch_id, index, 'failed', detail=detail)
+                    update_batch_item(batch_id, index, 'failed', detail=detail)
                     failed.append({'scenario': name, 'detail': detail})
                     yield json.dumps({'event': 'scenario_error', 'index': index, 'scenario': name,
                                       'detail': detail}) + '\n'
             normal = True
-            _finish_sta_batch(batch_id, 'normal')
+            finish_sta_batch(batch_id, 'normal')
             finalized = True
             yield json.dumps({'event': 'batch_done', 'batch_id': batch_id,
                               'total': len(payload.scenarios), 'completed': completed,
                               'failed': failed}) + '\n'
         finally:
             if not finalized:
-                _finish_sta_batch(batch_id, 'cancelled' if cancel.is_set() else 'normal' if normal else 'interrupted')
+                finish_sta_batch(batch_id, 'cancelled' if cancel.is_set() else 'normal' if normal else 'interrupted')
 
     try:
         return AdmittedStreamingResponse(gen(), slot, on_close=cancel.set)
     except BaseException:
-        _finish_sta_batch(batch_id, 'cancelled')
+        finish_sta_batch(batch_id, 'cancelled')
         raise
+
+
+@router.post('/sta-signoff/batch', status_code=202, response_model=StaBatchExecutionOut)
+def submit_sta_signoff_batch(payload: StaBatchRequest, db: Session = Depends(get_db)):
+    """Persist a detached batch job; the server executes it independently of the client connection."""
+    if db.get(Project, payload.project_id) is None:
+        raise HTTPException(404, 'project not found')
+    require_project(db, payload.project_id, 'editor')
+    expected = {row.name: row.require_spef for row in db.scalars(select(StaScenarioDefinition).where(
+        StaScenarioDefinition.project_id == payload.project_id,
+        StaScenarioDefinition.stage == payload.stage,
+    ))}
+    return submit_batch(db, payload, db.info.get('user'), expected)
