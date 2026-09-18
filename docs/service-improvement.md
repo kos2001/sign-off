@@ -999,8 +999,15 @@ STA/PV/EMIR/전력/열/RTL 보고서를 서버와 같은 파서로 검증하고,
 
 인증 필수 배포의 자동 수집기가 브라우저 쿠키·CSRF 없이 상용 보고서를 저장하도록 만료형 Bearer
 자격증명을 추가했다. 평문은 발급 시 한 번만 반환하고 DB에는 SHA-256만 저장한다. 지정 프로젝트의
-열 개 상용 저장 POST만 허용하며 미리보기·조회·검토·승인, 타 프로젝트, 만료·폐기 토큰과 쿠키
+열한 개 상용 저장 POST만 허용하며 미리보기·조회·검토·승인, 타 프로젝트, 만료·폐기 토큰과 쿠키
 혼합을 거부한다. evidence에는 토큰 대신 자격증명 ID와 이름을 보존한다.
+
+### 2026-09-19 · VC LP / Conformal Low Power 정적 검증
+
+UPF 전력 의도와 power domain/state, domain crossing, isolation·level shifter·retention·power switch·
+always-on·PG 연결 finding을 검증하는 `signoff/commercial-low-power/v1` 계약을 추가했다. 원본·위반·
+finding 탐색·수집기 인증에 연결한다. 전체 입력·라이브러리·domain/state·구조/기능·PG 검사 범위를
+서명한 clean 결과만 `passed`가 된다. 저전력 미적용 설계도 있으므로 공통 게이트에는 강제하지 않는다.
 
 ### 2026-09-19 · TestMAX / Tessent / Modus DFT 사인오프
 

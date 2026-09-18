@@ -15,6 +15,7 @@ from .commercial_lvs import parse_commercial_lvs
 from .commercial_lec import parse_commercial_lec
 from .commercial_cdc import parse_commercial_cdc
 from .commercial_dft import parse_commercial_dft
+from .commercial_low_power import parse_commercial_low_power
 from .coverage_attestation import REQUIRED_CLAIMS, canonical_payload
 from .report_import import parse_commercial_sta
 
@@ -30,6 +31,7 @@ PARSERS = {
     'lec': parse_commercial_lec,
     'cdc': parse_commercial_cdc,
     'dft': parse_commercial_dft,
+    'low_power': parse_commercial_low_power,
 }
 
 

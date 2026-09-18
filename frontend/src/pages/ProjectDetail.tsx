@@ -365,6 +365,7 @@ function RunsCard({
         <p>{selectedTool.description}</p>
         <p className="text-xs text-[var(--text-secondary)]">{selectedTool.workflow} 여기서 런을 생성하면 툴을 실행하지 않고 수동 런의 출처만 기록하며, 검증 근거가 없어 게이트를 통과시키지 않습니다.</p>
         {form.domain === 'dft' && <Link className="text-xs underline" to={`/projects/${projectId}/import/commercial-dft`}>TestMAX / Tessent / Modus DFT 결과 가져오기로 이동</Link>}
+        {form.domain === 'low_power' && <Link className="text-xs underline" to={`/projects/${projectId}/import/commercial-low-power`}>VC LP / Conformal Low Power 결과 가져오기로 이동</Link>}
         {form.domain === 'cdc' && <Link className="text-xs underline" to={`/projects/${projectId}/import/commercial-cdc`}>VC SpyGlass / Jasper CDC·RDC 결과 가져오기로 이동</Link>}
         {form.domain === 'rtl' && <Link className="text-xs underline" to="/analysis#rtl">RTL 분석 실행으로 이동</Link>}
         {(form.domain === 'sta' || form.domain === 'pv') && <Link className="text-xs underline" to={`/projects/${projectId}/import${form.domain === 'pv' ? '/klayout' : ''}`}>{form.domain === 'sta' ? 'OpenSTA' : 'KLayout DRC'} 보고서 가져오기로 이동</Link>}
@@ -420,6 +421,7 @@ function RunRow({ run, onChange }: { run: SignoffRun; onChange: () => void }) {
           {run.evidence_source === 'commercial_thermal_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/thermal-hotspots`}>열 핫스폿</Link>}
           {run.evidence_source === 'commercial_rtl_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/rtl-regression`}>RTL 회귀</Link>}
           {run.evidence_source === 'commercial_dft_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/dft-findings`}>DFT finding</Link>}
+          {run.evidence_source === 'commercial_low_power_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/low-power-findings`}>저전력 finding</Link>}
           {run.evidence_source === 'commercial_cdc_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/cdc-findings`}>CDC·RDC finding</Link>}
           {run.evidence_source === 'commercial_lec_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/lec-failures`}>LEC 실패</Link>}
           {run.evidence_source === 'commercial_lvs_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/lvs-mismatches`}>LVS 불일치</Link>}

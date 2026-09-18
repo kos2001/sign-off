@@ -135,6 +135,7 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
             '/projects/{project_id}/imports/commercial-lec',
             '/projects/{project_id}/imports/commercial-cdc',
             '/projects/{project_id}/imports/commercial-dft',
+            '/projects/{project_id}/imports/commercial-low-power',
         }
         if request.method != 'POST' or route not in allowed:
             raise HTTPException(401, 'invalid collector credential')
