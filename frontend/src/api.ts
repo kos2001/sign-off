@@ -51,8 +51,9 @@ export interface RevisionCoverage {
   project_id: number; design_revision: string; total_runs: number;
   required_cells: number; covered_required_cells: number;
   stages: { stage: Stage; plan_version: number; plan_source: 'default' | 'custom';
-    required_domains: Domain[]; covered_required_domains: number;
-    cells: { domain: Domain; required: boolean; run_count: number; latest_run: SignoffRun | null }[] }[];
+    required_domains: Domain[]; covered_required_domains: number; ready: boolean;
+    revision_status: 'missing' | 'mismatch' | 'consistent';
+    cells: { domain: Domain; required: boolean; run_count: number; latest_run: SignoffRun | null; gate_ready: boolean; gate_reason: string | null }[] }[];
 }
 
 export interface RunEvidence {

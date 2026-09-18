@@ -9,6 +9,24 @@ function tone(status: string) {
   return status === 'passed' ? 'good' : status === 'failed' ? 'critical' : 'warning';
 }
 
+function gateReason(reason: string | null) {
+  if (!reason) return '게이트 준비';
+  if (reason === 'no run for this stage') return '필수 결과 없음';
+  const latest = reason.match(/^latest run status is '([^']+)'$/);
+  if (latest) return `최신 런 ${latest[1]}`;
+  const blocking = reason.match(/^(\d+) open blocking violation/);
+  if (blocking) return `미해결 차단 위반 ${blocking[1]}건`;
+  const waiver = reason.match(/^(\d+) expired or out-of-scope waiver/);
+  if (waiver) return `만료·범위 불일치 웨이버 ${waiver[1]}건`;
+  const known: Record<string, string> = {
+    'Captured verification coverage required; manual status is not evidence': '검증 범위 근거 필요',
+    'Imported path report does not establish full STA coverage': 'STA 전체 범위 미확인',
+    'Executed path sample does not establish full STA coverage': 'STA 전체 범위 미확인',
+    'Trusted STA evidence targets an outdated scenario plan': '오래된 MMMC 계획 근거',
+  };
+  return known[reason] ?? reason;
+}
+
 export default function RevisionCoverage() {
   const projectId = Number(useParams().id);
   const [params, setParams] = useSearchParams();
@@ -46,13 +64,14 @@ export default function RevisionCoverage() {
         <StatTile label="결과 누락" value={coverage.data.required_cells - coverage.data.covered_required_cells} tone={coverage.data.covered_required_cells === coverage.data.required_cells ? 'good' : 'critical'} />
       </div>
       {coverage.data.stages.map(stage => <Card key={stage.stage} title={STAGE_LABELS[stage.stage]} subtitle={`사인오프 계획 v${stage.plan_version} · 필수 결과 ${stage.covered_required_domains}/${stage.required_domains.length}`}>
+        <div className="mb-3 flex flex-wrap items-center gap-2"><StatusBadge status={stage.ready ? 'good' : 'critical'} label={stage.ready ? '이 리비전 게이트 통과 가능' : '이 리비전 게이트 차단'} /><span className="text-xs text-[var(--text-muted)]">리비전 일관성: {stage.revision_status === 'consistent' ? '일치' : stage.revision_status === 'missing' ? '필수 결과 누락' : '불일치'}</span></div>
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{stage.cells.map(cell => <li key={cell.domain} className="rounded-lg border border-[var(--border)] p-3 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2"><strong>{DOMAIN_LABELS[cell.domain]}</strong><StatusBadge status={cell.latest_run ? tone(cell.latest_run.status) : cell.required ? 'critical' : 'neutral'} label={cell.latest_run ? cell.latest_run.status : '결과 없음'} /></div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><strong>{DOMAIN_LABELS[cell.domain]}</strong><StatusBadge status={cell.required ? cell.gate_ready ? 'good' : 'critical' : cell.latest_run ? tone(cell.latest_run.status) : 'neutral'} label={cell.required ? gateReason(cell.gate_reason) : cell.latest_run ? `계획 외 · ${cell.latest_run.status}` : '계획 외'} /></div>
           <p className="text-xs text-[var(--text-muted)]">{cell.required ? '필수 도메인' : '계획 외 기록'} · 기록 {cell.run_count}회</p>
-          {cell.latest_run && <><p className="text-sm break-words">최신 런 #{cell.latest_run.id} · {cell.latest_run.tool}</p><Link className="btn btn-ghost" to={`/runs/${cell.latest_run.id}`}>런 워크스페이스</Link></>}
+          {cell.latest_run && <><p className="text-sm break-words">최신 런 #{cell.latest_run.id} · {cell.latest_run.tool} · 저장 상태 {cell.latest_run.status}</p><Link className="btn btn-ghost" to={`/runs/${cell.latest_run.id}`}>런 워크스페이스</Link></>}
         </li>)}</ul>
       </Card>)}
-      <Card><p className="text-xs text-[var(--text-muted)]">이 화면은 해당 리비전의 런 존재 여부와 저장 상태를 보여줍니다. 커버리지 증명·원본 무결성·위반·웨이버·MMMC 계획을 포함한 실제 통과 판단은 각 스테이지 게이트에서 수행하며 AI는 이 매트릭스 계산에 개입하지 않습니다.</p></Card>
+      <Card><p className="text-xs text-[var(--text-muted)]">리비전 게이트는 현재 프로젝트 계획과 해당 리비전의 최신 런만 사용해 커버리지 증명·위반·웨이버·MMMC 계획을 기존 게이트와 같은 규칙으로 평가합니다. 실제 승인·근거 동결은 프로젝트의 현재 최신 게이트에서 승인자가 별도로 수행하며 AI는 이 판정에 개입하지 않습니다.</p></Card>
     </>}
   </div>;
 }

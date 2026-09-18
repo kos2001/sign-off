@@ -180,6 +180,8 @@ class RevisionCoverageCell(BaseModel):
     required: bool
     run_count: int
     latest_run: RunOut | None
+    gate_ready: bool
+    gate_reason: str | None
 
 
 class RevisionCoverageStage(BaseModel):
@@ -188,6 +190,8 @@ class RevisionCoverageStage(BaseModel):
     plan_source: Literal['default', 'custom']
     required_domains: list[Domain]
     covered_required_domains: int
+    ready: bool
+    revision_status: Literal['missing', 'mismatch', 'consistent']
     cells: list[RevisionCoverageCell]
 
 
