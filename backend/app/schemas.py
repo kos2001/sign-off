@@ -245,11 +245,14 @@ class StaSignoffRequest(BaseModel):
     netlist: str = Field(min_length=1, max_length=1_000_000)
     liberty: str = Field(min_length=1, max_length=5_000_000)
     sdc: str = Field(min_length=1, max_length=500_000)
+    spef: str | None = Field(default=None, min_length=1, max_length=8_000_000)
 
     @model_validator(mode='after')
     def nonblank_metadata(self):
         if not self.design_revision.strip() or not self.scenario.strip():
             raise ValueError('design_revision and scenario must not be blank')
+        if self.spef is not None and not self.spef.strip():
+            raise ValueError('spef must not be blank when supplied')
         return self
 
 

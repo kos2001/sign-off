@@ -182,7 +182,7 @@ def sta_signoff(payload: StaSignoffRequest, db: Session = Depends(get_db)):
     require_project(db, payload.project_id, 'editor')
     with acquire_slot():
         try:
-            worker, result, image_id = run_sta(payload.netlist, payload.liberty, payload.sdc, payload.top_module)
+            worker, result, image_id = run_sta(payload.netlist, payload.liberty, payload.sdc, payload.top_module, payload.spef)
         except StaWorkerError as error:
             raise HTTPException(503, str(error)) from None
     user = db.info.get('user')
@@ -192,7 +192,8 @@ def sta_signoff(payload: StaSignoffRequest, db: Session = Depends(get_db)):
 
 def _record_sta_run(db, payload, worker, result, image_id, submitted_by):
     result['metadata'] = {'filename': 'server-generated-report.json', 'tool_version': f"OpenSTA {worker['opensta_commit'][:12]}",
-                          'scenario': payload.scenario, 'top_module': payload.top_module}
+                          'scenario': payload.scenario, 'top_module': payload.top_module,
+                          'parasitics': 'spef' if payload.spef is not None else 'none'}
     result['execution'] = {'backend': 'container', 'image_id': image_id, 'opensta_commit': worker['opensta_commit'],
                            'agent_involved': False, 'log': worker['log'], 'inputs': worker['inputs']}
     result['input_artifacts'] = worker['inputs']
@@ -201,8 +202,8 @@ def _record_sta_run(db, payload, worker, result, image_id, submitted_by):
                      status=result['status'], metrics=result['metrics'])
     run.evidence = RunEvidence(source='opensta_execution', source_text=worker['report'],
                                source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
-    run.artifacts = [RunArtifact(kind=key, content_text=getattr(payload, key), **worker['inputs'][key])
-                     for key in ('netlist', 'liberty', 'sdc')]
+    run.artifacts = [RunArtifact(kind=key, content_text=getattr(payload, key), **metadata)
+                     for key, metadata in worker['inputs'].items()]
     for path in result['paths']:
         if path['slack_ps'] is None or path['slack_ps'] < 0:
             run.violations.append(Violation(
@@ -230,7 +231,7 @@ def sta_signoff_stream(payload: StaSignoffRequest, db: Session = Depends(get_db)
         yield json.dumps({'event': 'stage_start', 'stage': 'opensta'}) + '\n'
         try:
             worker, result, image_id = run_sta(payload.netlist, payload.liberty, payload.sdc,
-                                                payload.top_module, cancel=cancel)
+                                                payload.top_module, payload.spef, cancel=cancel)
             if cancel.is_set():
                 return
             yield json.dumps({'event': 'stage_done', 'stage': 'opensta', 'status': 'pass',
