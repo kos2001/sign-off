@@ -7,6 +7,7 @@ from fastapi import Response
 
 from app.db import SessionLocal
 from app.models import RunEvidence, SignoffReleaseDecision, SignoffRun
+from app.routers.releases import evidence_digest
 from test_auth import accounts
 
 
@@ -28,6 +29,11 @@ def test_release_decision_requires_approver_and_preserves_exact_package(accounts
     url = f"/projects/{ids['project']}/signoff-releases"
     payload = {'stage': 'final', 'decision': 'rejected', 'reason': 'coverage is incomplete'}
     assert login('editor').post(url, json=payload).status_code == 403
+    assert login('editor').get(f'{url}/review?stage=final').status_code == 403
+    review = login('approver').get(f'{url}/review?stage=final')
+    assert review.status_code == 200
+    assert review.json()['gate']['ready'] is False
+    assert len(review.json()['evidence_snapshot_sha256']) == 64
     response = login('approver').post(url, json=payload)
     assert response.status_code == 201, response.text
     item = response.json()
@@ -83,7 +89,8 @@ def test_ready_gate_approval_records_server_identity(accounts, monkeypatch):
     )
     response = login('approver').post(
         f"/projects/{ids['project']}/signoff-releases",
-        json={'stage': 'final', 'decision': 'approved', 'reason': 'all required evidence reviewed'},
+        json={'stage': 'final', 'decision': 'approved', 'reason': 'all required evidence reviewed',
+              'expected_evidence_sha256': evidence_digest(manifest)},
     )
     assert response.status_code == 201
     assert response.json()['decision'] == 'approved'
@@ -124,6 +131,34 @@ def test_ready_gate_approval_requires_pinned_target_revision(accounts, monkeypat
     response = login('approver').post(url, json=payload)
     assert response.status_code == 409
     assert '일치하지 않습니다' in response.json()['detail']
+
+
+def test_ready_gate_approval_requires_current_review_snapshot(accounts, monkeypatch):
+    _, ids, login = accounts
+    manifest = {'format': 'signoff/evidence-package/v1', 'gate': {
+        'ready': True,
+        'revision_check': {'common_revision': 'release-ready'},
+        'domains': [],
+        'stage': 'final',
+        'target_revision': {'design_revision': 'release-ready', 'version': 1},
+    }, 'runs': []}
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w') as archive:
+        archive.writestr('manifest.json', json.dumps(manifest, separators=(',', ':')).encode())
+    monkeypatch.setattr(
+        'app.routers.releases.export_signoff_package',
+        lambda project_id, stage, db: Response(output.getvalue(), media_type='application/zip'),
+    )
+    url = f"/projects/{ids['project']}/signoff-releases"
+    base = {'stage': 'final', 'decision': 'approved', 'reason': 'approve reviewed evidence'}
+
+    response = login('approver').post(url, json=base)
+    assert response.status_code == 409
+    assert '스냅샷을 검토' in response.json()['detail']
+
+    response = login('approver').post(url, json={**base, 'expected_evidence_sha256': '0' * 64})
+    assert response.status_code == 409
+    assert '근거가 변경' in response.json()['detail']
 
 
 def test_archived_package_tampering_is_rejected(accounts):

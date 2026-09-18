@@ -47,9 +47,11 @@ def test_same_revision_trusted_reports_open_and_archive_rtl_gate(client, monkeyp
         'reason': 'Pin RTL release candidate.',
     })
     assert pin.status_code == 200, pin.text
+    reviewed = client.get(f'/projects/{pid}/signoff-releases/review?stage=rtl').json()
     decision = client.post(f'/projects/{pid}/signoff-releases', json={
         'stage': 'rtl', 'decision': 'approved',
         'reason': 'Trusted collectors completed RTL regression and timing scope.',
+        'expected_evidence_sha256': reviewed['evidence_snapshot_sha256'],
     })
     assert decision.status_code == 201, decision.text
     package = client.get(f"/projects/{pid}/signoff-releases/{decision.json()['id']}/package")

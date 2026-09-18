@@ -11,11 +11,12 @@ from sqlalchemy.orm import Session, defer
 
 from ..auth import require_project
 from ..db import get_db
-from ..models import SignoffReleaseDecision
+from ..models import SignoffReleaseDecision, Stage
 from ..schemas import (
     SignoffReleaseDecisionCreate,
     SignoffReleaseDecisionOut,
     SignoffReleaseDecisionPage,
+    SignoffReleaseReviewOut,
 )
 from .runs import export_gate, export_signoff_package
 
@@ -123,6 +124,11 @@ def create_release_decision(
             raise HTTPException(409, '승인 전에 이 스테이지의 릴리스 후보 리비전을 고정하세요.')
         if common_revision != target_revision:
             raise HTTPException(409, '게이트 근거 리비전이 고정된 릴리스 후보와 일치하지 않습니다.')
+        snapshot_sha256 = evidence_digest(manifest)
+        if payload.expected_evidence_sha256 is None:
+            raise HTTPException(409, '승인 전에 현재 근거 스냅샷을 검토하세요.')
+        if payload.expected_evidence_sha256 != snapshot_sha256:
+            raise HTTPException(409, '검토 후 사인오프 근거가 변경되었습니다. 현재 근거를 다시 검토하세요.')
 
     user = db.info.get('user')
     record = SignoffReleaseDecision(
@@ -168,6 +174,19 @@ def list_release_decisions(
         items=[release_out(row, current_evidence_sha256=current[row.stage],
                            latest_decision_id=latest[row.stage], verify_evidence_snapshot=False) for row in rows],
         next_before_id=rows[-1].id if more else None,
+    )
+
+
+@router.get('/review', response_model=SignoffReleaseReviewOut)
+def review_release_evidence(project_id: int, stage: Stage, db: Session = Depends(get_db)):
+    require_project(db, project_id, 'approver')
+    response = export_gate(project_id, stage, db)
+    bundle = json.loads(bytes(response.body))
+    return SignoffReleaseReviewOut(
+        stage=stage,
+        evidence_snapshot_sha256=evidence_digest(bundle),
+        captured_at=datetime.now(timezone.utc),
+        gate=bundle['gate'],
     )
 
 
