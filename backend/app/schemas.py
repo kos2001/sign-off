@@ -120,12 +120,13 @@ class TargetRevisionHistoryOut(BaseModel):
 
 
 class SignoffReleaseDecisionCreate(BaseModel):
-    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    model_config = ConfigDict(extra='forbid')
 
     stage: Stage
     decision: Literal['approved', 'rejected']
-    reason: str = Field(min_length=1, max_length=4000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
     expected_evidence_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    confirmation_password: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class SignoffReleaseReviewOut(BaseModel):
@@ -151,6 +152,7 @@ class SignoffReleaseDecisionOut(BaseModel):
     decision_sha256: str
     chain_version: int | None
     previous_decision_sha256: str | None
+    credential_confirmed_at: datetime | None
     gate_snapshot_sha256: str | None
     evidence_snapshot_sha256: str | None
     lifecycle_status: Literal['current', 'evidence_changed', 'superseded_by_decision', 'legacy_unbound']

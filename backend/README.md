@@ -48,7 +48,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET /projects/{id}/signoff-releases/review` — approver가 승인 직전 게이트와 근거 스냅샷 SHA-256을 캡처
 - `GET /projects/{id}/signoff-releases/audit` — 결정별 서명, 이전 결정 연결과 프로젝트 체인 헤드를 검증해 변경·삭제 탐지
 - `GET /projects/{id}/signoff-releases/audit/export` — 외부 보관·오프라인 검증용 결정 감사 원장 JSON
-- `POST /projects/{id}/signoff-releases` — 승인·차단 결정과 근거 동결. 승인은 고정된 릴리스 후보와 게이트 공통 리비전이 정확히 일치하고 검토한 근거 해시가 현재 해시와 같아야 함
+- `POST /projects/{id}/signoff-releases` — 승인·차단 결정과 근거 동결. 인증 모드는 현재 비밀번호 재확인이 필수이며, 승인은 고정된 릴리스 후보와 게이트 공통 리비전 및 검토한 근거 해시가 현재 값과 같아야 함
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
 - `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자·설계 리비전·만료 기록, 상태 waived 전환). 새 웨이버는 기본 90일·최대 365일이며 만료/범위 불일치는 게이트 차단에 재반영

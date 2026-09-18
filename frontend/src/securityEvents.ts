@@ -4,6 +4,7 @@ export const securityActions: Record<string, string> = {
   admin_account_created: '관리자 계정 생성', password_reset: '운영자 비밀번호 재설정',
   account_disabled: '계정 비활성화', account_enabled: '계정 활성화',
   all_sessions_revoked: '전체 세션 종료',
+  release_confirmation_failed: '사인오프 비밀번호 확인 실패',
 };
 
 export function securityEventDate(value: string) {

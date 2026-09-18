@@ -6,14 +6,13 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import case, delete, func, select, update
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..auth import COOKIE, SESSION_SECONDS, auth_required, authorize, check_csrf, get_identity, password_hash, secure_cookie, token_hash, verify_password
+from ..auth import COOKIE, SESSION_SECONDS, auth_required, authorize, check_csrf, get_identity, password_hash, secure_cookie, throttle, token_hash, verify_password
 from ..services.access import MembershipConflict, change_membership
 from ..services.account_security import ACTIONS, record_security_event
 from ..db import get_db
-from ..models import AccountSecurityEvent, AuthSession, LoginBucket, ProjectMember, ProjectAccessEvent, User
+from ..models import AccountSecurityEvent, AuthSession, ProjectMember, ProjectAccessEvent, User
 
 router = APIRouter(prefix='/auth', tags=['accounts'])
 members_router = APIRouter(tags=['project-members'], dependencies=[Depends(authorize)])
@@ -33,27 +32,6 @@ class PasswordChange(BaseModel):
 class MemberInput(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     role: Literal['viewer', 'editor', 'approver', 'owner']
-
-
-def throttle(db, key, limit):
-    now = int(time.time())
-    digest = token_hash(key)
-    def increment():
-        return db.execute(update(LoginBucket).where(LoginBucket.key == digest).values(
-            attempts=case((LoginBucket.expires_at <= now, 1), else_=LoginBucket.attempts + 1),
-            expires_at=case((LoginBucket.expires_at <= now, now + 300), else_=LoginBucket.expires_at),
-        )).rowcount
-    if not increment():
-        db.add(LoginBucket(key=digest, attempts=1, expires_at=now + 300))
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            increment()
-    db.commit()
-    attempts = db.scalar(select(LoginBucket.attempts).where(LoginBucket.key == digest))
-    if attempts > limit:
-        raise HTTPException(429, 'too many login attempts; try again in five minutes', headers={'Retry-After': '300'})
 
 
 def public_user(user):

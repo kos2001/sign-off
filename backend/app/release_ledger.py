@@ -17,6 +17,7 @@ BASE_FIELDS = {
 }
 OPTIONAL_DIGEST_FIELDS = {'gate_snapshot_sha256', 'evidence_snapshot_sha256'}
 CHAIN_FIELDS = {'chain_version', 'previous_decision_sha256'}
+OPTIONAL_SIGNED_FIELDS = {'credential_confirmed_at'}
 
 
 def canonical_digest(payload: dict) -> str:
@@ -33,6 +34,8 @@ def decision_payload(item: dict) -> dict:
     if item.get('chain_version') is not None:
         payload['chain_version'] = item['chain_version']
         payload['previous_decision_sha256'] = item.get('previous_decision_sha256')
+    if item.get('credential_confirmed_at') is not None:
+        payload['credential_confirmed_at'] = item['credential_confirmed_at']
     return payload
 
 
@@ -71,7 +74,7 @@ def verify_ledger(ledger: dict, expected_head: str | None = None) -> dict:
     for index, item in enumerate(decisions):
         if not isinstance(item, dict):
             raise ValueError(f'decision at index {index} must be an object')
-        allowed = BASE_FIELDS | OPTIONAL_DIGEST_FIELDS | CHAIN_FIELDS | {'id', 'decision_sha256'}
+        allowed = BASE_FIELDS | OPTIONAL_DIGEST_FIELDS | OPTIONAL_SIGNED_FIELDS | CHAIN_FIELDS | {'id', 'decision_sha256'}
         if set(item) - allowed:
             raise ValueError(f'decision at index {index} contains unsigned fields')
         decision_id = item.get('id')
@@ -99,6 +102,14 @@ def verify_ledger(ledger: dict, expected_head: str | None = None) -> dict:
             raise ValueError(f'decision #{decision_id} created_at must include a timezone') from error
         normalized = dict(item)
         normalized['created_at'] = created_at.astimezone(timezone.utc).isoformat()
+        if item.get('credential_confirmed_at') is not None:
+            try:
+                confirmed_at = datetime.fromisoformat(item['credential_confirmed_at'])
+                if confirmed_at.utcoffset() is None:
+                    raise ValueError()
+            except (TypeError, ValueError) as error:
+                raise ValueError(f'decision #{decision_id} credential_confirmed_at must include a timezone') from error
+            normalized['credential_confirmed_at'] = confirmed_at.astimezone(timezone.utc).isoformat()
         try:
             actual = canonical_digest(decision_payload(normalized))
         except (KeyError, TypeError, ValueError) as error:

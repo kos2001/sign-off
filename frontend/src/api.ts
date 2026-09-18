@@ -418,6 +418,7 @@ export interface SignoffReleaseDecision {
   decided_by_user_id: number | null; manifest_sha256: string; package_sha256: string;
   decision_sha256: string; gate_snapshot_sha256: string | null; evidence_snapshot_sha256: string | null;
   chain_version: number | null; previous_decision_sha256: string | null;
+  credential_confirmed_at: string | null;
   lifecycle_status: 'current' | 'evidence_changed' | 'superseded_by_decision' | 'legacy_unbound';
   byte_length: number; created_at: string; gate: GateStatus;
 }
@@ -825,7 +826,7 @@ export const api = {
   }>(`/projects/${projectId}/signoff-releases/audit`),
   exportSignoffReleaseLedger: (projectId: number) =>
     request<Blob>(`/projects/${projectId}/signoff-releases/audit/export`, undefined, 'blob'),
-  createSignoffRelease: (projectId: number, body: { stage: Stage; decision: 'approved' | 'rejected'; reason: string; expected_evidence_sha256?: string }) =>
+  createSignoffRelease: (projectId: number, body: { stage: Stage; decision: 'approved' | 'rejected'; reason: string; expected_evidence_sha256?: string; confirmation_password?: string }) =>
     request<SignoffReleaseDecision>(`/projects/${projectId}/signoff-releases`, { method: 'POST', body: JSON.stringify(body) }),
   downloadSignoffRelease: (projectId: number, releaseId: number) =>
     request<Blob>(`/projects/${projectId}/signoff-releases/${releaseId}/package`, undefined, 'blob'),
