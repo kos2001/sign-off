@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Domain, ReportImport, RunEvidence, SignoffRun, Stage, Violation
-from ..services.coverage_attestation import AttestationConfigurationError, verify_drc_attestation, verify_emir_attestation, verify_sta_attestation
+from ..services.coverage_attestation import (
+    AttestationConfigurationError, verify_drc_attestation, verify_emir_attestation,
+    verify_power_attestation, verify_sta_attestation, verify_thermal_attestation,
+)
 from ..schemas import RunOut
 from ..services.report_import import parse_commercial_sta, parse_opensta
 from ..services.commercial_drc import parse_commercial_drc
@@ -74,6 +77,14 @@ class CommercialEmirImportPayload(ReportImportPayload):
     coverage_attestation: CoverageAttestationPayload | None = None
 
 
+class CommercialPowerImportPayload(ReportImportPayload):
+    coverage_attestation: CoverageAttestationPayload | None = None
+
+
+class CommercialThermalImportPayload(ReportImportPayload):
+    coverage_attestation: CoverageAttestationPayload | None = None
+
+
 def apply_sta_attestation(project_id, payload, result):
     try:
         verified = verify_sta_attestation(payload.coverage_attestation, project_id=project_id,
@@ -121,6 +132,40 @@ def apply_emir_attestation(project_id, payload, result):
         result['coverage'] = 'collector_attested_complete'
         result['coverage_note'] = 'Configured collector attests complete EM/IR execution scope; source report and claims are preserved.'
         if result['metrics']['violated_findings'] == 0:
+            result['status'] = 'passed'
+    return result
+
+
+def apply_power_attestation(project_id, payload, result):
+    try:
+        verified = verify_power_attestation(payload.coverage_attestation, project_id=project_id,
+                                            payload=payload, result=result)
+    except AttestationConfigurationError as error:
+        raise HTTPException(503, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    if verified:
+        result['coverage_attestation'] = verified
+        result['coverage'] = 'collector_attested_complete'
+        result['coverage_note'] = 'Configured collector attests complete power-analysis execution scope; source report and claims are preserved.'
+        if result['metrics']['violating_hierarchy_rows'] == 0 and not result['summary']['violated']:
+            result['status'] = 'passed'
+    return result
+
+
+def apply_thermal_attestation(project_id, payload, result):
+    try:
+        verified = verify_thermal_attestation(payload.coverage_attestation, project_id=project_id,
+                                              payload=payload, result=result)
+    except AttestationConfigurationError as error:
+        raise HTTPException(503, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    if verified:
+        result['coverage_attestation'] = verified
+        result['coverage'] = 'collector_attested_complete'
+        result['coverage_note'] = 'Configured collector attests complete thermal-analysis execution scope; source report and claims are preserved.'
+        if result['metrics']['violated_hotspots'] == 0:
             result['status'] = 'passed'
     return result
 
@@ -190,22 +235,19 @@ def store_timing_report(project_id, payload, result, digest, tool, evidence_sour
 
 
 @router.post('/projects/{project_id}/imports/commercial-power/preview')
-def preview_commercial_power(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+def preview_commercial_power(project_id: int, payload: CommercialPowerImportPayload, db: Session = Depends(get_db)):
     from .projects import get_project_or_404
     get_project_or_404(project_id, db)
-    result = parse(payload, parse_commercial_power)
+    result = apply_power_attestation(project_id, payload, parse(payload, parse_commercial_power))
     if result['tool_version'] != payload.tool_version.strip():
         raise HTTPException(422, 'tool_version must match the version captured in the report')
     return result
 
 
 @router.post('/projects/{project_id}/imports/commercial-power', response_model=RunOut, status_code=201)
-def import_commercial_power(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+def import_commercial_power(project_id: int, payload: CommercialPowerImportPayload, db: Session = Depends(get_db)):
     from .projects import get_project_or_404
     get_project_or_404(project_id, db)
-    result = parse(payload, parse_commercial_power)
-    if result['tool_version'] != payload.tool_version.strip():
-        raise HTTPException(422, 'tool_version must match the version captured in the report')
     digest = hashlib.sha256(json.dumps({'format': 'commercial-power', 'payload': payload.model_dump(mode='json')},
                                       sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     def existing():
@@ -215,6 +257,9 @@ def import_commercial_power(project_id: int, payload: ReportImportPayload, db: S
                 raise HTTPException(409, 'import identifier already used with different content')
             return db.get(SignoffRun, receipt.run_id)
     if run := existing(): return run
+    result = apply_power_attestation(project_id, payload, parse(payload, parse_commercial_power))
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
     user = db.info.get('user')
     result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
     result['metadata']['report_format'] = result['parser']
@@ -239,17 +284,16 @@ def import_commercial_power(project_id: int, payload: ReportImportPayload, db: S
 
 
 @router.post('/projects/{project_id}/imports/commercial-thermal/preview')
-def preview_commercial_thermal(project_id:int,payload:ReportImportPayload,db:Session=Depends(get_db)):
+def preview_commercial_thermal(project_id:int,payload:CommercialThermalImportPayload,db:Session=Depends(get_db)):
     from .projects import get_project_or_404
-    get_project_or_404(project_id,db);result=parse(payload,parse_commercial_thermal)
+    get_project_or_404(project_id,db);result=apply_thermal_attestation(project_id,payload,parse(payload,parse_commercial_thermal))
     if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
     return result
 
 @router.post('/projects/{project_id}/imports/commercial-thermal',response_model=RunOut,status_code=201)
-def import_commercial_thermal(project_id:int,payload:ReportImportPayload,db:Session=Depends(get_db)):
+def import_commercial_thermal(project_id:int,payload:CommercialThermalImportPayload,db:Session=Depends(get_db)):
     from .projects import get_project_or_404
-    get_project_or_404(project_id,db);result=parse(payload,parse_commercial_thermal)
-    if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
+    get_project_or_404(project_id,db)
     digest=hashlib.sha256(json.dumps({'format':'commercial-thermal','payload':payload.model_dump(mode='json')},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     def existing():
         receipt=db.scalar(select(ReportImport).where(ReportImport.project_id==project_id,ReportImport.import_key==str(payload.import_id)))
@@ -257,6 +301,8 @@ def import_commercial_thermal(project_id:int,payload:ReportImportPayload,db:Sess
             if receipt.payload_sha256!=digest:raise HTTPException(409,'import identifier already used with different content')
             return db.get(SignoffRun,receipt.run_id)
     if run:=existing():return run
+    result=apply_thermal_attestation(project_id,payload,parse(payload,parse_commercial_thermal))
+    if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
     user=db.info.get('user');result['metadata']={key:getattr(payload,key) for key in ['filename','tool_version','scenario']};result['metadata']['report_format']=result['parser'];result['submitted_by']={'user_id':user.id,'username':user.username}if user else None
     run=SignoffRun(project_id=project_id,domain='thermal',stage=payload.stage,tool=result['tool'],status=result['status'],metrics=result['metrics']);run.evidence=RunEvidence(source='commercial_thermal_report',source_text=payload.source_text,source_sha256=result['source_sha256'],design_revision=payload.design_revision,result=result)
     prefix={'Cadence Celsius':'celsius','Ansys Icepak':'icepak','Siemens Calibre 3DSTACK':'calibre3d'}[result['tool']]

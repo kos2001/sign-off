@@ -16,5 +16,13 @@ Z 높이, 온도와 제한을 표시합니다. 제출된 점은 전체 재료 �
 냉각·유동 및 과도 해석 범위를 증명하지 않습니다. 깨끗한 결과도 `incomplete`이며 게이트를
 통과하지 않습니다. 가져오기·계산·탐색에는 AI가 개입하지 않습니다.
 
+## 신뢰된 전체 범위
+
+운영자가 등록한 수집기는 가져오기 요청에 `signoff/coverage-attestation/v1`을 함께 보낼 수
+있습니다. 서버는 프로젝트·스테이지·리비전·툴·시나리오·원본 SHA-256과 재료, 경계 조건,
+전력 맵, 패키지 적층, 해석 범위, 메시 수렴 및 finding 완전성 claim의 HMAC 서명을 검증합니다.
+유효한 증명과 제한 초과 0건이 함께 확인될 때만 런을 `passed`로 저장하고 열 게이트 근거로
+사용합니다. 상세 계약은 [수집기 커버리지 증명](coverage-attestation.md)을 참고하세요.
+
 API는 `POST /projects/{id}/imports/commercial-thermal/preview`,
 `POST /projects/{id}/imports/commercial-thermal`, `GET /runs/{id}/thermal-hotspots`입니다.

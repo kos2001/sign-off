@@ -973,3 +973,10 @@ PrimeTime/Tempus 경로 목록과 전체 실행 범위를 구분하기 위해
 RedHawk-SC/Voltus/Totem 결과에 rail·모드/코너·활동 벡터·추출·검사·finding 전체 범위를
 결합하는 HMAC claim 집합을 추가했다. 유효한 증명과 제한 초과 0건일 때만 `passed`와 EM/IR
 게이트 준비를 허용한다. 서버가 값과 제한을 다시 비교하며 증명은 위반이나 웨이버를 변경하지 않는다.
+
+### 2026-09-19 · 신뢰된 전력·열 수집기 커버리지 증명
+
+PrimePower/Joules/PowerArtist의 모드·코너·활동도·전력 모델·계층 범위와
+Celsius/Icepak/Calibre 3DSTACK의 재료·경계·전력 맵·패키지·해석·메시 범위를 도메인별 HMAC
+claim으로 검증한다. 제한 초과가 없는 유효한 증명만 전력·열 런을 `passed`로 만들며, 동일
+리비전의 신뢰된 STA/PV/EMIR/전력/열 결과로 최종 게이트 승인과 불변 ZIP 패키지를 생성한다.
