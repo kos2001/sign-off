@@ -80,6 +80,11 @@ def test_same_revision_trusted_reports_open_and_archive_final_gate(client, monke
     assert gate['revision_check']['common_revision'] == revision
     assert all(item['ready'] for item in gate['domains'])
 
+    pin = client.put(f'/projects/{pid}/target-revisions/final', json={
+        'expected_version': 0, 'design_revision': revision,
+        'reason': 'Pin final release candidate.',
+    })
+    assert pin.status_code == 200, pin.text
     decision = client.post(f'/projects/{pid}/signoff-releases', json={
         'stage': 'final', 'decision': 'approved',
         'reason': 'Trusted collectors completed the final signoff scope.',

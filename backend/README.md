@@ -45,6 +45,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET /projects/{id}/revision-coverage` — 정확한 설계 리비전의 최신 런만 현재 계획과 대조해 결과 존재 여부·실행 수와 기존 게이트 규칙의 준비 상태·차단 사유 조회
 - `GET/PUT /projects/{id}/target-revisions[/{stage}]` — 스테이지별 릴리스 후보 리비전 조회와 approver 전용 버전형 고정·해제
 - `GET /projects/{id}/target-revisions/history` — 목표 리비전 변경 이력의 커서 페이지
+- `POST /projects/{id}/signoff-releases` — 승인·차단 결정과 근거 동결. 승인은 고정된 릴리스 후보와 게이트 공통 리비전이 정확히 일치해야 함
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
 - `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자·설계 리비전·만료 기록, 상태 waived 전환). 새 웨이버는 기본 90일·최대 365일이며 만료/범위 불일치는 게이트 차단에 재반영
