@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && .venv/bin/python -m pytest` (886개; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && .venv/bin/python -m pytest` (897개; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -123,6 +123,8 @@ RTL 테스트벤치 입력, 실제 Icarus 실행, 컴파일·실행 로그와 �
 [실행·중단·검증 범위 안내](docs/self-improvement-loop.md)
 
 프로젝트에서 [OpenSTA JSON 보고서 가져오기](docs/report-import.md)를 사용해 경로와 슬랙을 미리 보고 원본 근거·위반을 저장할 수 있습니다.
+[PrimeTime / Tempus 경로 JSON 가져오기](docs/commercial-sta-import.md)는 명시적인 툴·버전·시간 단위와
+핀 목록을 검증하고 같은 경로 탐색·비교·위반 검토 흐름에 연결합니다.
 
 운영 상태 확인과 문의 번호 로그는 [운영 점검](docs/operations.md)을 참고하세요.
 
