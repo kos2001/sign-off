@@ -33,10 +33,30 @@ REQUIRED_EMIR_CLAIMS = {
     'checks_complete',
     'findings_complete',
 }
+REQUIRED_POWER_CLAIMS = {
+    'tool_run_completed',
+    'modes_corners_complete',
+    'activity_vectors_complete',
+    'power_models_complete',
+    'hierarchy_complete',
+    'findings_complete',
+}
+REQUIRED_THERMAL_CLAIMS = {
+    'tool_run_completed',
+    'material_models_complete',
+    'boundary_conditions_complete',
+    'power_map_complete',
+    'package_stack_complete',
+    'analysis_scope_complete',
+    'mesh_convergence_complete',
+    'findings_complete',
+}
 REQUIRED_CLAIMS = {
     'sta': REQUIRED_STA_CLAIMS,
     'pv': REQUIRED_DRC_CLAIMS,
     'emir': REQUIRED_EMIR_CLAIMS,
+    'glitch_power': REQUIRED_POWER_CLAIMS,
+    'thermal': REQUIRED_THERMAL_CLAIMS,
 }
 
 
@@ -144,3 +164,11 @@ def verify_drc_attestation(attestation, **context):
 
 def verify_emir_attestation(attestation, **context):
     return verify_attestation(attestation, domain='emir', **context)
+
+
+def verify_power_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='glitch_power', **context)
+
+
+def verify_thermal_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='thermal', **context)

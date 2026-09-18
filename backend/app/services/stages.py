@@ -50,6 +50,8 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             Domain.sta: 'commercial_sta_report',
             Domain.pv: 'commercial_drc_report',
             Domain.emir: 'commercial_emir_report',
+            Domain.glitch_power: 'commercial_power_report',
+            Domain.thermal: 'commercial_thermal_report',
         }.get(latest.domain)
         attested_coverage = bool(
             attested_source
@@ -71,10 +73,10 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
         elif latest.evidence_source == 'commercial_emir_report' and not attested_coverage:
             reason = 'Imported power-integrity findings do not establish full EM/IR coverage'
             ready = False
-        elif latest.evidence_source == 'commercial_power_report':
+        elif latest.evidence_source == 'commercial_power_report' and not attested_coverage:
             reason = 'Imported power summary does not establish full activity and mode coverage'
             ready = False
-        elif latest.evidence_source == 'commercial_thermal_report':
+        elif latest.evidence_source == 'commercial_thermal_report' and not attested_coverage:
             reason = 'Imported thermal hotspots do not establish full thermal coverage'
             ready = False
         elif latest.domain == Domain.rtl and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
