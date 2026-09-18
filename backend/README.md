@@ -1,6 +1,6 @@
 # Sign-off Hub — Backend
 
-칩 설계 사인오프 관리·분석 백엔드 (FastAPI + SQLAlchemy + SQLite).
+칩 설계 사인오프 관리·분석 백엔드 (FastAPI + SQLAlchemy + SQLite/PostgreSQL).
 루트의 `signoff-latest-tech-and-skills.md` 리서치 리포트에서 다룬 기술들을 실행 가능한 서비스로 구현한 MVP입니다.
 
 ## 리포트 → 구현 매핑
@@ -207,12 +207,9 @@ OpenSTA 실행은 `SIGNOFF_STA_MAX_CONCURRENT`(기본 2)와 `SIGNOFF_STA_SLOT_DI
 
 기본 SQLite는 시작 시 `run_evidence` 테이블을 추가합니다. 기존 VARCHAR 상태 열에
 incomplete를 저장할 수 있으며 기존 스키마로 만든 DB의 호환성을 회귀 테스트했습니다.
-기존 PostgreSQL에서 native `runstatus` enum을 사용했다면 앱을 시작하기 전에 아래 enum
-확장을 별도 마이그레이션으로 적용해야 합니다. PostgreSQL 업그레이드 자체는 아직 검증하지 않았습니다.
-
-```sql
-ALTER TYPE runstatus ADD VALUE IF NOT EXISTS 'incomplete';
-```
+기존 PostgreSQL의 native `domain`과 `runstatus` enum은 시작 잠금 안에서 현재 값으로 자동
+확장합니다. enum 확장은 커밋한 뒤 나머지 스키마 변경을 수행하므로 같은 시작 과정에서 새 값을
+안전하게 사용할 수 있습니다.
 
 ## 동시 검토와 클라이언트 갱신
 
@@ -240,8 +237,8 @@ bool, 양수가 아닌 값은 422입니다. 조회한 값을 그대로 보내고
 `app/migrations.py`가 시작 시 기존 violations 테이블에 `version INTEGER NOT NULL DEFAULT 1`을
 추가합니다. 기존 행과 이력은 유지하며, 기존 행의 버전은 업그레이드 시점부터 1로 시작합니다.
 SQLite는 BEGIN IMMEDIATE로, PostgreSQL은 트랜잭션 advisory lock으로 여러 새 서버의
-동시 초기화를 직렬화합니다. SQLite의 동시·반복 실행과 데이터 보존은 테스트했으며,
-PostgreSQL 실환경 업그레이드 검증은 남아 있습니다. 앞 절의 runstatus enum 확장도 필요합니다.
+동시 초기화를 직렬화합니다. 두 DB 모두 동시·반복 실행과 레거시 데이터 보존을 검사하며,
+PostgreSQL 17 서비스 검증은 모든 PR의 CI에서 실행합니다.
 
 구버전 서버는 버전을 증가시키지 않으므로 신·구 서버의 쓰기 요청을 혼용하지 마세요.
 기존 서버를 종료한 뒤 새 서버를 시작하고, 클라이언트도 expected_version을 보내도록 갱신합니다.

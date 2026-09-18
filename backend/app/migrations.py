@@ -3,7 +3,7 @@
 from sqlalchemy import inspect, text
 
 from .db import Base
-from .models import Domain
+from .models import Domain, RunStatus
 
 
 def initialize_schema(engine):
@@ -17,13 +17,19 @@ def initialize_schema(engine):
                 # newly shipped domains in their own committed transaction so
                 # later startup work can use them immediately on every
                 # supported PostgreSQL version.
-                domain_type_exists = connection.execute(text(
-                    "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'domain')"
-                )).scalar_one()
-                if domain_type_exists:
-                    for value in Domain:
+                enum_types = {row[0] for row in connection.execute(text(
+                    "SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace "
+                    "WHERE n.nspname = current_schema() AND t.typname IN ('domain', 'runstatus')"
+                ))}
+                for type_name, enum_class in [('domain', Domain), ('runstatus', RunStatus)]:
+                    if type_name not in enum_types:
+                        continue
+                    for value in enum_class:
                         literal = value.value.replace("'", "''")
-                        connection.execute(text(f"ALTER TYPE domain ADD VALUE IF NOT EXISTS '{literal}'"))
+                        connection.execute(text(
+                            f"ALTER TYPE {type_name} ADD VALUE IF NOT EXISTS '{literal}'"
+                        ))
+                if enum_types:
                     connection.commit()
                     connection.execute(text("SELECT pg_advisory_xact_lock(738421905)"))
             Base.metadata.create_all(connection)
@@ -77,9 +83,9 @@ def initialize_schema(engine):
                 connection.execute(text(f'ALTER TABLE signoff_release_decisions ADD COLUMN credential_confirmed_at {timestamp_type}'))
             batch_columns = {item["name"] for item in inspect(connection).get_columns("sta_batch_executions")}
             for column, definition in {
-                "cancel_requested": "BOOLEAN NOT NULL DEFAULT 0",
+                "cancel_requested": f"BOOLEAN NOT NULL DEFAULT {'FALSE' if engine.dialect.name == 'postgresql' else '0'}",
                 "worker_token": "VARCHAR(32)",
-                "started_at": "DATETIME",
+                "started_at": timestamp_type,
                 "lease_expires_at": "INTEGER",
                 "retry_of_batch_id": "INTEGER REFERENCES sta_batch_executions(id)",
                 "retry_request_key": "VARCHAR(36)",
@@ -93,7 +99,7 @@ def initialize_schema(engine):
             item_columns = {item["name"] for item in inspect(connection).get_columns("sta_batch_execution_items")}
             for column in ('started_at', 'finished_at'):
                 if column not in item_columns:
-                    connection.execute(text(f"ALTER TABLE sta_batch_execution_items ADD COLUMN {column} DATETIME"))
+                    connection.execute(text(f"ALTER TABLE sta_batch_execution_items ADD COLUMN {column} {timestamp_type}"))
             collector_columns = {item['name'] for item in inspect(connection).get_columns('collector_credentials')}
             if 'last_used_at' not in collector_columns:
                 connection.execute(text(
