@@ -59,6 +59,11 @@ def test_same_revision_trusted_reports_open_and_archive_routing_gate(client, mon
     }
     assert all(item['ready'] for item in gate['domains'])
 
+    pin = client.put(f'/projects/{pid}/target-revisions/routing', json={
+        'expected_version': 0, 'design_revision': revision,
+        'reason': 'Pin routing release candidate.',
+    })
+    assert pin.status_code == 200, pin.text
     decision = client.post(f'/projects/{pid}/signoff-releases', json={
         'stage': 'routing', 'decision': 'approved',
         'reason': 'Trusted collectors completed the routing signoff scope.',
