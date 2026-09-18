@@ -16,6 +16,7 @@ from ..services.commercial_drc import parse_commercial_drc
 from ..services.commercial_emir import parse_commercial_emir
 from ..services.commercial_power import parse_commercial_power
 from ..services.commercial_thermal import parse_commercial_thermal
+from ..services.commercial_rtl import parse_commercial_rtl
 from ..services.klayout_report import parse_klayout
 
 router = APIRouter(tags=['report-imports'])
@@ -183,6 +184,37 @@ def import_commercial_thermal(project_id:int,payload:ReportImportPayload,db:Sess
         if run:=existing():return run
         raise
     return run
+
+@router.post('/projects/{project_id}/imports/commercial-rtl/preview')
+def preview_commercial_rtl(project_id:int,payload:ReportImportPayload,db:Session=Depends(get_db)):
+ from .projects import get_project_or_404
+ get_project_or_404(project_id,db);result=parse(payload,parse_commercial_rtl)
+ if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
+ return result
+@router.post('/projects/{project_id}/imports/commercial-rtl',response_model=RunOut,status_code=201)
+def import_commercial_rtl(project_id:int,payload:ReportImportPayload,db:Session=Depends(get_db)):
+ from .projects import get_project_or_404
+ get_project_or_404(project_id,db);result=parse(payload,parse_commercial_rtl)
+ if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
+ digest=hashlib.sha256(json.dumps({'format':'commercial-rtl','payload':payload.model_dump(mode='json')},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+ def existing():
+  receipt=db.scalar(select(ReportImport).where(ReportImport.project_id==project_id,ReportImport.import_key==str(payload.import_id)))
+  if receipt:
+   if receipt.payload_sha256!=digest:raise HTTPException(409,'import identifier already used with different content')
+   return db.get(SignoffRun,receipt.run_id)
+ if run:=existing():return run
+ user=db.info.get('user');result['metadata']={k:getattr(payload,k)for k in['filename','tool_version','scenario']};result['metadata']['report_format']=result['parser'];result['submitted_by']={'user_id':user.id,'username':user.username}if user else None
+ run=SignoffRun(project_id=project_id,domain='rtl',stage=payload.stage,tool=result['tool'],status=result['status'],metrics=result['metrics']);run.evidence=RunEvidence(source='commercial_rtl_report',source_text=payload.source_text,source_sha256=result['source_sha256'],design_revision=payload.design_revision,result=result);prefix='vcs'if result['tool']=='Synopsys VCS'else'xcelium'
+ if result['compile_status']=='failed':run.violations.append(Violation(check_name=f'{prefix}/compile',severity='error',location=None,description='Commercial simulator compilation failed.\n'+result['compile_log_excerpt']))
+ for item in result['items']:
+  if item['status']=='failed':run.violations.append(Violation(check_name=f"{prefix}/test/{item['fingerprint'][:32]}",severity='error',location=item['name'],description=f"Test failed · seed {item['seed']} · failed assertions {item['assertions']['failed']}\n{item['log_excerpt']}"))
+ db.add(run)
+ try:db.flush();db.add(ReportImport(project_id=project_id,import_key=str(payload.import_id),payload_sha256=digest,run_id=run.id));db.commit()
+ except IntegrityError:
+  db.rollback()
+  if run:=existing():return run
+  raise
+ return run
 
 
 @router.post('/projects/{project_id}/imports/commercial-sta/preview')
