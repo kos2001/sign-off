@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -382,6 +383,11 @@ class StaBatchExecutionItemOut(BaseModel):
     detail: str | None
 
 
+class StaBatchRetryRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    request_key: UUID
+
+
 class StaBatchExecutionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -390,6 +396,8 @@ class StaBatchExecutionOut(BaseModel):
     stage: Stage
     top_module: str
     design_revision: str
+    retry_of_batch_id: int | None
+    attempt: int
     status: Literal['queued', 'running', 'completed', 'partial', 'failed', 'cancelled']
     cancel_requested: bool
     submitted_by_user_id: int | None

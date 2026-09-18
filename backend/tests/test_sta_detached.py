@@ -61,6 +61,68 @@ def test_detached_batch_survives_request_and_records_artifacts(client, monkeypat
         assert all(item.sha256 == hashlib.sha256(item.content_text.encode()).hexdigest() for item in artifacts)
 
 
+def test_terminal_batch_retry_is_idempotent_and_preserves_lineage(client, monkeypatch):
+    pid = project(client)
+    monkeypatch.setattr('app.services.sta_batch_queue.run_sta', lambda *args, **kwargs: worker_result())
+    source = client.post('/analysis/sta-signoff/batch', json=payload(pid, 1)).json()
+    wait_terminal(client, pid, source['id'])
+    key = str(uuid.uuid4())
+    first = client.post(f"/projects/{pid}/sta-batches/{source['id']}/retry",
+                        json={'request_key': key})
+    second = client.post(f"/projects/{pid}/sta-batches/{source['id']}/retry",
+                         json={'request_key': key})
+    assert first.status_code == second.status_code == 202
+    assert first.json()['id'] == second.json()['id']
+    retried = wait_terminal(client, pid, first.json()['id'])
+    assert retried['status'] == 'completed'
+    assert retried['retry_of_batch_id'] == source['id'] and retried['attempt'] == 2
+    with SessionLocal() as db:
+        assert db.query(StaBatchExecution).filter_by(retry_request_key=key).count() == 1
+        source_inputs = db.query(StaBatchInputArtifact).filter_by(batch_id=source['id']).all()
+        retry_inputs = db.query(StaBatchInputArtifact).filter_by(batch_id=retried['id']).all()
+        assert [(x.position, x.kind, x.sha256) for x in retry_inputs] == [
+            (x.position, x.kind, x.sha256) for x in source_inputs]
+
+
+def test_active_batch_cannot_be_retried(client):
+    pid = project(client)
+    with SessionLocal() as db:
+        batch = StaBatchExecution(project_id=pid, stage=Stage.routing, top_module='top',
+            design_revision='active', submitted_by='local', status='running',
+            items=[StaBatchExecutionItem(position=0, scenario='busy', status='running')])
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+    response = client.post(f'/projects/{pid}/sta-batches/{batch_id}/retry',
+                           json={'request_key': str(uuid.uuid4())})
+    assert response.status_code == 409
+
+
+def test_retry_rejects_tampered_source_inputs_without_creating_attempt(client):
+    pid = project(client)
+    with SessionLocal() as db:
+        batch = StaBatchExecution(project_id=pid, stage=Stage.routing, top_module='top',
+            design_revision='bad-source', submitted_by='local', status='failed',
+            items=[StaBatchExecutionItem(position=0, scenario='bad', status='failed')])
+        db.add(batch)
+        db.flush()
+        db.add_all([
+            StaBatchInputArtifact(batch_id=batch.id, position=-1, kind='netlist',
+                content_text='module top; endmodule', sha256='0' * 64, byte_length=21),
+            StaBatchInputArtifact(batch_id=batch.id, position=0, kind='liberty',
+                content_text='lib', sha256=hashlib.sha256(b'lib').hexdigest(), byte_length=3),
+            StaBatchInputArtifact(batch_id=batch.id, position=0, kind='sdc',
+                content_text='sdc', sha256=hashlib.sha256(b'sdc').hexdigest(), byte_length=3),
+        ])
+        db.commit()
+        batch_id = batch.id
+    response = client.post(f'/projects/{pid}/sta-batches/{batch_id}/retry',
+                           json={'request_key': str(uuid.uuid4())})
+    assert response.status_code == 409
+    with SessionLocal() as db:
+        assert db.query(StaBatchExecution).filter_by(retry_of_batch_id=batch_id).count() == 0
+
+
 def test_running_detached_batch_can_be_cancelled(client, monkeypatch):
     pid = project(client)
     started = threading.Event()

@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && .venv/bin/python -m pytest` (871개; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && .venv/bin/python -m pytest` (874개; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -83,6 +83,8 @@ Dependabot이 backend(pip)/frontend(npm)/GitHub Actions 의존성을 매주 점�
 컨테이너에서 순차 실행합니다. 일부 시나리오가 실패해도 나머지를 계속하고 성공 결과를 각각
 독립 런과 입력 근거로 저장합니다. 배치 접수자와 항목별 대기·실행·성공·실패·취소 상태는
 DB 매니페스트에 남아 실행 화면에서 다시 확인하거나 진행 중인 작업을 취소할 수 있습니다.
+종결된 배치는 서버에 검증된 입력을 다시 업로드하지 않고 동일 입력으로 재실행할 수 있으며,
+원본 배치 번호와 시도 번호를 보존해 결과 계보를 추적합니다.
 
 ## RTL 실행 근거
 
