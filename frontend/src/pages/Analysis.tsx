@@ -202,7 +202,7 @@ function StaSignoffSection() {
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<number | null>(null);
-  const [batchProgress, setBatchProgress] = useState<Record<string, { status: 'pending' | 'running' | 'passed' | 'failed'; detail?: string; runId?: number }>>({});
+  const [cancellingBatch, setCancellingBatch] = useState<number | null>(null);
   const expectedScenarios = useQuery({
     queryKey: ['sta-scenarios', projectId, stage],
     queryFn: () => api.staScenarios(Number(projectId), stage as 'rtl' | 'synthesis' | 'placement' | 'routing' | 'final'),
@@ -212,7 +212,7 @@ function StaSignoffSection() {
     queryKey: ['sta-batches', projectId],
     queryFn: () => api.staBatches(Number(projectId)),
     enabled: projectId !== '',
-    refetchInterval: query => query.state.data?.items.some(item => item.status === 'running') ? 2000 : false,
+    refetchInterval: query => query.state.data?.items.some(item => item.status === 'queued' || item.status === 'running') ? 2000 : false,
   });
   const fields = [
     { label: "게이트 레벨 Verilog 넷리스트", value: netlist, set: setNetlist, accept: ".v,.sv", max: 1_000_000 },
@@ -250,18 +250,13 @@ function StaSignoffSection() {
   }
   async function executeBatch() {
     setBatchRunning(true); setBatchError(null); setBatchId(null);
-    setBatchProgress(Object.fromEntries(batchRows.map(row => [row.scenario.trim(), { status: 'pending' as const }])));
     try {
-      await api.staBatchStream({ project_id: Number(projectId), stage: stage as 'rtl' | 'synthesis' | 'placement' | 'routing' | 'final',
+      const receipt = await api.submitStaBatch({ project_id: Number(projectId), stage: stage as 'rtl' | 'synthesis' | 'placement' | 'routing' | 'final',
         top_module: topModule.trim(), design_revision: revision.trim(), netlist,
         scenarios: batchRows.map(row => ({ scenario: row.scenario.trim(), liberty: row.liberty,
-          sdc: row.sdc, ...(row.spef.trim() ? { spef: row.spef } : {}) })) }, event => {
-        if (event.event === 'batch_start') { setBatchId(event.batch_id); void qc.invalidateQueries({ queryKey: ['sta-batches', projectId] }); }
-        if (event.event === 'scenario_start') setBatchProgress(previous => ({ ...previous, [event.scenario]: { status: 'running' } }));
-        if (event.event === 'scenario_done') setBatchProgress(previous => ({ ...previous, [event.scenario]: { status: 'passed', runId: event.result.run_id } }));
-        if (event.event === 'scenario_error') setBatchProgress(previous => ({ ...previous, [event.scenario]: { status: 'failed', detail: event.detail } }));
-        if (event.event === 'batch_done') void qc.invalidateQueries({ queryKey: ['sta-batches', projectId] });
-      });
+          sdc: row.sdc, ...(row.spef.trim() ? { spef: row.spef } : {}) })) });
+      setBatchId(receipt.id);
+      await qc.invalidateQueries({ queryKey: ['sta-batches', projectId] });
     } catch (reason) {
       setBatchError((reason as Error).message);
     } finally { setBatchRunning(false); }
@@ -292,7 +287,7 @@ function StaSignoffSection() {
     {result && <div className="mt-4 rounded-lg border border-[var(--border)] p-3 text-sm space-y-2"><p><strong>런 #{result.run_id}</strong> · 보고 경로 {result.metrics.reported_paths}개 · 위반 {result.metrics.violating_paths}개 · 최악 슬랙 {result.metrics.worst_reported_slack_ps ?? "없음"} ps</p><p className="text-xs text-[var(--text-secondary)]">OpenSTA {result.execution.opensta_commit.slice(0, 12)} · AI 개입 없음 · 경로 표본만 생성되어 전체 STA 게이트는 미완료로 유지됩니다.</p><Link className="btn btn-ghost inline-block" to={`/runs/${result.run_id}`}>런 작업공간 열기</Link></div>}
     <details className="mt-5 rounded-lg border border-[var(--border)] p-4">
       <summary className="cursor-pointer font-semibold">MCMM 시나리오 배치 실행</summary>
-      <p className="mt-2 text-xs text-[var(--text-secondary)]">위의 프로젝트·단계·최상위 모듈·리비전·넷리스트를 공통으로 사용합니다. 시나리오마다 Liberty·SDC와 선택 SPEF를 지정하며, 한 시나리오의 실패가 뒤 실행을 막지 않습니다. 최대 8개, 전체 입력 32 MiB입니다.</p>
+      <p className="mt-2 text-xs text-[var(--text-secondary)]">위의 프로젝트·단계·최상위 모듈·리비전·넷리스트를 공통으로 사용합니다. 서버 작업 큐에 접수되므로 브라우저를 닫아도 실행하며, 한 시나리오의 실패가 뒤 실행을 막지 않습니다. 최대 8개, 전체 입력 32 MiB입니다.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button className="btn btn-ghost" disabled={!expectedScenarios.data?.length || batchRunning} onClick={() => setBatchRows(expectedScenarios.data!.slice(0, 8).map(item => ({ scenario: item.name, liberty: '', sdc: '', spef: '', requireSpef: item.require_spef })))}>기대 시나리오 불러오기</button>
         <button className="btn btn-ghost" disabled={batchRows.length >= 8 || batchRunning} onClick={() => setBatchRows(rows => [...rows, { scenario: '', liberty: '', sdc: '', spef: '', requireSpef: false }])}>시나리오 추가</button>
@@ -303,18 +298,17 @@ function StaSignoffSection() {
         <div className="mt-3 grid gap-3 sm:grid-cols-3">{([
           ['liberty', 'Liberty', '.lib', 5_000_000], ['sdc', 'SDC', '.sdc', 500_000], ['spef', 'SPEF (선택)', '.spef', 8_000_000],
         ] as const).map(([key, label, accept, max]) => <label className="text-xs" key={key}>{label}<input className="mt-1 block w-full" type="file" accept={accept} disabled={batchRunning} onChange={event => loadBatchFile(event.target.files?.[0], index, key, max)} /><span className="text-[var(--text-muted)]">{new Blob([row[key]]).size.toLocaleString()} bytes</span></label>)}</div>
-        {batchProgress[row.scenario.trim()] && <p role="status" className="mt-2 text-xs">{batchProgress[row.scenario.trim()].status === 'pending' ? '대기' : batchProgress[row.scenario.trim()].status === 'running' ? '실행 중' : batchProgress[row.scenario.trim()].status === 'passed' ? '완료' : `실패 · ${batchProgress[row.scenario.trim()].detail}`}{batchProgress[row.scenario.trim()].runId && <> · <Link className="underline" to={`/runs/${batchProgress[row.scenario.trim()].runId}`}>run #{batchProgress[row.scenario.trim()].runId}</Link></>}</p>}
       </section>)}</div>
       {batchRows.length === 0 && <p className="mt-3 text-sm text-[var(--text-muted)]">기대 세트를 불러오거나 시나리오를 추가하세요.</p>}
       {new Set(batchNames).size !== batchNames.length && batchRows.length > 1 && <p role="alert" className="mt-2 text-sm">시나리오 이름은 대소문자를 무시하고 고유해야 합니다.</p>}
-      <button className="btn btn-primary mt-3" disabled={!batchValid || batchRunning} onClick={executeBatch}>{batchRunning ? '배치 실행 중…' : `${batchRows.length}개 시나리오 실행 및 기록`}</button>
-      {batchId && <p role="status" className="mt-2 text-xs">배치 #{batchId} · 실행 매니페스트 저장됨</p>}
+      <button className="btn btn-primary mt-3" disabled={!batchValid || batchRunning} onClick={executeBatch}>{batchRunning ? '배치 제출 중…' : `${batchRows.length}개 시나리오 작업 제출`}</button>
+      {batchId && <p role="status" className="mt-2 text-xs">배치 #{batchId}가 서버 작업 큐에 접수됐습니다. 이 페이지를 닫아도 실행을 계속합니다.</p>}
       {batchError && <p role="alert" className="mt-3 text-sm">{batchError}</p>}
       <section className="mt-5 border-t border-[var(--border)] pt-4" aria-label="최근 STA 배치 이력">
         <h3 className="text-sm font-semibold">최근 배치 이력</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">접수한 시나리오와 성공·실패·취소 상태를 서버 DB에서 조회합니다. 입력 파일 본문은 각 성공 런의 실행 근거에 저장됩니다.</p>
         {batchHistory.isPending && projectId !== '' ? <p role="status" className="mt-3 text-sm">배치 이력 불러오는 중…</p> : batchHistory.isError ? <p role="alert" className="mt-3 text-sm">{batchHistory.error.message}</p> : <ul className="mt-3 space-y-3">{(batchHistory.data?.items ?? []).slice(0, 5).map(batch => <li className="rounded-lg border border-[var(--border)] p-3" key={batch.id}>
-          <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">배치 #{batch.id} · {batch.design_revision}</p><StatusBadge status={batch.status === 'completed' ? 'good' : batch.status === 'running' ? 'warning' : batch.status === 'partial' ? 'serious' : 'critical'} label={{ running: '실행 중', completed: '완료', partial: '부분 성공', failed: '실패', cancelled: '취소' }[batch.status]} /></div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">배치 #{batch.id} · {batch.design_revision}</p><div className="flex items-center gap-2"><StatusBadge status={batch.status === 'completed' ? 'good' : batch.status === 'queued' ? 'neutral' : batch.status === 'running' ? 'warning' : batch.status === 'partial' ? 'serious' : 'critical'} label={{ queued: '대기', running: batch.cancel_requested ? '취소 처리 중' : '실행 중', completed: '완료', partial: '부분 성공', failed: '실패', cancelled: '취소' }[batch.status]} />{(batch.status === 'queued' || batch.status === 'running') && auth.can(Number(projectId), 'editor') && <button className="btn btn-ghost" disabled={cancellingBatch === batch.id || batch.cancel_requested} onClick={async () => { setCancellingBatch(batch.id); setBatchError(null); try { await api.cancelStaBatch(Number(projectId), batch.id); await qc.invalidateQueries({ queryKey: ['sta-batches', projectId] }); } catch (reason) { setBatchError((reason as Error).message); } finally { setCancellingBatch(null); } }}>{cancellingBatch === batch.id ? '취소 요청 중…' : '작업 취소'}</button>}</div></div>
           <p className="mt-1 text-xs text-[var(--text-muted)]">{batch.stage} · {batch.top_module} · {batch.submitted_by} · {new Date(batch.created_at.endsWith('Z') || /[+-]\d\d:\d\d$/.test(batch.created_at) ? batch.created_at : batch.created_at + 'Z').toLocaleString('ko-KR')}</p>
           <div className="mt-2 flex flex-wrap gap-2">{batch.items.map(item => <span className="rounded border border-[var(--border)] px-2 py-1 text-xs" key={item.position}>{item.scenario} · {item.run_id ? <Link className="underline" to={`/runs/${item.run_id}`}>run #{item.run_id}</Link> : item.status === 'running' ? '실행 중' : item.status === 'pending' ? '대기' : item.status === 'cancelled' ? '취소' : '실패'}</span>)}</div>
         </li>)}</ul>}

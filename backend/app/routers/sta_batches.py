@@ -1,9 +1,12 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from ..db import get_db
-from ..models import StaBatchExecution
+from ..auth import require_project
+from ..models import StaBatchExecution, StaBatchExecutionItem
 from ..schemas import StaBatchExecutionOut, StaBatchExecutionPage
 from .projects import get_project_or_404
 
@@ -35,3 +38,40 @@ def get_sta_batch(project_id: int, batch_id: int, db: Session = Depends(get_db))
     if row is None:
         raise HTTPException(404, 'STA batch not found')
     return row
+
+
+@router.post('/projects/{project_id}/sta-batches/{batch_id}/cancel', response_model=StaBatchExecutionOut)
+def cancel_sta_batch(project_id: int, batch_id: int, db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    require_project(db, project_id, 'editor')
+    row = db.scalar(select(StaBatchExecution).where(
+        StaBatchExecution.id == batch_id, StaBatchExecution.project_id == project_id,
+    ).options(selectinload(StaBatchExecution.items)))
+    if row is None:
+        raise HTTPException(404, 'STA batch not found')
+    if row.status not in {'queued', 'running'}:
+        raise HTTPException(409, 'only queued or running STA batches can be cancelled')
+    if row.status == 'queued':
+        changed = db.execute(update(StaBatchExecution).where(
+            StaBatchExecution.id == batch_id, StaBatchExecution.status == 'queued',
+        ).values(status='cancelled', cancel_requested=True, finished_at=datetime.now(timezone.utc))
+            .execution_options(synchronize_session=False))
+        if changed.rowcount != 1:
+            db.rollback()
+            raise HTTPException(409, 'STA batch state changed; reload and try again')
+        db.execute(update(StaBatchExecutionItem).where(
+            StaBatchExecutionItem.batch_id == batch_id, StaBatchExecutionItem.status == 'pending',
+        ).values(status='cancelled', detail='Batch request was cancelled.')
+            .execution_options(synchronize_session=False))
+    else:
+        changed = db.execute(update(StaBatchExecution).where(
+            StaBatchExecution.id == batch_id, StaBatchExecution.status == 'running',
+            StaBatchExecution.cancel_requested.is_(False),
+        ).values(cancel_requested=True).execution_options(synchronize_session=False))
+        if changed.rowcount != 1:
+            db.rollback()
+            raise HTTPException(409, 'STA batch cancellation is already pending')
+    db.commit()
+    db.expire_all()
+    return db.scalar(select(StaBatchExecution).where(StaBatchExecution.id == batch_id)
+                     .options(selectinload(StaBatchExecution.items)))

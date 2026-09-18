@@ -198,6 +198,9 @@ async def worker_lifespan(app):
     if enabled not in {'0', '1'}:
         raise ValueError('SIGNOFF_RTL_REAPER_ENABLED must be 0 or 1')
     stop, thread = threading.Event(), None
+    from .services.sta_batch_queue import dispatcher_loop
+    sta_thread = threading.Thread(target=dispatcher_loop, args=(stop,), name='sta-batch-dispatcher', daemon=True)
+    sta_thread.start()
     isolated = container_mode()
     if isolated:
         deployment_owner()
@@ -214,6 +217,7 @@ async def worker_lifespan(app):
         if thread is not None:
             # Docker calls have bounded waits; allow an in-flight removal to finish.
             await anyio.to_thread.run_sync(lambda: thread.join(timeout=30))
+        await anyio.to_thread.run_sync(lambda: sta_thread.join(timeout=30))
 
 
 def main(argv=None):

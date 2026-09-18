@@ -110,11 +110,17 @@ def test_background_reaper_starts_and_stops_with_lifespan(monkeypatch):
         invoked.set()
         return {'items': []}
     monkeypatch.setattr(maintenance, 'persistent_reconcile', reconcile)
+    dispatchers_before = sum(thread.name == 'sta-batch-dispatcher' and thread.is_alive()
+                             for thread in threading.enumerate())
     async def check():
         async with maintenance.worker_lifespan(None):
             assert await anyio.to_thread.run_sync(invoked.wait, 1)
+            assert sum(thread.name == 'sta-batch-dispatcher' and thread.is_alive()
+                       for thread in threading.enumerate()) == dispatchers_before + 1
     anyio.run(check)
     assert not any(thread.name == 'rtl-worker-reaper' and thread.is_alive() for thread in threading.enumerate())
+    assert sum(thread.name == 'sta-batch-dispatcher' and thread.is_alive()
+               for thread in threading.enumerate()) == dispatchers_before
 
 
 def test_new_jobs_carry_ownership_and_lifetime(monkeypatch):

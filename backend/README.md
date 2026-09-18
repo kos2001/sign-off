@@ -42,8 +42,10 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET /projects/{id}/signoff-status?stage=placement` — shift-left 게이트 판정: 해당 스테이지의 필수 도메인이 모두 passed이고 미웨이버 error/critical 위반이 없어야 ready
 - `GET/PUT /projects/{id}/sta-scenarios/{stage}` — 기대 STA 코너·모드와 SPEF 요구 세트 조회·교체
 - `GET /projects/{id}/sta-matrix?stage=routing&design_revision=...` — 기대 세트와 최신 OpenSTA 실행의 누락·요구 충족·경로 표본 집계
-- `POST /analysis/sta-signoff/batch/stream` — 공통 넷리스트와 최대 8개 시나리오별 Liberty·SDC·SPEF를 순차 실행하고 NDJSON 진행 상황과 독립 런을 반환
+- `POST /analysis/sta-signoff/batch` — 공통 넷리스트와 최대 8개 시나리오 입력을 영속 작업 큐에 접수하고 `202` 배치 매니페스트 반환
+- `POST /analysis/sta-signoff/batch/stream` — 연결 수명에 종속된 대화형 배치 실행과 NDJSON 진행 상황 반환
 - `GET /projects/{id}/sta-batches` · `GET /projects/{id}/sta-batches/{batch_id}` — 배치 접수자·범위·항목별 상태·생성 런을 보존한 실행 매니페스트 조회
+- `POST /projects/{id}/sta-batches/{batch_id}/cancel` — 대기 또는 실행 중인 영속 배치 취소
 - `POST /analysis/ir-drop` · `POST /analysis/glitch-power` · `POST /analysis/timing-summary`
 
 DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).
@@ -145,7 +147,7 @@ Linux의 실제 툴 통합 검사는 `Dockerfile.rtl-check`로 재실행할 수 
 
 ### OpenSTA 실행 워커
 
-`../scripts/build_sta_worker.sh`는 OpenSTA를 파서와 맞춘 커밋 `d97587f669b4f169be7132346df70e7d634500c3`으로 고정해 `signoff-sta-worker:d97587f` 이미지를 만듭니다. `SIGNOFF_STA_WORKER_IMAGE`로 이미지 이름을 바꿀 수 있습니다. `/analysis/sta-signoff`는 게이트 레벨 Verilog, Liberty, SDC와 선택적 SPEF를 네트워크와 호스트 마운트가 없는 읽기 전용 컨테이너에서 실행합니다. SPEF가 있으면 `read_spef`를 `link_design` 뒤, SDC 앞에 실행하고 실행 근거에 `metadata.parasitics=spef`를 기록합니다. `/analysis/sta-signoff/stream`은 OpenSTA 분석과 근거 저장 단계를 NDJSON으로 전달하며 클라이언트 연결이 끝나면 실행 취소를 워커에 전파합니다. SDC의 일반 프로세스·소켓·동적 로드 Tcl 명령은 비활성화됩니다. 호스트 전송은 stdout 4 MiB, 진단 128 KiB, 실행 250초로 제한하며 취소·실패·범람·시간 초과 시 프로세스 그룹을 종료하고 해당 컨테이너의 제거를 확인합니다.
+`../scripts/build_sta_worker.sh`는 OpenSTA를 파서와 맞춘 커밋 `d97587f669b4f169be7132346df70e7d634500c3`으로 고정해 `signoff-sta-worker:d97587f` 이미지를 만듭니다. `SIGNOFF_STA_WORKER_IMAGE`로 이미지 이름을 바꿀 수 있습니다. `/analysis/sta-signoff`는 게이트 레벨 Verilog, Liberty, SDC와 선택적 SPEF를 네트워크와 호스트 마운트가 없는 읽기 전용 컨테이너에서 실행합니다. SPEF가 있으면 `read_spef`를 `link_design` 뒤, SDC 앞에 실행하고 실행 근거에 `metadata.parasitics=spef`를 기록합니다. `/analysis/sta-signoff/stream`은 OpenSTA 분석과 근거 저장 단계를 NDJSON으로 전달하며 클라이언트 연결이 끝나면 실행 취소를 워커에 전파합니다. `/analysis/sta-signoff/batch`는 입력과 SHA-256을 DB에 원자적으로 저장한 뒤 즉시 `202`를 반환합니다. 백그라운드 디스패처가 DB 조건부 갱신으로 작업을 한 번만 점유하고 임대 heartbeat를 갱신하므로 브라우저 연결과 독립적으로 실행되며, 중단된 디스패처의 만료 작업은 실패 또는 취소로 종결됩니다. SDC의 일반 프로세스·소켓·동적 로드 Tcl 명령은 비활성화됩니다. 호스트 전송은 stdout 4 MiB, 진단 128 KiB, 실행 250초로 제한하며 취소·실패·범람·시간 초과 시 프로세스 그룹을 종료하고 해당 컨테이너의 제거를 확인합니다.
 
 결과에는 입력별 SHA-256과 원문, 워커 이미지 ID, OpenSTA 커밋, 생성된 `report_checks -format json`을 보존합니다. 대형 넷리스트·Liberty·SDC 원문은 `run_artifacts`에 분리하고 일반 근거 응답에는 해시와 크기만 반환합니다. 원문 다운로드는 서버가 SHA-256과 바이트 길이를 다시 확인한 뒤 제공합니다. 이 실행에는 AI가 개입하지 않습니다. 생성된 경로는 제한된 표본이므로 전체 STA 커버리지를 주장하거나 단독으로 스테이지 게이트를 통과시키지 않습니다. 저장된 런에서 A2 검토를 별도로 요청할 때만 Hermes 에이전트가 보고된 최저 슬랙 경로의 제한된 스냅샷을 받습니다.
   `result_locked=true`인 분석 결과에는 PATCH 및 수동 위반 추가가 409를 반환합니다.
