@@ -15,6 +15,11 @@ export interface ProjectSummary extends Project {
   total_runs: number;
   status_counts: Record<RunStatus, number>;
 }
+export interface ProjectSummaryPage {
+  items: ProjectSummary[]; total: number; offset: number; limit: number;
+  foundry_count: number; latest_process_node: string | null;
+  status_counts: Record<RunStatus, number>;
+}
 
 export interface SignoffRun {
   id: number;
@@ -651,6 +656,11 @@ export const api = {
   revokeCollector: (id: number, credentialId: number) => request<CollectorCredential>(`/projects/${id}/collectors/${credentialId}`, { method: 'DELETE' }),
   listProjects: () => request<Project[]>("/projects"),
   projectSummaries: () => request<ProjectSummary[]>('/projects/summary'),
+  projectSummaryPage: (options: { q?: string; sort?: 'newest' | 'oldest' | 'name'; offset?: number; limit?: number } = {}) =>
+    request<ProjectSummaryPage>(`/projects/summary/page?${new URLSearchParams({
+      sort: options.sort ?? 'newest', offset: String(options.offset ?? 0), limit: String(options.limit ?? 24),
+      ...(options.q ? { q: options.q } : {}),
+    })}`),
   createProject: (p: Omit<Project, "id" | "created_at">) =>
     request<Project>("/projects", { method: "POST", body: JSON.stringify(p) }),
   getProject: (id: number) => request<Project>(`/projects/${id}`),

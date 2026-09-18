@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 
 import type { RunStatus } from "../api";
 import { api } from "../api";
@@ -9,9 +9,27 @@ import { Card, Field, StatTile } from "../components/ui";
 
 export default function Dashboard() {
   const qc = useQueryClient();
-  const projects = useQuery({ queryKey: ['project-summaries'], queryFn: api.projectSummaries });
+  const [params, setParams] = useSearchParams();
+  const appliedSearch = params.get('q')?.trim() ?? '';
+  const rawSort = params.get('sort');
+  const sort = rawSort === 'oldest' || rawSort === 'name' ? rawSort : 'newest';
+  const rawPage = Number(params.get('page'));
+  const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const pageSize = 24;
+  const [search, setSearch] = useState(appliedSearch);
+  const projects = useQuery({
+    queryKey: ['project-summary-page', appliedSearch, sort, page],
+    queryFn: () => api.projectSummaryPage({ q: appliedSearch || undefined, sort, offset: (page - 1) * pageSize, limit: pageSize }),
+  });
   const [form, setForm] = useState({ name: "", process_node: "", foundry: "" });
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setSearch(appliedSearch), [appliedSearch]);
+  useEffect(() => {
+    if (projects.data && projects.data.total > 0 && projects.data.offset >= projects.data.total) {
+      setParams(current => { const next = new URLSearchParams(current); next.set('page', String(Math.ceil(projects.data!.total / pageSize))); return next; }, { replace: true });
+    }
+  }, [projects.data, setParams]);
 
   const create = useMutation({
     mutationFn: api.createProject,
@@ -19,6 +37,7 @@ export default function Dashboard() {
       setForm({ name: "", process_node: "", foundry: "" });
       setError(null);
       void Promise.all([
+        qc.invalidateQueries({ queryKey: ['project-summary-page'] }),
         qc.invalidateQueries({ queryKey: ['project-summaries'] }),
         qc.invalidateQueries({ queryKey: ['projects'] }),
       ]);
@@ -26,40 +45,60 @@ export default function Dashboard() {
     onError: (e: Error) => setError(e.message),
   });
 
-  const list = projects.data ?? [];
-  const aggregateCounts = { passed: 0, failed: 0, running: 0, incomplete: 0 };
-  for (const project of list)
-    for (const status of Object.keys(aggregateCounts) as RunStatus[]) aggregateCounts[status] += project.status_counts[status];
+  const list = projects.data?.items ?? [];
+  const aggregateCounts = projects.data?.status_counts ?? { passed: 0, failed: 0, running: 0, incomplete: 0 };
+
+  function updateParams(changes: Record<string, string | null>) {
+    setParams(current => {
+      const next = new URLSearchParams(current);
+      for (const [key, value] of Object.entries(changes)) value ? next.set(key, value) : next.delete(key);
+      return next;
+    });
+  }
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatTile label="프로젝트" value={list.length} suffix="개" />
+        <StatTile label="프로젝트" value={projects.data?.total ?? 0} suffix="개" />
         <StatTile
           label="최신 공정 노드"
-          value={list[0] ? list[list.length - 1].process_node : "–"}
+          value={projects.data?.latest_process_node ?? "–"}
         />
         <StatTile
           label="파운드리"
-          value={new Set(list.map((p) => p.foundry)).size}
+          value={projects.data?.foundry_count ?? 0}
           suffix="곳"
         />
       </div>
 
-      {list.length > 0 && (
+      {(projects.data?.total ?? 0) > 0 && (
         <Card title="전체 런 현황" subtitle="모든 프로젝트의 사인오프 런 상태를 한눈에 봅니다">
           <RunStatusBar counts={aggregateCounts} />
         </Card>
       )}
 
       <Card title="프로젝트" subtitle="칩 프로젝트별 사인오프 현황을 관리합니다">
+        <form className="mb-4 flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); updateParams({ q: search.trim() || null, page: null }); }}>
+          <Field label="프로젝트 검색">
+            <input className="input" value={search} onChange={event => setSearch(event.target.value)} placeholder="이름·공정 노드·파운드리" maxLength={120} />
+          </Field>
+          <Field label="정렬">
+            <select className="input" value={sort} onChange={event => updateParams({ sort: event.target.value === 'newest' ? null : event.target.value, page: null })}>
+              <option value="newest">최근 등록순</option><option value="oldest">오래된 등록순</option><option value="name">이름순</option>
+            </select>
+          </Field>
+          <button className="btn btn-primary">검색</button>
+          {(appliedSearch || sort !== 'newest') && <button type="button" className="btn btn-ghost" onClick={() => { setSearch(''); setParams({}); }}>초기화</button>}
+        </form>
         {projects.isLoading ? (
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             불러오는 중…
           </p>
+        ) : projects.isError ? (
+          <p role="alert" className="text-sm" style={{ color: "var(--status-critical)" }}>프로젝트를 불러오지 못했습니다: {projects.error.message} <button className="btn btn-ghost" onClick={() => void projects.refetch()}>다시 시도</button></p>
         ) : list.length === 0 ? (
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            아직 프로젝트가 없습니다. 아래에서 첫 프로젝트를 등록하세요.
+            {appliedSearch ? '검색 조건에 맞는 프로젝트가 없습니다.' : '아직 프로젝트가 없습니다. 아래에서 첫 프로젝트를 등록하세요.'}
           </p>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2">
@@ -98,6 +137,11 @@ export default function Dashboard() {
             ))}
           </ul>
         )}
+        {projects.data && projects.data.total > pageSize && <nav className="mt-4 flex items-center justify-between" aria-label="프로젝트 페이지">
+          <button className="btn btn-ghost" disabled={page === 1} onClick={() => updateParams({ page: page <= 2 ? null : String(page - 1) })}>이전</button>
+          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{page} / {Math.ceil(projects.data.total / pageSize)} 페이지 · 총 {projects.data.total}개</span>
+          <button className="btn btn-ghost" disabled={page * pageSize >= projects.data.total} onClick={() => updateParams({ page: String(page + 1) })}>다음</button>
+        </nav>}
       </Card>
 
       <Card title="새 프로젝트">

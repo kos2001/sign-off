@@ -136,6 +136,16 @@ class ProjectSummaryOut(ProjectOut):
     status_counts: RunStatusCounts
 
 
+class ProjectSummaryPageOut(BaseModel):
+    items: list[ProjectSummaryOut]
+    total: int
+    offset: int
+    limit: int
+    foundry_count: int
+    latest_process_node: str | None
+    status_counts: RunStatusCounts
+
+
 class RunEvidenceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
