@@ -14,7 +14,7 @@ from ..db import get_db
 from ..models import Domain, ReportImport, RunEvidence, SignoffRun, Stage, Violation
 from ..services.coverage_attestation import (
     AttestationConfigurationError, verify_drc_attestation, verify_emir_attestation,
-    verify_power_attestation, verify_sta_attestation, verify_thermal_attestation,
+    verify_power_attestation, verify_rtl_attestation, verify_sta_attestation, verify_thermal_attestation,
 )
 from ..schemas import RunOut
 from ..services.report_import import parse_commercial_sta, parse_opensta
@@ -82,6 +82,10 @@ class CommercialPowerImportPayload(ReportImportPayload):
 
 
 class CommercialThermalImportPayload(ReportImportPayload):
+    coverage_attestation: CoverageAttestationPayload | None = None
+
+
+class CommercialRtlImportPayload(ReportImportPayload):
     coverage_attestation: CoverageAttestationPayload | None = None
 
 
@@ -166,6 +170,24 @@ def apply_thermal_attestation(project_id, payload, result):
         result['coverage'] = 'collector_attested_complete'
         result['coverage_note'] = 'Configured collector attests complete thermal-analysis execution scope; source report and claims are preserved.'
         if result['metrics']['violated_hotspots'] == 0:
+            result['status'] = 'passed'
+    return result
+
+
+def apply_rtl_attestation(project_id, payload, result):
+    try:
+        verified = verify_rtl_attestation(payload.coverage_attestation, project_id=project_id,
+                                          payload=payload, result=result)
+    except AttestationConfigurationError as error:
+        raise HTTPException(503, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    if verified:
+        result['coverage_attestation'] = verified
+        result['coverage'] = 'collector_attested_complete'
+        result['coverage_note'] = 'Configured collector attests complete RTL regression scope; source report and claims are preserved.'
+        if (result['compile_status'] == 'passed' and result['metrics']['failed_tests'] == 0
+                and result['metrics']['failed_assertions'] == 0):
             result['status'] = 'passed'
     return result
 
@@ -317,16 +339,15 @@ def import_commercial_thermal(project_id:int,payload:CommercialThermalImportPayl
     return run
 
 @router.post('/projects/{project_id}/imports/commercial-rtl/preview')
-def preview_commercial_rtl(project_id:int,payload:ReportImportPayload,db:Session=Depends(get_db)):
+def preview_commercial_rtl(project_id:int,payload:CommercialRtlImportPayload,db:Session=Depends(get_db)):
  from .projects import get_project_or_404
- get_project_or_404(project_id,db);result=parse(payload,parse_commercial_rtl)
+ get_project_or_404(project_id,db);result=apply_rtl_attestation(project_id,payload,parse(payload,parse_commercial_rtl))
  if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
  return result
 @router.post('/projects/{project_id}/imports/commercial-rtl',response_model=RunOut,status_code=201)
-def import_commercial_rtl(project_id:int,payload:ReportImportPayload,db:Session=Depends(get_db)):
+def import_commercial_rtl(project_id:int,payload:CommercialRtlImportPayload,db:Session=Depends(get_db)):
  from .projects import get_project_or_404
- get_project_or_404(project_id,db);result=parse(payload,parse_commercial_rtl)
- if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
+ get_project_or_404(project_id,db)
  digest=hashlib.sha256(json.dumps({'format':'commercial-rtl','payload':payload.model_dump(mode='json')},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
  def existing():
   receipt=db.scalar(select(ReportImport).where(ReportImport.project_id==project_id,ReportImport.import_key==str(payload.import_id)))
@@ -334,6 +355,8 @@ def import_commercial_rtl(project_id:int,payload:ReportImportPayload,db:Session=
    if receipt.payload_sha256!=digest:raise HTTPException(409,'import identifier already used with different content')
    return db.get(SignoffRun,receipt.run_id)
  if run:=existing():return run
+ result=apply_rtl_attestation(project_id,payload,parse(payload,parse_commercial_rtl))
+ if result['tool_version']!=payload.tool_version.strip():raise HTTPException(422,'tool_version must match the version captured in the report')
  user=db.info.get('user');result['metadata']={k:getattr(payload,k)for k in['filename','tool_version','scenario']};result['metadata']['report_format']=result['parser'];result['submitted_by']={'user_id':user.id,'username':user.username}if user else None
  run=SignoffRun(project_id=project_id,domain='rtl',stage=payload.stage,tool=result['tool'],status=result['status'],metrics=result['metrics']);run.evidence=RunEvidence(source='commercial_rtl_report',source_text=payload.source_text,source_sha256=result['source_sha256'],design_revision=payload.design_revision,result=result);prefix='vcs'if result['tool']=='Synopsys VCS'else'xcelium'
  if result['compile_status']=='failed':run.violations.append(Violation(check_name=f'{prefix}/compile',severity='error',location=None,description='Commercial simulator compilation failed.\n'+result['compile_log_excerpt']))

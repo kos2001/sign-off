@@ -52,6 +52,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             Domain.emir: 'commercial_emir_report',
             Domain.glitch_power: 'commercial_power_report',
             Domain.thermal: 'commercial_thermal_report',
+            Domain.rtl: 'commercial_rtl_report',
         }.get(latest.domain)
         attested_coverage = bool(
             attested_source
@@ -60,7 +61,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             and latest.evidence.result.get('coverage_attestation', {}).get('verified') is True
             and latest.evidence.result.get('coverage') == 'collector_attested_complete'
         )
-        if latest.domain == Domain.rtl and latest.evidence_source != "rtl_ladder":
+        if latest.domain == Domain.rtl and latest.evidence_source != "rtl_ladder" and not attested_coverage:
             reason = "RTL requires captured ladder evidence; rerun the analysis"
             ready = False
         elif latest.evidence_source in {'opensta_report', 'opensta_execution', 'commercial_sta_report'} and not attested_coverage:
@@ -79,7 +80,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
         elif latest.evidence_source == 'commercial_thermal_report' and not attested_coverage:
             reason = 'Imported thermal hotspots do not establish full thermal coverage'
             ready = False
-        elif latest.domain == Domain.rtl and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
+        elif latest.domain == Domain.rtl and latest.evidence_source == 'rtl_ladder' and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
             reason = f"RTL evidence is {rtl_result_status(evidence_result).value}; required stages must all pass"
             ready = False
         elif latest.status != RunStatus.passed:
