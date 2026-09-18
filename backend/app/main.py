@@ -1,3 +1,4 @@
+import hmac
 import logging
 import time
 import uuid
@@ -5,13 +6,14 @@ import uuid
 from fastapi import FastAPI, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 
 from .auth import authorize, auth_required
 
 from .db import Base, engine, SessionLocal
 from .migrations import initialize_schema
+from .metrics import Metrics, configured_token
 from .worker_maintenance import worker_lifespan
 from .worker_readiness import WorkerReadiness
 from .services.rtl.worker_client import WorkerError
@@ -26,6 +28,7 @@ logger = logging.getLogger('uvicorn.error.signoff')
 
 def create_app() -> FastAPI:
     auth_required()  # Reject misspelled auth modes instead of silently disabling protection.
+    configured_token()  # Reject weak scrape credentials before opening the service.
     capacity()
     sta_capacity()
     review_capacity()
@@ -43,6 +46,7 @@ def create_app() -> FastAPI:
             "summary)."
         ),
     )
+    app.state.metrics = Metrics()
     app.include_router(projects.router, dependencies=[Depends(authorize)])
     app.include_router(collectors.router, dependencies=[Depends(authorize)])
     app.state.worker_readiness = WorkerReadiness()
@@ -79,6 +83,7 @@ def create_app() -> FastAPI:
         request_id = uuid.uuid4().hex
         request.state.request_id = request_id
         started = time.monotonic()
+        app.state.metrics.start_request()
         try:
             response = await call_next(request)
         except Exception as error:
@@ -90,8 +95,10 @@ def create_app() -> FastAPI:
         if response.status_code >= 500:
             response.headers['Cache-Control'] = 'no-store'
         route = getattr(request.scope.get('route'), 'path', 'unmatched')
+        elapsed = time.monotonic() - started
+        app.state.metrics.finish_request(request.method[:16], route, response.status_code, elapsed)
         logger.info('response_headers request_id=%s method=%s route=%s status=%s elapsed_ms=%.2f',
-                    request_id, request.method[:16], route, response.status_code, (time.monotonic() - started) * 1000)
+                    request_id, request.method[:16], route, response.status_code, elapsed * 1000)
         return response
 
     app.include_router(auth.router)
@@ -114,10 +121,30 @@ def create_app() -> FastAPI:
             if not app.state.worker_readiness.ready():
                 raise WorkerError('RTL worker prerequisite is unavailable.')
         except Exception as error:
+            app.state.metrics.readiness('not_ready', component)
             logger.warning('readiness_failed request_id=%s component=%s failure=%s',
                            request.state.request_id, component, type(error).__name__)
             return JSONResponse(status_code=503, content={'status': 'not_ready'}, headers={'Cache-Control': 'no-store', 'Retry-After': '5'})
+        app.state.metrics.readiness('ready', 'all')
         return JSONResponse(content={'status': 'ready'}, headers={'Cache-Control': 'no-store'})
+
+    @app.get('/metrics', tags=['meta'])
+    def metrics(request: Request):
+        token = configured_token()
+        if token is None:
+            return JSONResponse(status_code=404, content={'detail': 'not found'})
+        supplied = request.headers.get('Authorization', '')
+        if not hmac.compare_digest(supplied, f'Bearer {token}'):
+            return JSONResponse(
+                status_code=401,
+                content={'detail': 'metrics authentication required'},
+                headers={'Cache-Control': 'no-store', 'WWW-Authenticate': 'Bearer'},
+            )
+        return Response(
+            app.state.metrics.render(),
+            media_type='text/plain; version=0.0.4',
+            headers={'Cache-Control': 'no-store'},
+        )
 
     return app
 

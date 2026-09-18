@@ -53,6 +53,36 @@ Uvicorn 기본 INFO 로그에서 `uvicorn.error.signoff` 네임스페이스의 �
 리버스 프록시·Uvicorn 기본 access log·DB 드라이버·외부 라이브러리의 별도 로그 정책까지
 이 설정이 바꾸지는 않습니다. 로그 수집·보관·알림은 운영 환경에서 별도로 구성합니다.
 
+## Prometheus 운영 지표
+
+공백 없는 출력 가능 ASCII 32~256자의 `SIGNOFF_METRICS_TOKEN`을 secret manager에서 주입하면 `GET /metrics`가
+Prometheus text exposition 형식을 제공합니다. 토큰이 없으면 경로는 404로 숨겨지고, 잘못된 설정은
+API 시작을 거부합니다. 수집기는 `Authorization: Bearer <token>`을 보내야 하며 실패 응답과 성공
+응답 모두 캐시하지 않습니다. 이 토큰은 로그인 세션이나 일반 API 토큰을 대신하지 않습니다.
+
+```yaml
+scrape_configs:
+  - job_name: signoff-api
+    authorization:
+      credentials_file: /run/secrets/signoff_metrics_token
+    static_configs:
+      - targets: [signoff-api:8000]
+```
+
+제공 지표는 프로세스 시작 시각, 진행 중 요청 수, HTTP 요청 수, 응답 헤더까지 걸린 시간 히스토그램,
+준비 상태 검사 결과입니다. HTTP 라벨은 제한된 method, 등록된 route 템플릿, 상태 코드 등급만
+포함합니다. 프로젝트 ID, 쿼리 문자열, 인증값, 오류 원문은 포함하지 않습니다. 준비 실패 component는
+`database` 또는 `rtl_worker`로만 구분합니다. 다음 조건을 초기 알림 기준으로 권장합니다.
+
+- `/ready` 연속 실패 또는 `signoff_readiness_checks_total{result="not_ready"}` 증가
+- 5xx 비율의 지속 상승
+- route별 응답 시간 p95가 서비스 목표를 지속적으로 초과
+
+지표는 각 API 프로세스 메모리에만 존재하며 재시작 시 초기화됩니다. 여러 Uvicorn worker나 여러
+인스턴스에서는 각 대상을 직접 scrape한 뒤 Prometheus에서 합산하세요. 로드 밸런서 한 주소만
+scrape하면 일부 프로세스 지표를 놓칠 수 있습니다. 장기 보관과 알림 규칙은 Prometheus 등 외부
+시스템에서 구성합니다.
+
 이미 시작된 스트리밍 응답의 상태 코드를 나중에 500으로 바꿀 수는 없습니다. 현재 클라이언트는
 최종 result 이벤트가 없는 종료를 분석 완료로 간주하지 않습니다. 스트림 전체에 걸친 분산 추적과
 실행 작업 ID 기반 추적은 아직 구현하지 않았습니다.
@@ -60,7 +90,7 @@ Uvicorn 기본 INFO 로그에서 `uvicorn.error.signoff` 네임스페이스의 �
 ## 검증
 
 `backend/tests/test_operations.py`는 요청 번호 생성, DB 장애, 각 앱 테이블 및 필수 열 누락의 503과 복구 후 200, 데이터 행 없는 조회,
-인증 모드에서도 공개 상태 조회, 민감한 예외·쿼리·헤더가 애플리케이션 로그/오류에 없는지 검사합니다.
+인증 모드에서도 공개 상태 조회, 지표 인증·경로 라벨·민감 정보 비노출, 민감한 예외·쿼리·헤더가 애플리케이션 로그/오류에 없는지 검사합니다.
 기존 커밋 실패 테스트도 500 응답과 함께 비밀번호·세션·위반·권한·보고서 저장 롤백을 확인합니다.
 
 `backend/tests/test_worker_readiness.py`는 이미지/데몬 오류·3초 제한 설정·캐시 만료와 복구·
