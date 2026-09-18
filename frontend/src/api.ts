@@ -11,6 +11,10 @@ export interface Project {
   foundry: string;
   created_at: string;
 }
+export interface ProjectSummary extends Project {
+  total_runs: number;
+  status_counts: Record<RunStatus, number>;
+}
 
 export interface SignoffRun {
   id: number;
@@ -646,6 +650,7 @@ export const api = {
   createCollector: (id: number, name: string, validDays: number) => request<IssuedCollectorCredential>(`/projects/${id}/collectors`, { method: 'POST', body: JSON.stringify({ name, valid_days: validDays }) }),
   revokeCollector: (id: number, credentialId: number) => request<CollectorCredential>(`/projects/${id}/collectors/${credentialId}`, { method: 'DELETE' }),
   listProjects: () => request<Project[]>("/projects"),
+  projectSummaries: () => request<ProjectSummary[]>('/projects/summary'),
   createProject: (p: Omit<Project, "id" | "created_at">) =>
     request<Project>("/projects", { method: "POST", body: JSON.stringify(p) }),
   getProject: (id: number) => request<Project>(`/projects/${id}`),

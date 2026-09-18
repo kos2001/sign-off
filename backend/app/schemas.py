@@ -131,6 +131,11 @@ class RunPageOut(BaseModel):
     next_before_id: int | None
 
 
+class ProjectSummaryOut(ProjectOut):
+    total_runs: int
+    status_counts: RunStatusCounts
+
+
 class RunEvidenceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

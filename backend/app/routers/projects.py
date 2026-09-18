@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,8 +11,8 @@ from ..services.stages import resolve_signoff_plan
 from ..services.sta_scenario_plans import resolve_sta_scenario_plan
 from ..auth import auth_required
 from ..auth import require_project
-from ..models import Project, ProjectMember, ProjectSignoffPlanRevision, Stage
-from ..schemas import (CollectorContextOut, ProjectCreate, ProjectOut,
+from ..models import Project, ProjectMember, ProjectSignoffPlanRevision, RunStatus, SignoffRun, Stage
+from ..schemas import (CollectorContextOut, ProjectCreate, ProjectOut, ProjectSummaryOut,
                        SignoffPlanHistoryOut, SignoffPlanOut,
                        SignoffPlanStageOut, SignoffPlanUpdate)
 
@@ -56,6 +56,27 @@ def list_projects(db: Session = Depends(get_db)):
     if auth_required() and user and not user.is_admin:
         query = query.join(ProjectMember).where(ProjectMember.user_id == user.id)
     return db.scalars(query.order_by(Project.id)).all()
+
+
+@router.get('/summary', response_model=list[ProjectSummaryOut])
+def project_summaries(db: Session = Depends(get_db)):
+    query = select(Project)
+    user = db.info.get('user')
+    if auth_required() and user and not user.is_admin:
+        query = query.join(ProjectMember).where(ProjectMember.user_id == user.id)
+    projects = db.scalars(query.order_by(Project.id)).all()
+    ids = [project.id for project in projects]
+    counts = {project_id: {status.value: 0 for status in RunStatus} for project_id in ids}
+    if ids:
+        for project_id, status, count in db.execute(select(
+            SignoffRun.project_id, SignoffRun.status, func.count(),
+        ).where(SignoffRun.project_id.in_(ids)).group_by(SignoffRun.project_id, SignoffRun.status)):
+            counts[project_id][status.value] = count
+    return [{
+        'id': project.id, 'name': project.name, 'process_node': project.process_node,
+        'foundry': project.foundry, 'created_at': project.created_at,
+        'total_runs': sum(counts[project.id].values()), 'status_counts': counts[project.id],
+    } for project in projects]
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
