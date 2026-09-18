@@ -106,6 +106,12 @@ def test_revision_coverage_matrix_uses_plan_and_latest_domain_run(client):
     with SessionLocal.begin() as db:
         db.execute(update(RunEvidence).where(
             RunEvidence.run_id.in_([run['id'] for run in runs])).values(design_revision='rev-matrix'))
+    newer_other_revision = client.post(f'/projects/{project_id}/runs', json={
+        'domain': 'sta', 'stage': 'routing', 'tool': 'other-revision',
+    }).json()
+    with SessionLocal.begin() as db:
+        db.execute(update(RunEvidence).where(RunEvidence.run_id == newer_other_revision['id'])
+                   .values(design_revision='rev-other'))
 
     response = client.get(f'/projects/{project_id}/revision-coverage',
                           params={'revision': 'rev-matrix'})
@@ -117,11 +123,15 @@ def test_revision_coverage_matrix_uses_plan_and_latest_domain_run(client):
     routing = next(item for item in matrix['stages'] if item['stage'] == 'routing')
     assert routing['plan_version'] == 0 and routing['plan_source'] == 'default'
     assert routing['covered_required_domains'] == 2
+    assert routing['ready'] is False and routing['revision_status'] == 'missing'
     cells = {item['domain']: item for item in routing['cells']}
     assert cells['sta']['run_count'] == 2
     assert cells['sta']['latest_run']['id'] == runs[2]['id']
+    assert cells['sta']['gate_ready'] is False
+    assert cells['sta']['gate_reason'] == "latest run status is 'running'"
     assert cells['pv']['run_count'] == 1
     assert cells['rtl']['required'] is False and cells['rtl']['run_count'] == 1
-    assert cells['emir']['latest_run'] is None and cells['lvs']['latest_run'] is None
+    assert cells['emir']['latest_run'] is None and cells['emir']['gate_reason'] == 'no run for this stage'
+    assert cells['lvs']['latest_run'] is None
     assert client.get(f'/projects/{project_id}/revision-coverage',
                       params={'revision': '   '}).status_code == 422

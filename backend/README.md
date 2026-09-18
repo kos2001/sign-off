@@ -42,7 +42,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `POST /projects/{id}/runs` — 사인오프 런 생성 (`domain`, `stage`, `tool`, `metrics`)
 - `GET /projects/{id}/runs/page` — 필터 범위의 상태별 전체 집계와 최신순 커서 페이지 (`before_id`, `limit`, `domain`, `stage`, `status`, `q` 툴 이름, 정확한 `revision`, `revision_scope`); 운영 UI 기본 경로
 - `GET /projects/{id}/run-revisions` — 저장된 설계 리비전별 런 수·최신 런과 리비전 미기록 런 수 조회
-- `GET /projects/{id}/revision-coverage` — 정확한 설계 리비전과 현재 사인오프 계획을 기준으로 스테이지·도메인별 결과 존재 여부, 실행 수와 최신 런 조회
+- `GET /projects/{id}/revision-coverage` — 정확한 설계 리비전의 최신 런만 현재 계획과 대조해 결과 존재 여부·실행 수와 기존 게이트 규칙의 준비 상태·차단 사유 조회
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
 - `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자·설계 리비전·만료 기록, 상태 waived 전환). 새 웨이버는 기본 90일·최대 365일이며 만료/범위 불일치는 게이트 차단에 재반영
