@@ -1,4 +1,4 @@
-"""Read-only marker exploration over captured KLayout report items."""
+"""Read-only marker exploration over captured DRC report items."""
 from collections import Counter
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.orm import Session
@@ -14,8 +14,8 @@ router = APIRouter(tags=['drc-markers'])
 
 def captured(run_id, db):
     run = get_run_or_404(run_id, db)
-    if run.evidence_source != 'klayout_report':
-        raise HTTPException(409, 'this run has no imported KLayout markers')
+    if run.evidence_source not in {'klayout_report', 'commercial_drc_report'}:
+        raise HTTPException(409, 'this run has no imported DRC markers')
     return run
 
 
@@ -45,9 +45,10 @@ def get_marker(run_id: int, marker_index: int = Path(ge=1, le=1000), db: Session
     if item is None:
         raise HTTPException(404, 'marker not found')
     prefix = item['fingerprint'][:32]
+    check_prefix = run.evidence.result.get('violation_prefix', 'klayout')
     original_matches = sum(other['fingerprint'][:32] == prefix for other in run.evidence.result['items'])
     rows = db.execute(select(Violation.id, Violation.status, Violation.version).where(
-        Violation.run_id == run_id, Violation.check_name == f'klayout/{prefix}',
+        Violation.run_id == run_id, Violation.check_name == f'{check_prefix}/{prefix}',
     ).order_by(Violation.id)).all()
     return {'item': item, 'geometry': marker_geometry(item['values']),
             'violation_matches': {
