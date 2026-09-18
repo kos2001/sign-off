@@ -11,6 +11,7 @@ from .commercial_emir import parse_commercial_emir
 from .commercial_power import parse_commercial_power
 from .commercial_rtl import parse_commercial_rtl
 from .commercial_thermal import parse_commercial_thermal
+from .commercial_lvs import parse_commercial_lvs
 from .coverage_attestation import REQUIRED_CLAIMS, canonical_payload
 from .report_import import parse_commercial_sta
 
@@ -22,6 +23,7 @@ PARSERS = {
     'glitch_power': parse_commercial_power,
     'thermal': parse_commercial_thermal,
     'rtl': parse_commercial_rtl,
+    'lvs': parse_commercial_lvs,
 }
 
 

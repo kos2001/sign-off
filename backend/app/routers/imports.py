@@ -14,7 +14,7 @@ from ..db import get_db
 from ..models import Domain, ReportImport, RunEvidence, SignoffRun, Stage, Violation
 from ..services.coverage_attestation import (
     AttestationConfigurationError, verify_drc_attestation, verify_emir_attestation,
-    verify_power_attestation, verify_rtl_attestation, verify_sta_attestation, verify_thermal_attestation,
+    verify_lvs_attestation, verify_power_attestation, verify_rtl_attestation, verify_sta_attestation, verify_thermal_attestation,
 )
 from ..schemas import RunOut
 from ..services.report_import import parse_commercial_sta, parse_opensta
@@ -23,6 +23,7 @@ from ..services.commercial_emir import parse_commercial_emir
 from ..services.commercial_power import parse_commercial_power
 from ..services.commercial_thermal import parse_commercial_thermal
 from ..services.commercial_rtl import parse_commercial_rtl
+from ..services.commercial_lvs import parse_commercial_lvs
 from ..services.klayout_report import parse_klayout
 
 router = APIRouter(tags=['report-imports'])
@@ -94,6 +95,10 @@ class CommercialThermalImportPayload(ReportImportPayload):
 
 
 class CommercialRtlImportPayload(ReportImportPayload):
+    coverage_attestation: CoverageAttestationPayload | None = None
+
+
+class CommercialLvsImportPayload(ReportImportPayload):
     coverage_attestation: CoverageAttestationPayload | None = None
 
 
@@ -196,6 +201,23 @@ def apply_rtl_attestation(project_id, payload, result):
         result['coverage_note'] = 'Configured collector attests complete RTL regression scope; source report and claims are preserved.'
         if (result['compile_status'] == 'passed' and result['metrics']['failed_tests'] == 0
                 and result['metrics']['failed_assertions'] == 0):
+            result['status'] = 'passed'
+    return result
+
+
+def apply_lvs_attestation(project_id, payload, result):
+    try:
+        verified = verify_lvs_attestation(payload.coverage_attestation, project_id=project_id,
+                                          payload=payload, result=result)
+    except AttestationConfigurationError as error:
+        raise HTTPException(503, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    if verified:
+        result['coverage_attestation'] = verified
+        result['coverage'] = 'collector_attested_complete'
+        result['coverage_note'] = 'Configured collector attests complete LVS execution scope; source report and claims are preserved.'
+        if result['lvs_status'] == 'matched' and not result['items']:
             result['status'] = 'passed'
     return result
 
@@ -375,6 +397,70 @@ def import_commercial_rtl(project_id:int,payload:CommercialRtlImportPayload,db:S
   if run:=existing():return run
   raise
  return run
+
+
+@router.post('/projects/{project_id}/imports/commercial-lvs/preview')
+def preview_commercial_lvs(project_id: int, payload: CommercialLvsImportPayload,
+                           db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = apply_lvs_attestation(project_id, payload, parse(payload, parse_commercial_lvs))
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    return result
+
+
+@router.post('/projects/{project_id}/imports/commercial-lvs', response_model=RunOut, status_code=201)
+def import_commercial_lvs(project_id: int, payload: CommercialLvsImportPayload,
+                          db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    digest = hashlib.sha256(json.dumps({'format': 'commercial-lvs', 'payload': payload.model_dump(mode='json')},
+                                      sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    def existing():
+        receipt = db.scalar(select(ReportImport).where(
+            ReportImport.project_id == project_id,
+            ReportImport.import_key == str(payload.import_id),
+        ))
+        if receipt:
+            if receipt.payload_sha256 != digest:
+                raise HTTPException(409, 'import identifier already used with different content')
+            return db.get(SignoffRun, receipt.run_id)
+
+    if run := existing():
+        return run
+    result = apply_lvs_attestation(project_id, payload, parse(payload, parse_commercial_lvs))
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
+    result['metadata']['report_format'] = result['parser']
+    result['submitted_by'] = submitter(db)
+    run = SignoffRun(project_id=project_id, domain='lvs', stage=payload.stage, tool=result['tool'],
+                     status=result['status'], metrics=result['metrics'])
+    run.evidence = RunEvidence(source='commercial_lvs_report', source_text=payload.source_text,
+        source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
+    prefix = 'calibre-lvs' if result['tool'] == 'Siemens Calibre nmLVS' else 'pegasus-lvs'
+    if result['lvs_status'] == 'error':
+        run.violations.append(Violation(check_name=f'{prefix}/run-error', severity='critical',
+            location=None, description=result['error_message']))
+    for item in result['items']:
+        location = item['layout_object'] or item['schematic_object'] or item['name']
+        run.violations.append(Violation(check_name=f"{prefix}/{item['kind']}/{item['fingerprint'][:32]}",
+            severity=item['severity'], location=location,
+            description=f"{item['name']}\nLayout: {item['layout_object'] or 'not reported'} · Schematic: {item['schematic_object'] or 'not reported'}\n{item['message']}"))
+    db.add(run)
+    try:
+        db.flush()
+        db.add(ReportImport(project_id=project_id, import_key=str(payload.import_id),
+                            payload_sha256=digest, run_id=run.id))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if run := existing():
+            return run
+        raise
+    return run
 
 
 @router.post('/projects/{project_id}/imports/commercial-sta/preview')

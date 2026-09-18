@@ -16,6 +16,7 @@ from test_commercial_emir import report as emir_report
 from test_commercial_power import report as power_report
 from test_commercial_rtl import report as rtl_report
 from test_commercial_thermal import report as thermal_report
+from test_commercial_lvs import matched as lvs_report
 
 
 SECRET = 'collector-cli-secret-with-at-least-32-bytes'
@@ -50,6 +51,7 @@ def test_builder_validates_and_binds_server_ready_request():
 @pytest.mark.parametrize('domain,report', [
     ('sta', commercial_report()), ('pv', drc_report()), ('emir', emir_report()),
     ('glitch_power', power_report()), ('thermal', thermal_report()), ('rtl', rtl_report()),
+    ('lvs', lvs_report()),
 ])
 def test_builder_uses_the_server_parser_for_every_commercial_domain(domain, report):
     body = build(domain=domain, report=report, tool_version=report['tool_version'],
