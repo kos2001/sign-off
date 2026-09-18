@@ -318,6 +318,22 @@ class CollectorCredential(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[int] = mapped_column()
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CollectorCredentialEvent(Base):
+    """Append-only issuance and revocation audit trail without bearer secrets."""
+    __tablename__ = 'collector_credential_events'
+    __table_args__ = (Index('ix_collector_credential_events_project_id_id', 'project_id', 'id'),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('projects.id'))
+    credential_id: Mapped[int] = mapped_column(ForeignKey('collector_credentials.id'))
+    credential_name: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(16))
+    actor: Mapped[str] = mapped_column(String(64))
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    expires_at: Mapped[int] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

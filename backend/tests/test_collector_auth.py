@@ -53,6 +53,8 @@ def test_project_collector_can_only_submit_and_identity_is_preserved(accounts, m
     sta = next(item for item in contract['domains'] if item['domain'] == 'sta')
     assert sta['import_path'].endswith('/imports/commercial-sta')
     assert sta['required_claims'] == sorted(REQUIRED_CLAIMS['sta'])
+    with SessionLocal() as db:
+        assert db.get(CollectorCredential, collector_id).last_used_at is not None
     response = machine.post(f"/projects/{ids['project']}/imports/commercial-sta",
         json=request_body(ids['project']))
     assert response.status_code == 201, response.text
@@ -147,3 +149,49 @@ def test_operator_can_issue_list_and_revoke_without_revealing_token_again(accoun
     with SessionLocal() as db:
         stored = db.get(CollectorCredential, created['id'])
         assert stored.revoked_at is not None and stored.token_hash == token_hash(created['token'])
+
+
+def test_owner_manages_collector_credentials_with_append_only_audit(accounts):
+    users, ids, login = accounts
+    owner, approver, viewer = login('owner'), login('approver'), login('viewer')
+    path = f"/projects/{ids['project']}/collectors"
+    assert viewer.get(path).status_code == 403
+    assert approver.post(path, json={'name': 'primetime-rotation', 'valid_days': 30}).status_code == 403
+
+    created = owner.post(path, json={'name': 'primetime-rotation', 'valid_days': 30})
+    assert created.status_code == 201, created.text
+    assert created.headers['cache-control'] == 'no-store'
+    issued = created.json()
+    assert issued['token'].startswith('soct_') and issued['status'] == 'active'
+    listed = owner.get(path).json()
+    assert len(listed) == 1 and listed[0]['name'] == 'primetime-rotation'
+    assert 'token' not in listed[0] and listed[0]['last_used_at'] is None
+    with SessionLocal() as db:
+        stored = db.get(CollectorCredential, issued['id'])
+        assert stored.token_hash == token_hash(issued['token'])
+        assert issued['token'] not in stored.token_hash
+
+    duplicate = owner.post(path, json={'name': 'primetime-rotation', 'valid_days': 30})
+    assert duplicate.status_code == 409 and 'already exists' in duplicate.json()['detail']
+    revoked = owner.delete(f"{path}/{issued['id']}")
+    assert revoked.status_code == 200 and revoked.json()['status'] == 'revoked'
+    assert owner.delete(f"{path}/{issued['id']}").status_code == 200
+    events = owner.get(path + '/history').json()['items']
+    assert [(item['action'], item['actor_user_id']) for item in events] == [
+        ('revoked', users['owner'].id), ('issued', users['owner'].id)]
+    assert all('token' not in item for item in events)
+
+
+def test_collector_credential_management_is_project_scoped(accounts):
+    _, ids, login = accounts
+    owner = login('owner')
+    created = owner.post(f"/projects/{ids['project']}/collectors", json={
+        'name': 'scoped-collector', 'valid_days': 1,
+    }).json()
+    with SessionLocal() as db:
+        other = Project(name='collector-admin-other-project', foundry='QA', process_node='5nm')
+        db.add(other); db.commit(); db.refresh(other)
+    assert owner.delete(f"/projects/{other.id}/collectors/{created['id']}").status_code == 404
+    bearer = TestClient(owner.app, headers={'Authorization': f"Bearer {created['token']}"})
+    assert bearer.get(f"/projects/{ids['project']}/collectors").status_code == 401
+    bearer.close()

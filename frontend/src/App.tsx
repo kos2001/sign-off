@@ -27,6 +27,7 @@ import DftFindings from './pages/DftFindings';
 import CommercialLowPowerImport from './pages/CommercialLowPowerImport';
 import LowPowerFindings from './pages/LowPowerFindings';
 import ProjectMembers from "./pages/ProjectMembers";
+import ProjectCollectors from './pages/ProjectCollectors';
 import { Route, Routes } from "react-router";
 
 import { Sidebar } from "./components/Sidebar";
@@ -77,6 +78,7 @@ export default function App() {
           <Route path="/runs/:runId/dft-findings" element={<DftFindings />} />
           <Route path="/runs/:runId/low-power-findings" element={<LowPowerFindings />} />
           <Route path="/projects/:id/members" element={<ProjectMembers />} />
+          <Route path="/projects/:id/collectors" element={<ProjectCollectors />} />
           <Route path="/account" element={<Account />} />
           <Route path="/admin/security-events" element={<SecurityEvents />} />
           <Route path="/agents" element={<AgentGuide />} />

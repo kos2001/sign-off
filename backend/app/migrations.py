@@ -78,6 +78,11 @@ def initialize_schema(engine):
             for column in ('started_at', 'finished_at'):
                 if column not in item_columns:
                     connection.execute(text(f"ALTER TABLE sta_batch_execution_items ADD COLUMN {column} DATETIME"))
+            collector_columns = {item['name'] for item in inspect(connection).get_columns('collector_credentials')}
+            if 'last_used_at' not in collector_columns:
+                connection.execute(text(
+                    f'ALTER TABLE collector_credentials ADD COLUMN last_used_at {timestamp_type}'
+                ))
             connection.commit()
         except Exception:
             connection.rollback()
