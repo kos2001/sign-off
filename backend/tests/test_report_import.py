@@ -54,7 +54,7 @@ def commercial_payload(document=None):
             'scenario': 'ss-setup', 'source_text': json.dumps(document, ensure_ascii=False, indent=2) + '\n'}
 
 
-def attest_sta(body, project_id, secret='collector-secret-that-is-at-least-32-bytes'):
+def attest_sta(body, project_id, secret='collector-secret-that-is-at-least-32-bytes', plan_version=None):
     now = datetime.now(timezone.utc)
     value = {
         'format': 'signoff/coverage-attestation/v1', 'attestation_id': body['import_id'],
@@ -66,6 +66,8 @@ def attest_sta(body, project_id, secret='collector-secret-that-is-at-least-32-by
         'scenario': body['scenario'], 'claims': {claim: True for claim in REQUIRED_STA_CLAIMS},
         'signature': '0' * 64,
     }
+    if plan_version is not None:
+        value['scenario_plan_version'] = plan_version
     parsed = CoverageAttestationPayload.model_validate(value)
     value['signature'] = hmac.new(secret.encode(), canonical_payload(parsed), hashlib.sha256).hexdigest()
     return value
@@ -179,6 +181,38 @@ def test_trusted_sta_attestation_can_establish_gate_coverage(client, monkeypatch
     domain = next(item for item in client.get(
         f'/projects/{pid}/signoff-status?stage=routing').json()['domains'] if item['domain'] == 'sta')
     assert domain['ready'] is True and domain['run_id'] == candidate['id']
+
+
+def test_trusted_sta_attestation_is_bound_to_current_scenario_plan(client, monkeypatch):
+    secret = 'collector-secret-that-is-at-least-32-bytes'
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({
+        'qa-collector-1': {'secret': secret, 'domains': ['sta']},
+    }))
+    pid = project(client)
+    plan_path = f'/projects/{pid}/sta-scenario-plan/routing'
+    assert client.put(plan_path, json={'scenarios': [{'name': 'ss-setup', 'require_spef': True}],
+        'expected_version': 0, 'reason': 'initial routing MMMC plan'}).status_code == 200
+    body = commercial_payload({**commercial_report(slack=0.1), 'paths': []})
+    body['coverage_attestation'] = attest_sta(body, pid, secret)
+    import_path = f'/projects/{pid}/imports/commercial-sta'
+    rejected = client.post(import_path + '/preview', json=body)
+    assert rejected.status_code == 422 and 'scenario_plan_version' in rejected.json()['detail']
+
+    body['coverage_attestation'] = attest_sta(body, pid, secret, plan_version=1)
+    saved = client.post(import_path, json=body)
+    assert saved.status_code == 201, saved.text
+    gate = client.get(f'/projects/{pid}/signoff-status?stage=routing').json()
+    sta = next(item for item in gate['domains'] if item['domain'] == 'sta')
+    assert sta['scenario_plan_version'] == sta['required_scenario_plan_version'] == 1
+
+    changed = client.put(plan_path, json={'scenarios': [
+        {'name': 'ss-setup', 'require_spef': True}, {'name': 'ff-hold', 'require_spef': True}],
+        'expected_version': 1, 'reason': 'add fast hold corner'})
+    assert changed.status_code == 200 and changed.json()['version'] == 2
+    gate = client.get(f'/projects/{pid}/signoff-status?stage=routing').json()
+    sta = next(item for item in gate['domains'] if item['domain'] == 'sta')
+    assert not sta['ready'] and sta['reason'] == 'Trusted STA evidence targets an outdated scenario plan'
+    assert sta['scenario_plan_version'] == 1 and sta['required_scenario_plan_version'] == 2
 
 
 @pytest.mark.parametrize('mutation', ['signature', 'source_sha256', 'claims', 'claim_type', 'expired', 'unknown_key'])

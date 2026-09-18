@@ -99,6 +99,26 @@ class StaScenarioDefinition(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class StaScenarioPlanRevision(Base):
+    """Append-only snapshot of the expected STA mode/corner plan."""
+
+    __tablename__ = "sta_scenario_plan_revisions"
+    __table_args__ = (
+        UniqueConstraint("project_id", "stage", "version"),
+        Index("ix_sta_scenario_plan_latest", "project_id", "stage", "version"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    stage: Mapped[Stage] = mapped_column(Enum(Stage))
+    version: Mapped[int]
+    scenarios: Mapped[list[dict]] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[str] = mapped_column(String(80))
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class SignoffRun(Base):
     __tablename__ = "signoff_runs"
 

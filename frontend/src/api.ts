@@ -342,6 +342,11 @@ export interface StaMatrix {
 export interface StaScenarioDefinition {
   id: number; project_id: number; stage: Stage; name: string; require_spef: boolean; created_at: string;
 }
+export interface StaScenarioPlan {
+  project_id: number; stage: Stage; version: number; source: 'legacy' | 'versioned';
+  scenarios: { name: string; require_spef: boolean }[]; reason: string | null;
+  updated_by: string | null; updated_by_user_id: number | null; created_at: string | null;
+}
 
 export interface GateDomain {
   domain: Domain;
@@ -352,6 +357,8 @@ export interface GateDomain {
   inactive_waivers?: number;
   evidence_source?: string;
   design_revision?: string | null;
+  scenario_plan_version?: number;
+  required_scenario_plan_version?: number;
 }
 
 export interface SignoffPlanStage {
@@ -363,6 +370,7 @@ export interface SignoffPlan { project_id: number; stages: SignoffPlanStage[] }
 export interface GateStatus {
   stage: Stage;
   plan: SignoffPlanStage;
+  sta_scenario_plan_version: number;
   ready: boolean;
   domains: GateDomain[];
   revision_check?: { status: 'missing' | 'mismatch' | 'consistent'; revisions: string[]; missing_domains: Domain[]; common_revision: string | null };
@@ -639,6 +647,10 @@ export const api = {
     })}`),
   staScenarios: (projectId: number, stage: Stage) =>
     request<StaScenarioDefinition[]>(`/projects/${projectId}/sta-scenarios/${stage}`),
+  staScenarioPlan: (projectId: number, stage: Stage) =>
+    request<StaScenarioPlan>(`/projects/${projectId}/sta-scenario-plan/${stage}`),
+  staScenarioPlanHistory: (projectId: number, stage: Stage, beforeId?: number) =>
+    request<{ items: StaScenarioPlan[]; next_before_id: number | null }>(`/projects/${projectId}/sta-scenario-plan/${stage}/history${beforeId ? `?before_id=${beforeId}` : ''}`),
   staBatches: (projectId: number, beforeId?: number) =>
     request<{ items: StaBatchExecution[]; next_before_id: number | null }>(`/projects/${projectId}/sta-batches${beforeId ? `?before_id=${beforeId}` : ''}`),
   staBatch: (projectId: number, batchId: number) =>
@@ -652,9 +664,9 @@ export const api = {
     request<StaBatchExecution>(`/projects/${projectId}/sta-batches/${batchId}/retry`, {
       method: 'POST', body: JSON.stringify({ request_key: requestKey }),
     }),
-  replaceStaScenarios: (projectId: number, stage: Stage, scenarios: { name: string; require_spef: boolean }[]) =>
-    request<StaScenarioDefinition[]>(`/projects/${projectId}/sta-scenarios/${stage}`, {
-      method: 'PUT', body: JSON.stringify({ scenarios }),
+  replaceStaScenarios: (projectId: number, stage: Stage, body: { scenarios: { name: string; require_spef: boolean }[]; expected_version: number; reason: string }) =>
+    request<StaScenarioPlan>(`/projects/${projectId}/sta-scenario-plan/${stage}`, {
+      method: 'PUT', body: JSON.stringify(body),
     }),
   createRun: (
     projectId: number,

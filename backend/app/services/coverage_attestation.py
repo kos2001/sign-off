@@ -149,13 +149,16 @@ def configured_keys() -> dict[str, tuple[bytes, frozenset[str]]]:
 
 
 def canonical_payload(attestation) -> bytes:
-    value = attestation.model_dump(mode='json', exclude={'signature'})
+    # Keep signatures produced before optional binding fields were introduced valid.
+    value = attestation.model_dump(mode='json', exclude={'signature'}, exclude_none=True)
     return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(',', ':')).encode()
 
 
 def verify_attestation(attestation, *, domain, project_id, payload, result, now=None):
     if attestation is None:
         return None
+    if domain != 'sta' and attestation.scenario_plan_version is not None:
+        raise ValueError('scenario_plan_version is only valid for STA coverage attestations')
     for field in ('design_revision', 'tool_version', 'scenario'):
         if getattr(payload, field) != getattr(payload, field).strip():
             raise ValueError(f'{field} must not have surrounding whitespace when using a coverage attestation')

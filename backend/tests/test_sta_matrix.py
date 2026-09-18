@@ -71,14 +71,15 @@ def test_matrix_validates_scope_and_execution_provenance(client):
 
 def test_expected_scenario_set_reports_missing_and_parasitic_gaps(client):
     pid = project(client)
-    path = f'/projects/{pid}/sta-scenarios/routing'
+    path = f'/projects/{pid}/sta-scenario-plan/routing'
     configured = client.put(path, json={'scenarios': [
         {'name': 'slow-rc', 'require_spef': True},
         {'name': 'fast', 'require_spef': False},
         {'name': 'hold', 'require_spef': False},
-    ]})
+    ], 'expected_version': 0, 'reason': 'initial MMMC coverage plan'})
     assert configured.status_code == 200, configured.text
-    assert [row['name'] for row in client.get(path).json()] == ['fast', 'hold', 'slow-rc']
+    assert configured.json()['version'] == 1
+    assert [row['name'] for row in client.get(path).json()['scenarios']] == ['slow-rc', 'fast', 'hold']
     slow = record(pid, 'slow-rc', parasitics='none')
     fast = record(pid, 'fast', status=RunStatus.passed, slack=20, violations=0, parasitics='none')
     record(pid, 'exploratory', parasitics='spef')
@@ -98,8 +99,14 @@ def test_expected_scenario_set_reports_missing_and_parasitic_gaps(client):
 
     replaced = client.put(path, json={'scenarios': [
         {'name': 'slow-rc', 'require_spef': False}, {'name': 'fast'},
-    ]})
+    ], 'expected_version': 1, 'reason': 'hold covered by consolidated signoff view'})
     assert replaced.status_code == 200
+    assert replaced.json()['version'] == 2
+    stale = client.put(path, json={'scenarios': [{'name': 'stale'}],
+        'expected_version': 1, 'reason': 'stale editor'})
+    assert stale.status_code == 409 and stale.json()['detail']['current']['version'] == 2
+    history = client.get(path + '/history').json()
+    assert [item['version'] for item in history['items']] == [2, 1]
     matrix = client.get(f'/projects/{pid}/sta-matrix?stage=routing&design_revision=rev-a').json()
     assert matrix['summary']['scenario_coverage_complete'] is True
     assert matrix['summary']['parasitic_requirement_gaps'] == 0
@@ -107,7 +114,7 @@ def test_expected_scenario_set_reports_missing_and_parasitic_gaps(client):
 
 def test_scenario_configuration_rejects_case_insensitive_duplicates(client):
     pid = project(client)
-    response = client.put(f'/projects/{pid}/sta-scenarios/routing', json={'scenarios': [
+    response = client.put(f'/projects/{pid}/sta-scenario-plan/routing', json={'scenarios': [
         {'name': 'Slow'}, {'name': ' slow '},
-    ]})
+    ], 'expected_version': 0, 'reason': 'duplicate check'})
     assert response.status_code == 422

@@ -36,6 +36,7 @@ API 서버와 수집기에 주입한다. 설정이 존재하지만 JSON 또는 �
   "tool": "Synopsys PrimeTime",
   "tool_version": "T-2025.06",
   "scenario": "all-signoff-views",
+  "scenario_plan_version": 3,
   "claims": {
     "tool_run_completed": true,
     "modes_corners_complete": true,
@@ -52,6 +53,8 @@ API 서버와 수집기에 주입한다. 설정이 존재하지만 JSON 또는 �
 시각은 발급 시각보다 최대 5분 빠를 수 있으며 만료 뒤에는 거부한다. 모든 문자열 바인딩은
 대소문자와 공백까지 정확히 비교한다. `attestation_id`를 `import_id`와 같게 강제하므로 같은
 프로젝트에서 재사용하면 기존 멱등 가져오기 규칙이 적용된다.
+`scenario_plan_version`은 STA 증명에서 사용하며 현재 프로젝트·단계의 버전형 MMMC 계획과 일치해야
+한다. 버전 0 기존 계획에서는 생략할 수 있고 다른 도메인에서는 사용하지 않는다.
 이미 저장된 것과 바이트까지 같은 요청은 증명이 만료되거나 해당 키가 교체된 뒤에도 기존 런을
 반환한다. 내용이 달라진 같은 UUID는 계속 409로 거부한다.
 
