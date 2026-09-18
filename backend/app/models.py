@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -120,6 +120,30 @@ class RunEvidence(Base):
     result: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     run: Mapped[SignoffRun] = relationship(back_populates="evidence")
+
+
+class SignoffReleaseDecision(Base):
+    """Append-only human decision tied to the exact archived evidence package."""
+
+    __tablename__ = 'signoff_release_decisions'
+    __table_args__ = (Index('ix_signoff_release_decisions_project_id_id', 'project_id', 'id'),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('projects.id'))
+    stage: Mapped[Stage] = mapped_column(Enum(Stage))
+    decision: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(Text)
+    design_revision: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    decided_by: Mapped[str] = mapped_column(String(80))
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    gate_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    manifest: Mapped[dict] = mapped_column(JSON)
+    manifest_sha256: Mapped[str] = mapped_column(String(64))
+    package_sha256: Mapped[str] = mapped_column(String(64))
+    decision_sha256: Mapped[str] = mapped_column(String(64))
+    package_bytes: Mapped[bytes] = mapped_column(LargeBinary)
+    byte_length: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class RunArtifact(Base):

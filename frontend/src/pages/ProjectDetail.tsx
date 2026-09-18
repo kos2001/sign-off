@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 
@@ -35,6 +35,7 @@ export default function ProjectDetail() {
   const auth = useAuth();
   const qc = useQueryClient();
   const [stage, setStage] = useState<Stage>("placement");
+  const [releaseReason, setReleaseReason] = useState("");
   const gateExport = useMutation({
     mutationFn: (input: { projectId: number; stage: Stage }) => api.exportGate(input.projectId, input.stage),
     onSuccess: (blob, input) => {
@@ -53,6 +54,30 @@ export default function ProjectDetail() {
       const link = document.createElement('a');
       link.href = url;
       link.download = `project-${input.projectId}-${input.stage}-evidence.zip`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  });
+  const releases = useInfiniteQuery({
+    queryKey: ['signoff-releases', projectId],
+    queryFn: ({ pageParam }) => api.signoffReleases(projectId, pageParam),
+    initialPageParam: null as number | null,
+    getNextPageParam: page => page.next_before_id ?? undefined,
+  });
+  const releaseDecision = useMutation({
+    mutationFn: (decision: 'approved' | 'rejected') => api.createSignoffRelease(projectId, { stage, decision, reason: releaseReason }),
+    onSuccess: async () => {
+      setReleaseReason('');
+      await qc.invalidateQueries({ queryKey: ['signoff-releases', projectId] });
+    },
+  });
+  const archivedPackage = useMutation({
+    mutationFn: (releaseId: number) => api.downloadSignoffRelease(projectId, releaseId),
+    onSuccess: (blob, releaseId) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `project-${projectId}-decision-${releaseId}.zip`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
@@ -97,6 +122,7 @@ export default function ProjectDetail() {
     );
 
   const p = project.data!;
+  const releaseItems = releases.data?.pages.flatMap(page => page.items) ?? [];
 
   return (
     <div className="space-y-6">
@@ -186,6 +212,36 @@ export default function ProjectDetail() {
               {gate.data.revision_check.missing_domains.length > 0 && <p>리비전 누락: {gate.data.revision_check.missing_domains.map(domain => DOMAIN_LABELS[domain]).join(', ')}</p>}
               <p className="text-[var(--text-muted)]">도메인별 최신 런을 비교합니다. 리비전 이름의 일치만으로 실제 설계 입력과 전체 검증 범위가 같다는 것을 보장하지 않습니다.</p>
             </div>}
+            <section className="rounded-lg border border-[var(--border)] p-3 space-y-3" aria-label="사인오프 결정 기록">
+              <div>
+                <h3 className="font-semibold text-sm">사람의 사인오프 결정</h3>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">승인자만 결정할 수 있습니다. 서버가 현재 근거 패키지를 다시 검증해 결정과 함께 불변 보관하며 AI는 승인·거절에 개입하지 않습니다.</p>
+              </div>
+              {auth.can(projectId, 'approver') && <div className="space-y-2">
+                <textarea className="input w-full" rows={2} maxLength={4000} value={releaseReason} onChange={event => setReleaseReason(event.target.value)} placeholder="결정 사유" aria-label="사인오프 결정 사유" />
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn btn-primary" disabled={!gate.data.ready || !releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('approved')}>게이트 승인·동결</button>
+                  <button className="btn btn-ghost" disabled={!releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('rejected')}>차단 결정·동결</button>
+                </div>
+                {!gate.data.ready && <p className="text-xs text-[var(--text-muted)]">현재 게이트가 차단되어 승인은 사용할 수 없습니다. 근거를 보완하거나 차단 결정을 기록하세요.</p>}
+                {releaseDecision.isError && <p role="alert" className="text-sm text-[var(--status-critical)]">{releaseDecision.error.message}</p>}
+                {releaseDecision.isSuccess && <p role="status" className="text-sm">결정과 근거 패키지를 보관했습니다.</p>}
+              </div>}
+              {releaseItems.length ? <ul className="space-y-2">
+                {releaseItems.map(item => <li key={item.id} className="rounded-md border border-[var(--grid-hairline)] p-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={item.decision === 'approved' ? 'good' : 'critical'} label={item.decision === 'approved' ? '승인' : '차단'} />
+                    <strong>{STAGE_LABELS[item.stage]}</strong>
+                    <span>{item.decided_by} · {new Date(item.created_at).toLocaleString()}</span>
+                    <button className="btn btn-ghost" disabled={archivedPackage.isPending} onClick={() => archivedPackage.mutate(item.id)}>보관 패키지</button>
+                  </div>
+                  <p className="mt-1 break-words">{item.reason}</p>
+                  <p className="mt-1 break-all text-[var(--text-muted)]">리비전 {item.design_revision || '미확정'} · 패키지 SHA-256 {item.package_sha256}</p>
+                </li>)}
+              </ul> : <p className="text-xs text-[var(--text-muted)]">기록된 사인오프 결정이 없습니다.</p>}
+              {releases.hasNextPage && <button className="btn btn-ghost" disabled={releases.isFetchingNextPage} onClick={() => void releases.fetchNextPage()}>{releases.isFetchingNextPage ? '이전 결정 불러오는 중…' : '이전 결정 더 보기'}</button>}
+              {archivedPackage.isError && <p role="alert" className="text-sm text-[var(--status-critical)]">{archivedPackage.error.message}</p>}
+            </section>
             <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {gate.data.domains.map((d) => (
                 <li

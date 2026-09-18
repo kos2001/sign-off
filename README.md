@@ -140,5 +140,7 @@ RTL 테스트벤치 입력, 실제 Icarus 실행, 컴파일·실행 로그와 �
 
 스테이지 게이트는 수동 통과 상태만으로 열리지 않으며 도메인별 최신 런의 설계 리비전도 검사합니다.
 검증 범위와 현재 지원 한계는 [게이트 근거 정책](docs/gate-provenance.md)을 참고하세요.
+[사인오프 결정과 근거 동결](docs/signoff-release-decisions.md)은 approver의 승인·차단 사유와
+그 시점의 검증된 ZIP 패키지를 SHA-256에 묶어 불변 보관합니다.
 
 [KLayout DRC 마커 보고서 가져오기](docs/klayout-import.md)를 지원합니다. PV 런·위반·원본 근거로 보존하며 전체 DRC 통과와 구분합니다.

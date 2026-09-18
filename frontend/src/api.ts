@@ -323,6 +323,13 @@ export interface GateStatus {
   revision_check?: { status: 'missing' | 'mismatch' | 'consistent'; revisions: string[]; missing_domains: Domain[]; common_revision: string | null };
 }
 
+export interface SignoffReleaseDecision {
+  id: number; project_id: number; stage: Stage; decision: 'approved' | 'rejected';
+  reason: string; design_revision: string | null; decided_by: string;
+  decided_by_user_id: number | null; manifest_sha256: string; package_sha256: string;
+  decision_sha256: string; byte_length: number; created_at: string; gate: GateStatus;
+}
+
 export interface IrDropResult {
   grid_shape: number[];
   vdd: number;
@@ -651,6 +658,12 @@ export const api = {
     request<Blob>(`/projects/${projectId}/signoff-status/export?stage=${stage}`, undefined, 'blob'),
   exportSignoffPackage: (projectId: number, stage: Stage) =>
     request<Blob>(`/projects/${projectId}/signoff-package?stage=${stage}`, undefined, 'blob'),
+  signoffReleases: (projectId: number, beforeId: number | null = null) =>
+    request<{ items: SignoffReleaseDecision[]; next_before_id: number | null }>(`/projects/${projectId}/signoff-releases${beforeId ? `?before_id=${beforeId}` : ''}`),
+  createSignoffRelease: (projectId: number, body: { stage: Stage; decision: 'approved' | 'rejected'; reason: string }) =>
+    request<SignoffReleaseDecision>(`/projects/${projectId}/signoff-releases`, { method: 'POST', body: JSON.stringify(body) }),
+  downloadSignoffRelease: (projectId: number, releaseId: number) =>
+    request<Blob>(`/projects/${projectId}/signoff-releases/${releaseId}/package`, undefined, 'blob'),
   irDrop: (payload: {
     cell_density: number[][];
     switching_activity: number[][];
