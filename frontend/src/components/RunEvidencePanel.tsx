@@ -76,7 +76,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
           <p>설계 리비전: {evidence.data.design_revision} · 입력된 툴 버전: {evidence.data.result.metadata?.tool_version}</p>
           <p>룰덱 / 실행 조건: {evidence.data.result.metadata?.scenario} · 업로드: {evidence.data.result.submitted_by?.username ?? '로컬 모드'}</p>
           <p>보고된 마커 {evidence.data.result.metrics?.reported_items}개 · 중복 발생 수 합계 {evidence.data.result.metrics?.reported_multiplicity}</p>
-          <p>보고된 마커만 보존합니다. 셀 좌표는 계층 변환하지 않습니다. 전체 DRC 범위는 미확인이며 보고된 심각도나 원본 태그는 승인으로 반영하지 않습니다.</p>
+          {evidence.data.result.coverage_attestation?.verified ? <div className="rounded-lg border border-[var(--status-good)] p-2 space-y-1"><p className="font-semibold">신뢰된 수집기 전체 DRC 범위 증명</p><p>키 ID: {evidence.data.result.coverage_attestation.key_id} · 유효 기간: {new Date(evidence.data.result.coverage_attestation.issued_at).toLocaleString()} – {new Date(evidence.data.result.coverage_attestation.expires_at).toLocaleString()}</p><p className="break-all">증명 ID: {evidence.data.result.coverage_attestation.attestation_id}</p><p>서버가 서명과 DRC 범위 선언을 검증했습니다. 등록 수집기의 선언이며 EDA 벤더 서명이나 호스트 무결성 증명은 아닙니다. AI는 판정에 개입하지 않습니다.</p></div> : <p>보고된 마커만 보존합니다. 셀 좌표는 계층 변환하지 않습니다. 전체 DRC 범위는 미확인이며 보고된 심각도나 원본 태그는 승인으로 반영하지 않습니다.</p>}
           <p className="break-all">원본 SHA-256: {evidence.data.source_sha256}</p>
           <button className="btn btn-ghost" onClick={download}>근거 JSON 다운로드</button>
           <details><summary className="cursor-pointer">원본 DRC 보고서</summary><pre className="max-h-80 overflow-auto" tabIndex={0}>{evidence.data.source_text}</pre></details>

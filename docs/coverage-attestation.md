@@ -1,6 +1,6 @@
 # 신뢰된 수집기 커버리지 증명
 
-경로 목록만으로는 PrimeTime 또는 Tempus가 모든 필수 모드·코너·제약을 끝까지 실행했는지
+경로나 마커 목록만으로는 STA 또는 DRC 툴이 모든 필수 입력과 검사를 끝까지 실행했는지
 알 수 없다. `signoff/coverage-attestation/v1`은 운영자가 등록한 수집기가 실행 범위를 확인하고
 특정 가져오기 요청에 HMAC-SHA256으로 묶는 계약이다. 사용자가 직접 입력한 체크박스나 툴 이름은
 전체 범위 근거로 인정하지 않는다.
@@ -77,3 +77,17 @@ signature = hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
 HMAC은 Sign-off Hub 운영자와 수집기 사이의 신뢰만 증명한다. 벤더 바이너리·라이선스·실제 입력
 파일의 진위, 수집기 호스트 침해 여부를 증명하지 않는다. AI는 서명 검증, 상태 계산 또는 게이트
 판정에 개입하지 않는다.
+
+### DRC claim 집합
+
+Calibre/Pegasus 증명은 `domain: "pv"`와 다음 여섯 키를 정확히 사용하며 모두 `true`여야 한다.
+
+- `tool_run_completed`
+- `rule_deck_complete`
+- `layout_inputs_complete`
+- `hierarchy_complete`
+- `checks_complete`
+- `findings_complete`
+
+DRC 보고서에 error/critical 마커가 있으면 증명이 유효해도 런은 `failed`다. warning/info만
+있거나 마커가 없으면 `passed`가 될 수 있다. 증명은 웨이버를 만들거나 마커 상태를 바꾸지 않는다.

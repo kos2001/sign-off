@@ -46,9 +46,13 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             if v.severity in BLOCKING_SEVERITIES and v.status == ViolationStatus.open
         ]
         evidence_result = latest.evidence.result if latest.evidence_source == "rtl_ladder" else latest.metrics
+        attested_source = {
+            Domain.sta: 'commercial_sta_report',
+            Domain.pv: 'commercial_drc_report',
+        }.get(latest.domain)
         attested_coverage = bool(
-            latest.domain == Domain.sta
-            and latest.evidence_source == 'commercial_sta_report'
+            attested_source
+            and latest.evidence_source == attested_source
             and latest.evidence
             and latest.evidence.result.get('coverage_attestation', {}).get('verified') is True
             and latest.evidence.result.get('coverage') == 'collector_attested_complete'
@@ -60,7 +64,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             reason = ('Executed path sample does not establish full STA coverage' if latest.evidence_source == 'opensta_execution'
                       else 'Imported path report does not establish full STA coverage')
             ready = False
-        elif latest.evidence_source in {'klayout_report', 'commercial_drc_report'}:
+        elif latest.evidence_source in {'klayout_report', 'commercial_drc_report'} and not attested_coverage:
             reason = 'Imported marker report does not establish full DRC coverage'
             ready = False
         elif latest.evidence_source == 'commercial_emir_report':

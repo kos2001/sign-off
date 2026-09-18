@@ -10,6 +10,7 @@ export default function ReportImport({ klayout = false, commercialSta = false, c
 }
 function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { projectId: number; klayout: boolean; commercialSta: boolean; commercialDrc: boolean }) {
   const drc = klayout || commercialDrc;
+  const trustedAttestation = commercialSta || commercialDrc;
   const auth = useAuth();
   const qc = useQueryClient();
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId) });
@@ -25,7 +26,7 @@ function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { proj
     setPreview(null); setSaved(null); setError('');
   }
   function requestForm(): ReportImportInput {
-    if (!commercialSta || !attestationText.trim()) return form;
+    if (!trustedAttestation || !attestationText.trim()) return form;
     try {
       const parsed = JSON.parse(attestationText) as unknown;
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
@@ -66,7 +67,7 @@ function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { proj
           finally { setPending(false); }
         }} /></label>
         <label className="block text-sm">{klayout ? "보고서 XML" : "보고서 JSON"}<textarea aria-label={klayout ? "보고서 XML" : "보고서 JSON"} className="input mt-1 w-full font-mono text-xs" rows={10} required maxLength={2_000_000} spellCheck={false} value={form.source_text} onChange={e => { fileVersion.current++; edit({ source_text: e.target.value }); }} /></label>
-        {commercialSta && <label className="block text-sm">신뢰된 수집기 커버리지 증명 (선택)<textarea aria-label="커버리지 증명 JSON" className="input mt-1 w-full font-mono text-xs" rows={7} spellCheck={false} value={attestationText} onChange={e => { setAttestationText(e.target.value); setPreview(null); setSaved(null); setError(''); }} placeholder='{"format":"signoff/coverage-attestation/v1", ...}' /><span className="mt-1 block text-xs text-[var(--text-muted)]">서버에 등록된 수집기 키로 서명된 증명만 전체 STA 실행 범위로 인정합니다. 일반 경로 보고서는 계속 부분 근거로 저장됩니다.</span></label>}
+        {trustedAttestation && <label className="block text-sm">신뢰된 수집기 커버리지 증명 (선택)<textarea aria-label="커버리지 증명 JSON" className="input mt-1 w-full font-mono text-xs" rows={7} spellCheck={false} value={attestationText} onChange={e => { setAttestationText(e.target.value); setPreview(null); setSaved(null); setError(''); }} placeholder='{"format":"signoff/coverage-attestation/v1", ...}' /><span className="mt-1 block text-xs text-[var(--text-muted)]">서버에 등록된 수집기 키로 서명된 증명만 전체 {commercialDrc ? 'DRC' : 'STA'} 실행 범위로 인정합니다. 일반 보고서는 계속 부분 근거로 저장됩니다.</span></label>}
         <button className="btn btn-primary" disabled={pending || saved !== null}>{pending ? '처리 중…' : '가져오기 미리보기'}</button>
       </fieldset>
     </form>
@@ -76,7 +77,8 @@ function ImportForm({ projectId, klayout, commercialSta, commercialDrc }: { proj
       {'items' in preview ? <>
         {preview.tool && <p className="text-sm">수집 툴: <strong>{preview.tool}</strong>{preview.tool_version ? ` · ${preview.tool_version}` : ''}</p>}
         <p>마커 {preview.metrics.reported_items}개 · 보고된 중복 발생 수 합계 {preview.metrics.reported_multiplicity}</p>
-        <p>{commercialDrc ? '수집기가 기록한 심각도를 보존하지만 해결·승인으로 해석하지 않습니다.' : 'DRC 마커를 보수적으로 error 위반으로 등록합니다. 원본 형식에는 표준 심각도 필드가 없습니다. visited·waived 태그는 서비스의 해결·승인으로 반영하지 않습니다.'} 마커가 없더라도 전체 검증 범위 미확인으로 저장합니다.</p>
+        <p>{commercialDrc ? '수집기가 기록한 심각도를 보존하지만 해결·승인으로 해석하지 않습니다.' : 'DRC 마커를 보수적으로 error 위반으로 등록합니다. 원본 형식에는 표준 심각도 필드가 없습니다. visited·waived 태그는 서비스의 해결·승인으로 반영하지 않습니다.'} {preview.coverage_attestation?.verified ? '서명된 범위와 차단 마커를 함께 판정합니다.' : '마커가 없더라도 전체 검증 범위 미확인으로 저장합니다.'}</p>
+        {preview.coverage_attestation?.verified && <p className="font-semibold">신뢰된 수집기 서명과 전체 DRC 범위 선언을 검증했습니다. 차단 마커가 없으면 통과 상태로 저장합니다.</p>}
         <ul className="space-y-2">{preview.items.slice(0, 20).map(item => <li key={item.index} className="rounded-lg bg-[var(--surface-2)] p-3 text-xs break-words"><strong>#{item.index} · {item.category}</strong><p>셀: {item.cell || '전체 셀'} · 중복 발생 수: {item.multiplicity}{item.severity ? ` · 심각도: ${item.severity}` : ''}</p><pre className="whitespace-pre-wrap break-words">{item.values.join('\n')}</pre><p>원본 태그: {item.tags || '없음'}</p></li>)}</ul>
         {preview.items.length > 20 && <p>처음 20개 마커를 표시합니다. 저장 시 전체 {preview.items.length}개를 보존합니다.</p>}
       </> : <>

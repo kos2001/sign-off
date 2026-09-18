@@ -1,11 +1,15 @@
 import copy
 import hashlib
+import hmac
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.services.commercial_drc import parse_commercial_drc
+from app.services.coverage_attestation import REQUIRED_DRC_CLAIMS, canonical_payload
+from app.routers.imports import CoverageAttestationPayload
 from test_auth import accounts
 
 
@@ -33,6 +37,23 @@ def payload(document=None):
             'tool_version': document.get('tool_version', '2025.2_18.11'),
             'design_revision': 'rev-commercial-pv', 'scenario': 'foundry-deck-7nm-r42',
             'source_text': json.dumps(document, ensure_ascii=False, indent=2) + '\n'}
+
+
+def attest(body, project_id, secret='drc-collector-secret-with-at-least-32-bytes'):
+    now = datetime.now(timezone.utc)
+    document = json.loads(body['source_text'])
+    value = {
+        'format': 'signoff/coverage-attestation/v1', 'attestation_id': body['import_id'],
+        'key_id': 'qa-drc-collector', 'issued_at': now.isoformat(),
+        'expires_at': (now + timedelta(hours=1)).isoformat(), 'project_id': project_id,
+        'stage': body['stage'], 'domain': 'pv', 'design_revision': body['design_revision'],
+        'source_sha256': hashlib.sha256(body['source_text'].encode()).hexdigest(),
+        'tool': document['tool'], 'tool_version': body['tool_version'], 'scenario': body['scenario'],
+        'claims': {claim: True for claim in REQUIRED_DRC_CLAIMS}, 'signature': '0' * 64,
+    }
+    parsed = CoverageAttestationPayload.model_validate(value)
+    value['signature'] = hmac.new(secret.encode(), canonical_payload(parsed), hashlib.sha256).hexdigest()
+    return value
 
 
 def test_parser_normalizes_units_shapes_severity_and_identity():
@@ -102,3 +123,57 @@ def test_preview_import_evidence_markers_violation_and_retry(accounts):
     assert detail['violation_matches']['status'] == 'unique'
     source = viewer.get(f"/runs/{run['id']}/evidence/source")
     assert source.content == body['source_text'].encode() and '.json' in source.headers['content-disposition']
+
+
+def test_trusted_drc_attestation_can_establish_pv_gate_coverage(accounts, monkeypatch):
+    secret = 'drc-collector-secret-with-at-least-32-bytes'
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-drc-collector': secret}))
+    _, ids, login = accounts
+    body = payload({**report(), 'markers': []})
+    body['coverage_attestation'] = attest(body, ids['project'], secret)
+    path = f"/projects/{ids['project']}/imports/commercial-drc"
+    editor = login('editor')
+    preview = editor.post(path + '/preview', json=body)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()['status'] == 'passed'
+    assert preview.json()['coverage'] == 'collector_attested_complete'
+    run = editor.post(path, json=body).json()
+    assert run['status'] == 'passed'
+    evidence = editor.get(f"/runs/{run['id']}/evidence").json()
+    assert evidence['result']['coverage_attestation']['signature'] == body['coverage_attestation']['signature']
+    pv = next(item for item in editor.get(
+        f"/projects/{ids['project']}/signoff-status?stage=routing").json()['domains'] if item['domain'] == 'pv')
+    assert pv['ready'] is True and pv['run_id'] == run['id']
+    candidate_body = payload({**report(), 'markers': []})
+    candidate_body['coverage_attestation'] = attest(candidate_body, ids['project'], secret)
+    candidate = editor.post(path, json=candidate_body).json()
+    comparison = editor.get(f"/projects/{ids['project']}/run-comparison", params={
+        'baseline_run_id': run['id'], 'candidate_run_id': candidate['id'],
+    }).json()
+    assert comparison['partial'] is False
+    monkeypatch.delenv('SIGNOFF_COVERAGE_HMAC_KEYS')
+    assert editor.post(path, json=body).json()['id'] == run['id']
+
+
+def test_invalid_or_failing_drc_attestation_never_opens_gate(accounts, monkeypatch):
+    secret = 'drc-collector-secret-with-at-least-32-bytes'
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-drc-collector': secret}))
+    _, ids, login = accounts
+    path = f"/projects/{ids['project']}/imports/commercial-drc"
+    editor = login('editor')
+    bad = payload({**report(), 'markers': []})
+    bad['coverage_attestation'] = attest(bad, ids['project'], secret)
+    bad['coverage_attestation']['signature'] = 'f' * 64
+    assert editor.post(path + '/preview', json=bad).status_code == 422
+    no_deck = payload({key: value for key, value in {**report(), 'markers': []}.items() if key != 'rule_deck'})
+    no_deck['coverage_attestation'] = attest(no_deck, ids['project'], secret)
+    assert editor.post(path + '/preview', json=no_deck).status_code == 422
+    failing = payload()
+    failing['coverage_attestation'] = attest(failing, ids['project'], secret)
+    preview = editor.post(path + '/preview', json=failing)
+    assert preview.status_code == 200 and preview.json()['status'] == 'failed'
+    run = editor.post(path, json=failing).json()
+    pv = next(item for item in editor.get(
+        f"/projects/{ids['project']}/signoff-status?stage=routing").json()['domains'] if item['domain'] == 'pv')
+    assert pv['run_id'] == run['id'] and pv['ready'] is False
+    assert pv['reason'] == "latest run status is 'failed'"
