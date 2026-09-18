@@ -235,6 +235,24 @@ class RtlSignoffRequest(BaseModel):
     )
 
 
+class StaSignoffRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=False)
+    project_id: int = Field(strict=True, ge=1, le=2**63 - 1)
+    stage: Stage
+    top_module: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z_][A-Za-z0-9_$]*$")
+    design_revision: str = Field(min_length=1, max_length=160)
+    scenario: str = Field(min_length=1, max_length=160)
+    netlist: str = Field(min_length=1, max_length=1_000_000)
+    liberty: str = Field(min_length=1, max_length=5_000_000)
+    sdc: str = Field(min_length=1, max_length=500_000)
+
+    @model_validator(mode='after')
+    def nonblank_metadata(self):
+        if not self.design_revision.strip() or not self.scenario.strip():
+            raise ValueError('design_revision and scenario must not be blank')
+        return self
+
+
 class TimingCorner(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=160, examples=["ss_0p675v_125c"])

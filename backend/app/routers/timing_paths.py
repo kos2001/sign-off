@@ -21,7 +21,7 @@ router = APIRouter(tags=['timing-paths'])
 
 def captured_run(run_id, db):
     run = get_run_or_404(run_id, db)
-    if run.evidence_source != 'opensta_report':
+    if run.evidence_source not in {'opensta_report', 'opensta_execution'}:
         raise HTTPException(409, 'this run has no imported timing paths')
     return run
 

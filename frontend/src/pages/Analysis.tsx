@@ -172,11 +172,58 @@ export default function Analysis() {
   return (
     <div className="space-y-6">
       <RtlSignoffSection />
+      <StaSignoffSection />
       <IrDropSection />
       <TimingSection />
       <GlitchSection />
     </div>
   );
+}
+
+function StaSignoffSection() {
+  const auth = useAuth();
+  const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
+  const [projectId, setProjectId] = useState<number | "">("");
+  const [stage, setStage] = useState("synthesis");
+  const [topModule, setTopModule] = useState("");
+  const [revision, setRevision] = useState("");
+  const [scenario, setScenario] = useState("");
+  const [netlist, setNetlist] = useState("");
+  const [liberty, setLiberty] = useState("");
+  const [sdc, setSdc] = useState("");
+  const run = useMutation({ mutationFn: () => api.staSignoff({ project_id: Number(projectId), stage: stage as "rtl" | "synthesis" | "placement" | "routing" | "final", top_module: topModule.trim(), design_revision: revision.trim(), scenario: scenario.trim(), netlist, liberty, sdc }) });
+  const fields = [
+    { label: "게이트 레벨 Verilog 넷리스트", value: netlist, set: setNetlist, accept: ".v,.sv", max: 1_000_000 },
+    { label: "Liberty 타이밍 라이브러리", value: liberty, set: setLiberty, accept: ".lib", max: 5_000_000 },
+    { label: "SDC 제약", value: sdc, set: setSdc, accept: ".sdc", max: 500_000 },
+  ];
+  function loadFile(file: File | undefined, setter: (value: string) => void, max: number) {
+    if (!file) return;
+    if (file.size > max) return;
+    void file.text().then(setter);
+  }
+  const valid = projectId !== "" && /^[A-Za-z_][A-Za-z0-9_$]*$/.test(topModule.trim()) && revision.trim() && scenario.trim() && netlist.trim() && liberty.trim() && sdc.trim();
+  return <Card id="sta-signoff" title="OpenSTA 정적 타이밍 실행" subtitle="넷리스트 · Liberty · SDC → 격리 OpenSTA → 저장된 경로·위반·실행 근거">
+    <div className="mb-4 rounded-lg border border-[var(--border)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+      이 단계는 서버의 OpenSTA 도구만 실행하며 AI 에이전트는 개입하지 않습니다. 실행 후 런 작업공간에서 A2 타이밍 분석가 검토를 사용자가 별도로 요청할 수 있습니다.
+    </div>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <Field label="프로젝트"><select className="input" value={projectId} onChange={e => setProjectId(e.target.value ? Number(e.target.value) : "")}><option value="">선택</option>{(projects.data ?? []).filter(p => auth.can(p.id, "editor")).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+      <Field label="설계 단계"><select className="input" value={stage} onChange={e => setStage(e.target.value)}>{["rtl", "synthesis", "placement", "routing", "final"].map(v => <option key={v}>{v}</option>)}</select></Field>
+      <Field label="최상위 모듈"><input className="input" value={topModule} maxLength={120} onChange={e => setTopModule(e.target.value)} placeholder="chip_top" /></Field>
+      <Field label="설계 리비전"><input className="input" value={revision} maxLength={160} onChange={e => setRevision(e.target.value)} placeholder="Git SHA" /></Field>
+      <Field label="시나리오"><input className="input" value={scenario} maxLength={160} onChange={e => setScenario(e.target.value)} placeholder="ss_0p72v_125c" /></Field>
+    </div>
+    <div className="mt-4 grid gap-4 lg:grid-cols-3">{fields.map(field => <Field key={field.label} label={field.label}>
+      <input className="mb-2 block w-full text-xs" type="file" accept={field.accept} onChange={e => loadFile(e.target.files?.[0], field.set, field.max)} />
+      <textarea className="code-editor w-full" rows={10} value={field.value} maxLength={field.max} spellCheck={false} onChange={e => field.set(e.target.value)} aria-label={field.label} />
+      <span className="text-xs text-[var(--text-muted)]">{new Blob([field.value]).size.toLocaleString()} / {field.max.toLocaleString()} bytes</span>
+    </Field>)}</div>
+    <p className="mt-3 text-xs text-[var(--text-secondary)]">SDC는 Tcl 기반 제약 파일입니다. 서버는 일반 파일·프로세스·네트워크 명령을 비활성화하고, 네트워크와 호스트 마운트가 없는 제한된 컨테이너에서 실행합니다.</p>
+    <button className="btn btn-primary mt-3" disabled={!valid || run.isPending} onClick={() => run.mutate()}>{run.isPending ? "OpenSTA 실행 중…" : "OpenSTA 실행 및 기록"}</button>
+    {run.isError && <p role="alert" className="mt-3 text-sm">{run.error.message}</p>}
+    {run.data && <div className="mt-4 rounded-lg border border-[var(--border)] p-3 text-sm space-y-2"><p><strong>런 #{run.data.run_id}</strong> · 보고 경로 {run.data.metrics.reported_paths}개 · 위반 {run.data.metrics.violating_paths}개 · 최악 슬랙 {run.data.metrics.worst_reported_slack_ps ?? "없음"} ps</p><p className="text-xs text-[var(--text-secondary)]">OpenSTA {run.data.execution.opensta_commit.slice(0, 12)} · AI 개입 없음 · 경로 표본만 생성되어 전체 STA 게이트는 미완료로 유지됩니다.</p><Link className="btn btn-ghost inline-block" to={`/runs/${run.data.run_id}`}>런 작업공간 열기</Link></div>}
+  </Card>;
 }
 
 const LADDER = ["lint", "design", "synthesize", "simulate"] as const;

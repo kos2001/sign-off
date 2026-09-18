@@ -49,7 +49,7 @@ def finish_review(db, review_id, outcome):
 
 def snapshot(run):
     evidence = run.evidence
-    if evidence is None or evidence.source not in {'rtl_ladder', 'opensta_report'}:
+    if evidence is None or evidence.source not in {'rtl_ladder', 'opensta_report', 'opensta_execution'}:
         raise HTTPException(409, '저장된 RTL 또는 OpenSTA 실행 근거가 필요합니다.')
     if evidence.source_text is None or hashlib.sha256(evidence.source_text.encode()).hexdigest() != evidence.source_sha256:
         raise HTTPException(409, '원본 해시가 일치하지 않아 검토를 시작할 수 없습니다.')

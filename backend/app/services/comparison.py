@@ -99,7 +99,7 @@ def compare_runs(baseline: SignoffRun, candidate: SignoffRun) -> dict:
     return {
         "baseline_run": baseline, "candidate_run": candidate,
         "baseline_provenance": provenance(baseline), "candidate_provenance": provenance(candidate),
-        "partial": any(run.status in (RunStatus.running, RunStatus.incomplete) or run.evidence_source in {'opensta_report', 'klayout_report'} for run in (baseline, candidate)),
+        "partial": any(run.status in (RunStatus.running, RunStatus.incomplete) or run.evidence_source in {'opensta_report', 'opensta_execution', 'klayout_report'} for run in (baseline, candidate)),
         "different_tools": baseline.tool != candidate.tool,
         "summary": {kind: sum(row["kind"] == kind for row in changes) for kind in kind_rank},
         "metrics": compare_metrics(baseline.metrics, candidate.metrics),
