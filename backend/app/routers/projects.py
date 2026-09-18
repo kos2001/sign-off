@@ -10,16 +10,18 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.access import change_membership
 from ..services.coverage_attestation import REQUIRED_CLAIMS
-from ..services.stages import resolve_signoff_plan
+from ..services.stages import resolve_signoff_plan, resolve_target_revision
 from ..services.sta_scenario_plans import resolve_sta_scenario_plan
 from ..auth import auth_required
 from ..auth import require_project
 from ..models import (Project, ProjectLifecycleEvent, ProjectMember, ProjectSignoffPlanRevision,
+                      ProjectStageTargetRevision,
                       RunStatus, SignoffRun, StaBatchExecution, Stage)
 from ..schemas import (CollectorContextOut, ProjectCreate, ProjectLifecycleHistoryOut,
                        ProjectLifecycleUpdate, ProjectOut, ProjectSummaryOut, ProjectSummaryPageOut,
                        SignoffPlanHistoryOut, SignoffPlanOut,
-                       SignoffPlanStageOut, SignoffPlanUpdate)
+                       SignoffPlanStageOut, SignoffPlanUpdate, TargetRevisionHistoryOut,
+                       TargetRevisionOut, TargetRevisionsOut, TargetRevisionUpdate)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -223,6 +225,7 @@ def collector_context(project_id: int, stage: Stage, db: Session = Depends(get_d
         'format': 'signoff/collector-context/v1', 'project_id': project_id, 'stage': stage,
         'signoff_plan': plan,
         'sta_scenario_plan': resolve_sta_scenario_plan(db, project_id, stage),
+        'target_revision': resolve_target_revision(db, project_id, stage),
         'domains': [{
             'domain': domain, 'import_path': f'/projects/{project_id}/imports/{IMPORT_PATHS[domain]}',
             'required_claims': sorted(REQUIRED_CLAIMS[domain]),
@@ -237,6 +240,57 @@ def get_signoff_plan(project_id: int, db: Session = Depends(get_db)):
         SignoffPlanStageOut.model_validate(resolve_signoff_plan(db, project_id, stage))
         for stage in Stage
     ]}
+
+
+@router.get('/{project_id}/target-revisions', response_model=TargetRevisionsOut)
+def get_target_revisions(project_id: int, db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    return {'project_id': project_id,
+            'stages': [resolve_target_revision(db, project_id, stage) for stage in Stage]}
+
+
+@router.get('/{project_id}/target-revisions/history', response_model=TargetRevisionHistoryOut)
+def target_revision_history(project_id: int, stage: Stage | None = None,
+                            before_id: int | None = Query(None, ge=1),
+                            limit: int = Query(25, ge=1, le=100),
+                            db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    filters = [ProjectStageTargetRevision.project_id == project_id]
+    if stage is not None:
+        filters.append(ProjectStageTargetRevision.stage == stage)
+    if before_id is not None:
+        filters.append(ProjectStageTargetRevision.id < before_id)
+    rows = db.scalars(select(ProjectStageTargetRevision).where(*filters)
+                      .order_by(ProjectStageTargetRevision.id.desc()).limit(limit + 1)).all()
+    items = rows[:limit]
+    return {'items': items, 'next_before_id': items[-1].id if len(rows) > limit else None}
+
+
+@router.put('/{project_id}/target-revisions/{stage}', response_model=TargetRevisionOut)
+def update_target_revision(project_id: int, stage: Stage, payload: TargetRevisionUpdate,
+                           db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    require_project(db, project_id, 'approver')
+    current = resolve_target_revision(db, project_id, stage)
+    if payload.expected_version != current['version']:
+        raise HTTPException(409, detail={'message': 'target revision changed; reload and retry',
+                                         'current': jsonable_encoder(current)})
+    user = db.info.get('user')
+    revision = ProjectStageTargetRevision(
+        project_id=project_id, stage=stage, version=current['version'] + 1,
+        design_revision=payload.design_revision, reason=payload.reason,
+        updated_by=user.username if user else 'local operator',
+        updated_by_user_id=user.id if user else None,
+    )
+    db.add(revision)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        latest = resolve_target_revision(db, project_id, stage)
+        raise HTTPException(409, detail={'message': 'target revision changed; reload and retry',
+                                         'current': jsonable_encoder(latest)}) from None
+    return resolve_target_revision(db, project_id, stage)
 
 
 @router.get("/{project_id}/signoff-plan/history", response_model=SignoffPlanHistoryOut)

@@ -27,7 +27,7 @@ from ..schemas import (
     ViolationEventOut,
     WaiverCreate,
 )
-from ..services.stages import evaluate_gate, resolve_signoff_plan
+from ..services.stages import evaluate_gate, resolve_signoff_plan, resolve_target_revision
 from ..services.sta_scenario_plans import resolve_sta_scenario_plan
 from ..services.rtl.artifacts import NetlistArtifact, StructureArtifact, parse_structure, netlist_metadata_only
 from .projects import get_project_or_404
@@ -581,13 +581,17 @@ def waive_violation(
     ), db)
 
 
-def gate_runs(project_id: int, stage: Stage, db: Session):
+def gate_runs(project_id: int, stage: Stage, db: Session, revision: str | None = None):
     # One statement captures the selected runs, evidence and violations together.
     # Do not read all historical source texts on every five-second gate poll.
-    ranked = select(SignoffRun.id, func.row_number().over(
+    ranked_query = select(SignoffRun.id, func.row_number().over(
         partition_by=SignoffRun.domain,
         order_by=(SignoffRun.created_at.desc(), SignoffRun.id.desc()),
-    ).label('position')).where(SignoffRun.project_id == project_id, SignoffRun.stage == stage).subquery()
+    ).label('position')).where(SignoffRun.project_id == project_id, SignoffRun.stage == stage)
+    if revision is not None:
+        ranked_query = ranked_query.join(RunEvidence, RunEvidence.run_id == SignoffRun.id).where(
+            RunEvidence.design_revision == revision)
+    ranked = ranked_query.subquery()
     return list(db.scalars(
         select(SignoffRun)
         .where(SignoffRun.id.in_(select(ranked.c.id).where(ranked.c.position == 1)))
@@ -597,20 +601,25 @@ def gate_runs(project_id: int, stage: Stage, db: Session):
     ).unique())
 
 
+def current_gate(project_id: int, stage: Stage, db: Session):
+    target = resolve_target_revision(db, project_id, stage)
+    runs = gate_runs(project_id, stage, db, target['design_revision'])
+    gate = evaluate_gate(runs, stage, resolve_signoff_plan(db, project_id, stage),
+                         resolve_sta_scenario_plan(db, project_id, stage)['version'])
+    gate['target_revision'] = target
+    return runs, gate
+
+
 @router.get("/projects/{project_id}/signoff-status")
 def signoff_status(project_id: int, stage: Stage, db: Session = Depends(get_db)):
     get_project_or_404(project_id, db)
-    return evaluate_gate(gate_runs(project_id, stage, db), stage,
-                         resolve_signoff_plan(db, project_id, stage),
-                         resolve_sta_scenario_plan(db, project_id, stage)['version'])
+    return current_gate(project_id, stage, db)[1]
 
 
 @router.get('/projects/{project_id}/signoff-status/export')
 def export_gate(project_id: int, stage: Stage, db: Session = Depends(get_db)):
     get_project_or_404(project_id, db)
-    runs = gate_runs(project_id, stage, db)
-    gate = evaluate_gate(runs, stage, resolve_signoff_plan(db, project_id, stage),
-                         resolve_sta_scenario_plan(db, project_id, stage)['version'])
+    runs, gate = current_gate(project_id, stage, db)
     selected_ids = {domain.get('run_id') for domain in gate['domains']}
     selected = sorted((run for run in runs if run.id in selected_ids), key=lambda run: run.id)
     if sum(len(run.violations) for run in selected) > 10000:
@@ -663,9 +672,7 @@ def export_signoff_package(project_id: int, stage: Stage, db: Session = Depends(
     digest, so a downloaded archive never presents unverified bytes as evidence.
     """
     get_project_or_404(project_id, db)
-    selected = gate_runs(project_id, stage, db)
-    gate = evaluate_gate(selected, stage, resolve_signoff_plan(db, project_id, stage),
-                         resolve_sta_scenario_plan(db, project_id, stage)['version'])
+    selected, gate = current_gate(project_id, stage, db)
     selected_ids = {item.get('run_id') for item in gate['domains'] if item.get('run_id') is not None}
     runs = sorted((run for run in selected if run.id in selected_ids), key=lambda run: run.id)
     if sum(len(run.violations) for run in runs) > 10000:

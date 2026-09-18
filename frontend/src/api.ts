@@ -405,6 +405,11 @@ export interface GateStatus {
   ready: boolean;
   domains: GateDomain[];
   revision_check?: { status: 'missing' | 'mismatch' | 'consistent'; revisions: string[]; missing_domains: Domain[]; common_revision: string | null };
+  target_revision: TargetRevision;
+}
+export interface TargetRevision {
+  stage: Stage; version: number; design_revision: string | null; reason: string | null;
+  updated_by: string | null; updated_by_user_id: number | null; created_at: string | null;
 }
 
 export interface SignoffReleaseDecision {
@@ -795,6 +800,10 @@ export const api = {
   signoffPlan: (projectId: number) => request<SignoffPlan>(`/projects/${projectId}/signoff-plan`),
   updateSignoffPlan: (projectId: number, stage: Stage, body: { expected_version: number; required_domains: Domain[]; reason: string }) =>
     request<SignoffPlanStage>(`/projects/${projectId}/signoff-plan/${stage}`, { method: 'PUT', body: JSON.stringify(body) }),
+  targetRevisions: (projectId: number) => request<{ project_id: number; stages: TargetRevision[] }>(`/projects/${projectId}/target-revisions`),
+  updateTargetRevision: (projectId: number, stage: Stage, body: { expected_version: number; design_revision: string | null; reason: string }) =>
+    request<TargetRevision>(`/projects/${projectId}/target-revisions/${stage}`, { method: 'PUT', body: JSON.stringify(body) }),
+  targetRevisionHistory: (projectId: number, stage: Stage) => request<{ items: (TargetRevision & { id: number })[]; next_before_id: number | null }>(`/projects/${projectId}/target-revisions/history?${new URLSearchParams({ stage, limit: '25' })}`),
   gateStatus: (projectId: number, stage: Stage) =>
     request<GateStatus>(`/projects/${projectId}/signoff-status?stage=${stage}`),
   exportGate: (projectId: number, stage: Stage) =>
