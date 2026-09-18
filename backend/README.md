@@ -46,6 +46,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET/PUT /projects/{id}/target-revisions[/{stage}]` — 스테이지별 릴리스 후보 리비전 조회와 approver 전용 버전형 고정·해제
 - `GET /projects/{id}/target-revisions/history` — 목표 리비전 변경 이력의 커서 페이지
 - `GET /projects/{id}/signoff-releases/review` — approver가 승인 직전 게이트와 근거 스냅샷 SHA-256을 캡처
+- `GET /projects/{id}/signoff-releases/audit` — 결정별 서명, 이전 결정 연결과 프로젝트 체인 헤드를 검증해 변경·삭제 탐지
 - `POST /projects/{id}/signoff-releases` — 승인·차단 결정과 근거 동결. 승인은 고정된 릴리스 후보와 게이트 공통 리비전이 정확히 일치하고 검토한 근거 해시가 현재 해시와 같아야 함
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)

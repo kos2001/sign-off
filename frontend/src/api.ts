@@ -417,6 +417,7 @@ export interface SignoffReleaseDecision {
   reason: string; design_revision: string | null; decided_by: string;
   decided_by_user_id: number | null; manifest_sha256: string; package_sha256: string;
   decision_sha256: string; gate_snapshot_sha256: string | null; evidence_snapshot_sha256: string | null;
+  chain_version: number | null; previous_decision_sha256: string | null;
   lifecycle_status: 'current' | 'evidence_changed' | 'superseded_by_decision' | 'legacy_unbound';
   byte_length: number; created_at: string; gate: GateStatus;
 }
@@ -818,6 +819,10 @@ export const api = {
     request<{ items: SignoffReleaseDecision[]; next_before_id: number | null }>(`/projects/${projectId}/signoff-releases${beforeId ? `?before_id=${beforeId}` : ''}`),
   signoffReleaseReview: (projectId: number, stage: Stage) =>
     request<SignoffReleaseReview>(`/projects/${projectId}/signoff-releases/review?stage=${stage}`),
+  signoffReleaseAudit: (projectId: number) => request<{
+    status: 'verified'; decision_count: number; legacy_decision_count: number;
+    chained_decision_count: number; chain_head_sha256: string | null; verified_at: string;
+  }>(`/projects/${projectId}/signoff-releases/audit`),
   createSignoffRelease: (projectId: number, body: { stage: Stage; decision: 'approved' | 'rejected'; reason: string; expected_evidence_sha256?: string }) =>
     request<SignoffReleaseDecision>(`/projects/${projectId}/signoff-releases`, { method: 'POST', body: JSON.stringify(body) }),
   downloadSignoffRelease: (projectId: number, releaseId: number) =>
