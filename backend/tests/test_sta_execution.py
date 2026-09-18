@@ -34,7 +34,11 @@ def test_sta_execution_records_tool_provenance_and_paths(client, monkeypatch):
     assert run['evidence_source'] == 'opensta_execution' and run['result_locked']
     evidence = client.get(f"/runs/{run['id']}/evidence").json()
     assert evidence['result']['execution']['opensta_commit'].startswith('d97587f')
-    assert evidence['result']['input_artifacts']['sdc']['text'] == body['sdc']
+    assert 'text' not in evidence['result']['input_artifacts']['sdc']
+    for kind, content in [('netlist', body['netlist']), ('liberty', body['liberty']), ('sdc', body['sdc'])]:
+        artifact = client.get(f"/runs/{run['id']}/evidence/artifacts/{kind}")
+        assert artifact.status_code == 200 and artifact.text == content
+        assert artifact.headers['x-artifact-sha256'] == hashlib.sha256(content.encode()).hexdigest()
     assert client.get(f"/runs/{run['id']}/timing-paths").status_code == 200
     gate = client.get(f'/projects/{pid}/signoff-status?stage=synthesis').json()
     sta = next(item for item in gate['domains'] if item['domain'] == 'sta')
@@ -46,3 +50,27 @@ def test_missing_project_does_not_start_sta(client, monkeypatch):
     body = {'project_id': 99999999, 'stage': 'synthesis', 'top_module': 'top', 'design_revision': 'abc',
             'scenario': 'slow', 'netlist': 'module top; endmodule', 'liberty': 'library(x) {}', 'sdc': 'set x 1'}
     assert client.post('/analysis/sta-signoff', json=body).status_code == 404
+
+
+def test_legacy_embedded_artifacts_are_redacted_but_downloadable(client, monkeypatch):
+    pid = project(client)
+    worker, parsed, image = worker_result()
+    monkeypatch.setattr('app.routers.analysis.run_sta', lambda *args: (worker, parsed, image))
+    body = {'project_id': pid, 'stage': 'synthesis', 'top_module': 'top', 'design_revision': 'old',
+            'scenario': 'slow', 'netlist': 'module top; endmodule', 'liberty': 'library(x) {}', 'sdc': 'create_clock -period 1 clk'}
+    run_id = client.post('/analysis/sta-signoff', json=body).json()['run_id']
+    # Simulate an old row by moving text into JSON and deleting split artifacts.
+    from app.db import SessionLocal
+    from app.models import RunArtifact, RunEvidence
+    from sqlalchemy import delete
+    with SessionLocal() as db:
+        evidence = db.query(RunEvidence).filter_by(run_id=run_id).one()
+        result = dict(evidence.result)
+        result['input_artifacts'] = {kind: {**metadata, 'text': body[kind]}
+                                     for kind, metadata in worker['inputs'].items()}
+        evidence.result = result
+        db.execute(delete(RunArtifact).where(RunArtifact.run_id == run_id))
+        db.commit()
+    response = client.get(f'/runs/{run_id}/evidence')
+    assert body['sdc'] not in response.text
+    assert client.get(f'/runs/{run_id}/evidence/artifacts/sdc').text == body['sdc']

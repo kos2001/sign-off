@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.backup import create_backup, verify_backup, restore_backup, main
 from app.db import Base
-from app.models import RunAgentReview, AccountSecurityEvent, User, Project, SignoffRun, Violation, Waiver, ViolationEvent, RunEvidence
+from app.models import RunAgentReview, AccountSecurityEvent, User, Project, RunArtifact, SignoffRun, Violation, Waiver, ViolationEvent, RunEvidence
 
 
 @pytest.fixture
@@ -29,6 +29,8 @@ def database(tmp_path):
             Waiver(violation=violation, reason='검토 완료', approved_by='reviewer'),
             ViolationEvent(violation_id=violation.id, from_status='open', to_status='waived', actor='reviewer', reason='검토 완료'),
             RunEvidence(run=run, source='rtl_ladder', source_text='module top; endmodule\n', design_revision='abc123', result={'verdict': 'incomplete'}),
+            RunArtifact(run=run, kind='netlist', content_text='module top; endmodule\n',
+                        sha256='0' * 64, byte_length=22),
             AccountSecurityEvent(subject_user_id=user.id, subject_username=user.username, actor_user_id=user.id,
                                  actor=user.username, source='api', action='other_sessions_revoked', revoked_sessions=2),
         ])
@@ -73,6 +75,7 @@ def test_roundtrip_includes_live_wal_and_all_evidence(database, tmp_path):
     assert restored.stat().st_mode & 0o777 == 0o600
     assert manifest['row_counts']['violation_events'] == 1
     assert manifest['row_counts']['account_security_events'] == 1
+    assert manifest['row_counts']['run_artifacts'] == 1
     assert rows(restored)['violations'][0][-1] == 4
 
 
