@@ -136,6 +136,38 @@ class RunComparisonOut(BaseModel):
     limit: int
 
 
+class StaMatrixScenarioOut(BaseModel):
+    scenario: str
+    run_id: int
+    run_count: int
+    status: RunStatus
+    tool: str
+    tool_version: str
+    parasitics: Literal["spef", "none"]
+    source_sha256: str
+    metrics: dict
+    created_at: datetime
+
+
+class StaMatrixSummaryOut(BaseModel):
+    scenario_count: int
+    failed_scenarios: int
+    incomplete_scenarios: int
+    spef_scenarios: int
+    total_violating_paths: int
+    worst_reported_slack_ps: float | int | None
+
+
+class StaMatrixOut(BaseModel):
+    project_id: int
+    stage: Stage
+    design_revision: str
+    summary: StaMatrixSummaryOut
+    scenarios: list[StaMatrixScenarioOut]
+    coverage: Literal["reported_paths_only"]
+    coverage_note: str
+
+
 class WaiverCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
