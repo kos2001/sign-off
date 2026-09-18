@@ -77,6 +77,9 @@ def test_role_matrix_and_identity_cannot_be_spoofed(accounts):
     fixed = {'expected_status': 'open', 'expected_version': 1, 'status': 'fixed', 'actor': 'spoofed-admin', 'reason': 'verified test'}
     assert viewer.patch(path, json=fixed).status_code == 403
     assert viewer.patch(f"/runs/{ids['run']}", json={'status': 'passed'}).status_code == 403
+    scenario_path = f"/projects/{ids['project']}/sta-scenarios/routing"
+    assert viewer.put(scenario_path, json={'scenarios': [{'name': 'slow'}]}).status_code == 403
+    assert editor.put(scenario_path, json={'scenarios': [{'name': 'slow'}]}).status_code == 200
     assert editor.post(path + '/waiver', json={'expected_version': 1, 'approved_by': 'spoofed-admin', 'reason': 'waive'}).status_code == 403
     assert editor.patch(path, json={**fixed, 'status': 'waived'}).status_code == 403
     assert editor.patch(path, json=fixed).status_code == 200

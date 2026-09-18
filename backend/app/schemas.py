@@ -138,19 +138,28 @@ class RunComparisonOut(BaseModel):
 
 class StaMatrixScenarioOut(BaseModel):
     scenario: str
-    run_id: int
+    expected: bool
+    require_spef: bool
+    coverage_state: Literal["recorded", "missing", "parasitics_missing", "unplanned"]
+    run_id: int | None
     run_count: int
-    status: RunStatus
-    tool: str
-    tool_version: str
-    parasitics: Literal["spef", "none"]
-    source_sha256: str
+    status: RunStatus | None
+    tool: str | None
+    tool_version: str | None
+    parasitics: Literal["spef", "none"] | None
+    source_sha256: str | None
     metrics: dict
-    created_at: datetime
+    created_at: datetime | None
 
 
 class StaMatrixSummaryOut(BaseModel):
     scenario_count: int
+    expected_scenario_count: int
+    recorded_expected_scenarios: int
+    missing_scenarios: int
+    unexpected_scenarios: int
+    parasitic_requirement_gaps: int
+    scenario_coverage_complete: bool
     failed_scenarios: int
     incomplete_scenarios: int
     spef_scenarios: int
@@ -166,6 +175,33 @@ class StaMatrixOut(BaseModel):
     scenarios: list[StaMatrixScenarioOut]
     coverage: Literal["reported_paths_only"]
     coverage_note: str
+
+
+class StaScenarioDefinitionIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=160)
+    require_spef: bool = False
+
+
+class StaScenarioSetIn(BaseModel):
+    scenarios: list[StaScenarioDefinitionIn] = Field(max_length=100)
+
+    @model_validator(mode="after")
+    def unique_names(self):
+        names = [item.name.casefold() for item in self.scenarios]
+        if len(names) != len(set(names)):
+            raise ValueError("scenario names must be unique ignoring case")
+        return self
+
+
+class StaScenarioDefinitionOut(StaScenarioDefinitionIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    stage: Stage
+    created_at: datetime
 
 
 class WaiverCreate(BaseModel):

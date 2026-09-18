@@ -9,6 +9,7 @@
 |---|---|
 | §2 Shift-left 방법론 | `app/services/stages.py` — 설계 단계(rtl→synthesis→placement→routing→final)별 필수 사인오프 도메인 매트릭스와 게이트 판정 (`GET /projects/{id}/signoff-status`) |
 | §3 STA / MMMC / GBA→PBA | `app/services/timing.py` — 코너별 WNS/TNS/NVP 집계, 엔드포인트 단위 MMMC 머지, GBA→PBA 비관성 크레딧 추정 (`POST /analysis/timing-summary`) |
+| STA 시나리오 커버리지 | 단계별 기대 코너·모드와 SPEF 요구 세트를 저장하고 실제 OpenSTA 실행과 비교 (`GET/PUT /projects/{id}/sta-scenarios/{stage}`, `GET /projects/{id}/sta-matrix`) |
 | §4 IR-drop ML 스크리닝 | `app/services/irdrop.py` — arXiv:2601.22707의 물리 기반 공식(density×activity/strength)으로 IR-drop 맵·핫스팟 사전 스크리닝 (`POST /analysis/ir-drop`) |
 | §5 벡터리스 글리치 파워 | `app/services/glitch.py` — 토글률 초과분 기반 글리치 파워 추정, transport/inertial 디레이팅 (`POST /analysis/glitch-power`) |
 | §9 사인오프 런 관리 실무 | 프로젝트/런/위반/웨이버 CRUD — 도메인(rtl·sta·emir·pv·glitch_power·thermal), 툴, 스테이지, 심각도 추적 |
@@ -39,6 +40,8 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `POST /runs/{id}/violations` — 위반 일괄 등록 (severity: info/warning/error/critical)
 - `POST /violations/{id}/waiver` — 웨이버 승인 (사유·승인자 기록, 상태 waived 전환)
 - `GET /projects/{id}/signoff-status?stage=placement` — shift-left 게이트 판정: 해당 스테이지의 필수 도메인이 모두 passed이고 미웨이버 error/critical 위반이 없어야 ready
+- `GET/PUT /projects/{id}/sta-scenarios/{stage}` — 기대 STA 코너·모드와 SPEF 요구 세트 조회·교체
+- `GET /projects/{id}/sta-matrix?stage=routing&design_revision=...` — 기대 세트와 최신 OpenSTA 실행의 누락·요구 충족·경로 표본 집계
 - `POST /analysis/ir-drop` · `POST /analysis/glitch-power` · `POST /analysis/timing-summary`
 
 DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).
