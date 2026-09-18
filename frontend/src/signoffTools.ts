@@ -24,6 +24,10 @@ export const SIGNOFF_TOOLS: Record<Domain, readonly SignoffToolOption[]> = {
     { value: 'Siemens Tessent TestKompress', label: 'Siemens Tessent TestKompress', description: '압축 scan과 ATPG 결과를 기록합니다.', workflow: '검증된 상용 DFT 결과 JSON 가져오기를 지원합니다.' },
     { value: 'Cadence Modus ATPG', label: 'Cadence Modus ATPG', description: 'DFT rule, scan chain, ATPG coverage 결과를 기록합니다.', workflow: '검증된 상용 DFT 결과 JSON 가져오기를 지원합니다.' },
   ],
+  low_power: [
+    { value: 'Synopsys VC LP', label: 'Synopsys VC LP · 추천', description: 'UPF 전력 의도와 저전력 구조·기능·PG 연결을 검증합니다.', workflow: '검증된 상용 저전력 결과 JSON 가져오기를 지원합니다.' },
+    { value: 'Cadence Conformal Low Power', label: 'Cadence Conformal Low Power', description: 'Power domain, isolation, level shifter, retention 구현을 검증합니다.', workflow: '검증된 상용 저전력 결과 JSON 가져오기를 지원합니다.' },
+  ],
   sta: [
     { value: 'OpenSTA', label: 'OpenSTA · 추천', description: '정적 타이밍 경로와 슬랙을 검토할 때 적합합니다.', workflow: 'OpenSTA JSON 보고서 가져오기를 지원합니다.' },
     { value: 'Synopsys PrimeTime', label: 'Synopsys PrimeTime', description: '상용 정적 타이밍 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 STA 경로 JSON 가져오기를 지원합니다.' },

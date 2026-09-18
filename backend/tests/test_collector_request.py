@@ -20,6 +20,7 @@ from test_commercial_lvs import matched as lvs_report
 from test_commercial_lec import equivalent as lec_report
 from test_commercial_cdc import clean as cdc_report
 from test_commercial_dft import passed as dft_report
+from test_commercial_low_power import clean as low_power_report
 
 
 SECRET = 'collector-cli-secret-with-at-least-32-bytes'
@@ -55,6 +56,7 @@ def test_builder_validates_and_binds_server_ready_request():
     ('sta', commercial_report()), ('pv', drc_report()), ('emir', emir_report()),
     ('glitch_power', power_report()), ('thermal', thermal_report()), ('rtl', rtl_report()),
     ('lvs', lvs_report()), ('lec', lec_report()), ('cdc', cdc_report()), ('dft', dft_report()),
+    ('low_power', low_power_report()),
 ])
 def test_builder_uses_the_server_parser_for_every_commercial_domain(domain, report):
     body = build(domain=domain, report=report, tool_version=report['tool_version'],

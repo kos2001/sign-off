@@ -12,7 +12,7 @@ SIGNOFF_COVERAGE_HMAC_KEYS='{"sta-collector-2026q3":{"secret":"32-bytes-minimum-
 ```
 
 JSON 객체의 키는 `key_id`이며 각 값은 `secret`과 `domains`를 정확히 포함한다. `secret`은 최소
-32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `lvs`, `lec`, `dft`, `cdc`, `emir`, `glitch_power`, `thermal`, `rtl` 중 이 키가
+32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `lvs`, `lec`, `dft`, `low_power`, `cdc`, `emir`, `glitch_power`, `thermal`, `rtl` 중 이 키가
 서명할 수 있는 범위다. 빈 범위,
 중복 또는 알 수 없는 도메인은 거부한다. 최대 16개 키를 동시에 등록해 교체 기간을 운영할 수 있다.
 실제 키는 저장소나 보고서에 넣지 말고 비밀 관리 시스템에서
@@ -118,6 +118,15 @@ TestMAX/Tessent/Modus 증명은 `domain: "dft"`와 다음 키를 정확히 사�
 `fault_models_complete`, `atpg_complete`, `fault_simulation_complete`, `coverage_complete`,
 `pattern_validation_complete`, `findings_complete`. broken scan chain, DFT rule 위반, aborted fault,
 coverage 미달 또는 error/critical finding이 있으면 증명이 유효해도 `failed`다.
+
+### 정적 저전력 claim 집합
+
+VC LP/Conformal Low Power 증명은 `domain: "low_power"`와 다음 키를 정확히 사용하며 모두
+`true`여야 한다: `tool_run_completed`, `power_intent_complete`, `design_inputs_complete`,
+`libraries_complete`, `power_domains_complete`, `power_states_complete`,
+`structural_checks_complete`, `functional_checks_complete`, `pg_checks_complete`,
+`findings_complete`. error/critical finding이 있으면 증명이 유효해도 `failed`다. 저전력 도메인은
+저전력 설계에 적용하는 독립 근거이며 현재 공통 스테이지 게이트의 필수 항목은 아니다.
 
 ### EM/IR claim 집합
 

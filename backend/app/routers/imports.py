@@ -14,7 +14,7 @@ from ..db import get_db
 from ..models import Domain, ReportImport, RunEvidence, SignoffRun, Stage, Violation
 from ..services.coverage_attestation import (
     AttestationConfigurationError, verify_drc_attestation, verify_emir_attestation,
-    verify_cdc_attestation, verify_dft_attestation, verify_lec_attestation, verify_lvs_attestation, verify_power_attestation, verify_rtl_attestation, verify_sta_attestation, verify_thermal_attestation,
+    verify_cdc_attestation, verify_dft_attestation, verify_lec_attestation, verify_low_power_attestation, verify_lvs_attestation, verify_power_attestation, verify_rtl_attestation, verify_sta_attestation, verify_thermal_attestation,
 )
 from ..schemas import RunOut
 from ..services.report_import import parse_commercial_sta, parse_opensta
@@ -27,6 +27,7 @@ from ..services.commercial_lvs import parse_commercial_lvs
 from ..services.commercial_lec import parse_commercial_lec
 from ..services.commercial_cdc import parse_commercial_cdc
 from ..services.commercial_dft import parse_commercial_dft
+from ..services.commercial_low_power import parse_commercial_low_power
 from ..services.klayout_report import parse_klayout
 
 router = APIRouter(tags=['report-imports'])
@@ -114,6 +115,10 @@ class CommercialCdcImportPayload(ReportImportPayload):
 
 
 class CommercialDftImportPayload(ReportImportPayload):
+    coverage_attestation: CoverageAttestationPayload | None = None
+
+
+class CommercialLowPowerImportPayload(ReportImportPayload):
     coverage_attestation: CoverageAttestationPayload | None = None
 
 
@@ -284,6 +289,23 @@ def apply_dft_attestation(project_id, payload, result):
         result['coverage'] = 'collector_attested_complete'
         result['coverage_note'] = 'Configured collector attests complete DFT execution scope; source report and claims are preserved.'
         if result['dft_status'] == 'passed':
+            result['status'] = 'passed'
+    return result
+
+
+def apply_low_power_attestation(project_id, payload, result):
+    try:
+        verified = verify_low_power_attestation(payload.coverage_attestation, project_id=project_id,
+                                                payload=payload, result=result)
+    except AttestationConfigurationError as error:
+        raise HTTPException(503, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    if verified:
+        result['coverage_attestation'] = verified
+        result['coverage'] = 'collector_attested_complete'
+        result['coverage_note'] = 'Configured collector attests complete static low-power verification scope; source report and claims are preserved.'
+        if result['low_power_status'] == 'clean' and result['metrics']['blocking_findings'] == 0:
             result['status'] = 'passed'
     return result
 
@@ -686,6 +708,72 @@ def import_commercial_dft(project_id: int, payload: CommercialDftImportPayload,
     except IntegrityError:
         db.rollback()
         if run:=existing():return run
+        raise
+    return run
+
+
+@router.post('/projects/{project_id}/imports/commercial-low-power/preview')
+def preview_commercial_low_power(project_id: int, payload: CommercialLowPowerImportPayload,
+                                 db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = apply_low_power_attestation(project_id, payload, parse(payload, parse_commercial_low_power))
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    return result
+
+
+@router.post('/projects/{project_id}/imports/commercial-low-power', response_model=RunOut, status_code=201)
+def import_commercial_low_power(project_id: int, payload: CommercialLowPowerImportPayload,
+                                db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    digest = hashlib.sha256(json.dumps({
+        'format': 'commercial-low-power', 'payload': payload.model_dump(mode='json'),
+    }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    def existing():
+        receipt = db.scalar(select(ReportImport).where(
+            ReportImport.project_id == project_id, ReportImport.import_key == str(payload.import_id)))
+        if receipt:
+            if receipt.payload_sha256 != digest:
+                raise HTTPException(409, 'import identifier already used with different content')
+            return db.get(SignoffRun, receipt.run_id)
+
+    if run := existing():
+        return run
+    result = apply_low_power_attestation(project_id, payload, parse(payload, parse_commercial_low_power))
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
+    result['metadata']['report_format'] = result['parser']
+    result['submitted_by'] = submitter(db)
+    run = SignoffRun(project_id=project_id, domain=Domain.low_power, stage=payload.stage,
+                     tool=result['tool'], status=result['status'], metrics=result['metrics'])
+    run.evidence = RunEvidence(source='commercial_low_power_report', source_text=payload.source_text,
+                               source_sha256=result['source_sha256'],
+                               design_revision=payload.design_revision, result=result)
+    prefix = 'vc-lp' if result['tool'] == 'Synopsys VC LP' else 'conformal-lp'
+    if result['low_power_status'] == 'error':
+        run.violations.append(Violation(check_name=f'{prefix}/run-error', severity='critical',
+                                        location=None, description=result['error_message']))
+    for item in result['items']:
+        location = item['object'] or item['destination_domain'] or item['source_domain'] or item['name']
+        run.violations.append(Violation(
+            check_name=f"{prefix}/{item['kind']}/{item['fingerprint'][:32]}",
+            severity=item['severity'], location=location,
+            description=f"{item['rule']} · {item['name']}\n{item['message']}",
+        ))
+    db.add(run)
+    try:
+        db.flush()
+        db.add(ReportImport(project_id=project_id, import_key=str(payload.import_id),
+                            payload_sha256=digest, run_id=run.id))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if run := existing():
+            return run
         raise
     return run
 

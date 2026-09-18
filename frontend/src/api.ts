@@ -1,4 +1,4 @@
-export type Domain = "rtl" | "cdc" | "dft" | "sta" | "emir" | "pv" | "lvs" | "lec" | "glitch_power" | "thermal";
+export type Domain = "rtl" | "cdc" | "dft" | "low_power" | "sta" | "emir" | "pv" | "lvs" | "lec" | "glitch_power" | "thermal";
 export type Stage = "rtl" | "synthesis" | "placement" | "routing" | "final";
 export type RunStatus = "running" | "passed" | "failed" | "incomplete";
 export type Severity = "info" | "warning" | "error" | "critical";
@@ -21,7 +21,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "commercial_cdc_report" | "commercial_dft_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "commercial_cdc_report" | "commercial_dft_report" | "commercial_low_power_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report";
   result_locked: boolean;
 }
 
@@ -31,7 +31,7 @@ export interface RunEvidence {
   source_text: string | null;
   source_sha256: string | null;
   design_revision: string | null;
-  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & Partial<LecPreview> & Partial<CdcPreview> & Partial<DftPreview> & {
+  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & Partial<LecPreview> & Partial<CdcPreview> & Partial<DftPreview> & Partial<LowPowerPreview> & {
     metadata?: { filename: string; tool_version: string; scenario: string; parasitics?: 'spef' | 'none' };
     submitted_by?: { user_id: number; username: string } | { collector_id: number; name: string } | null;
     input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc' | 'spef', { sha256: string; byte_length: number }>>;
@@ -159,6 +159,10 @@ export interface DftFinding{index:number;kind:DftKind;rule:string;name:string;se
 export interface DftFaultModel{name:'stuck_at'|'transition'|'bridging'|'cell_aware'|'path_delay';total_faults:number;detected_faults:number;untestable_faults:number;aborted_faults:number;coverage_percent:number;required_coverage_percent:number;pattern_count:number;violated:boolean}
 export interface DftPreview{parser:string;tool:string;tool_version:string;status:'passed'|'failed'|'incomplete';source_sha256:string;coverage_attestation?:CoverageAttestation;dft_status:'passed'|'failed'|'error';top:string;error_message:string|null;summary:{scan_chains:number;scan_cells:number;broken_chains:number;dft_rule_violations:number};fault_models:DftFaultModel[];metrics:Record<string,number>;items:DftFinding[]}
 export interface DftPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;dft_status:DftPreview['dft_status'];top:string;error_message:string|null;summary:DftPreview['summary'];fault_models:DftFaultModel[];reported_total:number;total:number;offset:number;limit:number;items:DftFinding[]}
+export type LowPowerKind='power_intent'|'isolation'|'level_shifter'|'retention'|'power_switch'|'always_on'|'pg_connectivity'|'power_state';
+export interface LowPowerFinding{index:number;kind:LowPowerKind;rule:string;name:string;severity:'warning'|'error'|'critical';source_domain:string|null;destination_domain:string|null;object:string|null;message:string;fingerprint:string}
+export interface LowPowerPreview{parser:string;tool:string;tool_version:string;status:'passed'|'failed'|'incomplete';source_sha256:string;coverage_attestation?:CoverageAttestation;low_power_status:'clean'|'violations'|'error';top:string;error_message:string|null;summary:{power_domains:number;power_states:number;domain_crossings:number;checked_rules:number};metrics:Record<string,number>;items:LowPowerFinding[]}
+export interface LowPowerPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;low_power_status:LowPowerPreview['low_power_status'];top:string;error_message:string|null;summary:LowPowerPreview['summary'];reported_total:number;total:number;offset:number;limit:number;items:LowPowerFinding[]}
 
 export type TimingPath = ReportPreview['paths'][number] & { status: 'violated' | 'met' | 'unconstrained' };
 export interface TimingPathSummary {
@@ -578,6 +582,9 @@ export const api = {
   previewCommercialDft:(projectId:number,body:ReportImportInput)=>request<DftPreview>(`/projects/${projectId}/imports/commercial-dft/preview`,{method:'POST',body:JSON.stringify(body)}),
   importCommercialDft:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-dft`,{method:'POST',body:JSON.stringify(body)}),
   dftFindings:(runId:number,filters:Record<string,string>)=>request<DftPage>(`/runs/${runId}/dft-findings?${new URLSearchParams(filters)}`),
+  previewCommercialLowPower:(projectId:number,body:ReportImportInput)=>request<LowPowerPreview>(`/projects/${projectId}/imports/commercial-low-power/preview`,{method:'POST',body:JSON.stringify(body)}),
+  importCommercialLowPower:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-low-power`,{method:'POST',body:JSON.stringify(body)}),
+  lowPowerFindings:(runId:number,filters:Record<string,string>)=>request<LowPowerPage>(`/runs/${runId}/low-power-findings?${new URLSearchParams(filters)}`),
   previewKLayout: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/klayout/preview`, { method: 'POST', body: JSON.stringify(body) }),
   importKLayout: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/klayout`, { method: 'POST', body: JSON.stringify(body) }),
   markers: (runId: number, filters: Record<string, string>) => request<MarkerPage>(`/runs/${runId}/markers?${new URLSearchParams(filters)}`),
@@ -911,6 +918,7 @@ export const DOMAIN_LABELS: Record<Domain, string> = {
   lec: "LEC",
   cdc: "CDC/RDC",
   dft: "DFT",
+  low_power: "Low Power",
   glitch_power: "Glitch Power",
   thermal: "Thermal",
 };
