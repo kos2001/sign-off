@@ -42,6 +42,11 @@ def test_same_revision_trusted_reports_open_and_archive_rtl_gate(client, monkeyp
     assert [response.json()['status'] for response in responses] == ['passed', 'passed', 'passed']
     gate = client.get(f'/projects/{pid}/signoff-status?stage=rtl').json()
     assert gate['ready'] is True and gate['revision_check']['common_revision'] == revision
+    pin = client.put(f'/projects/{pid}/target-revisions/rtl', json={
+        'expected_version': 0, 'design_revision': revision,
+        'reason': 'Pin RTL release candidate.',
+    })
+    assert pin.status_code == 200, pin.text
     decision = client.post(f'/projects/{pid}/signoff-releases', json={
         'stage': 'rtl', 'decision': 'approved',
         'reason': 'Trusted collectors completed RTL regression and timing scope.',

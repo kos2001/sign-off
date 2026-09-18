@@ -115,6 +115,14 @@ def create_release_decision(
     gate = manifest['gate']
     if payload.decision == 'approved' and not gate['ready']:
         raise HTTPException(409, '차단된 게이트는 승인할 수 없습니다. 차단 결정을 기록하거나 근거를 보완하세요.')
+    if payload.decision == 'approved':
+        target = gate.get('target_revision', {})
+        target_revision = target.get('design_revision')
+        common_revision = gate.get('revision_check', {}).get('common_revision')
+        if not target_revision:
+            raise HTTPException(409, '승인 전에 이 스테이지의 릴리스 후보 리비전을 고정하세요.')
+        if common_revision != target_revision:
+            raise HTTPException(409, '게이트 근거 리비전이 고정된 릴리스 후보와 일치하지 않습니다.')
 
     user = db.info.get('user')
     record = SignoffReleaseDecision(

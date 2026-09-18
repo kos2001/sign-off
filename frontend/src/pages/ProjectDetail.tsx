@@ -366,10 +366,11 @@ export default function ProjectDetail() {
               {auth.can(projectId, 'approver') && !p.archived_at && <div className="space-y-2">
                 <textarea className="input w-full" rows={2} maxLength={4000} value={releaseReason} onChange={event => setReleaseReason(event.target.value)} placeholder="결정 사유" aria-label="사인오프 결정 사유" />
                 <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-primary" disabled={!gate.data.ready || !releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('approved')}>게이트 승인·동결</button>
+                  <button className="btn btn-primary" disabled={!gate.data.ready || !gate.data.target_revision.design_revision || !releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('approved')}>게이트 승인·동결</button>
                   <button className="btn btn-ghost" disabled={!releaseReason.trim() || releaseDecision.isPending} onClick={() => releaseDecision.mutate('rejected')}>차단 결정·동결</button>
                 </div>
                 {!gate.data.ready && <p className="text-xs text-[var(--text-muted)]">현재 게이트가 차단되어 승인은 사용할 수 없습니다. 근거를 보완하거나 차단 결정을 기록하세요.</p>}
+                {gate.data.ready && !gate.data.target_revision.design_revision && <p className="text-xs text-[var(--text-muted)]">승인 전에 위에서 이 스테이지의 릴리스 후보 리비전을 고정하세요.</p>}
                 {releaseDecision.isError && <p role="alert" className="text-sm text-[var(--status-critical)]">{releaseDecision.error.message}</p>}
                 {releaseDecision.isSuccess && <p role="status" className="text-sm">결정과 근거 패키지를 보관했습니다.</p>}
               </div>}

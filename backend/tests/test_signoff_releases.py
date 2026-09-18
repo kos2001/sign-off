@@ -71,6 +71,7 @@ def test_ready_gate_approval_records_server_identity(accounts, monkeypatch):
     users, ids, login = accounts
     manifest = {'format': 'signoff/evidence-package/v1', 'gate': {
         'ready': True, 'revision_check': {'common_revision': 'release-ready'}, 'domains': [], 'stage': 'final',
+        'target_revision': {'design_revision': 'release-ready', 'version': 1},
     }, 'runs': []}
     manifest_bytes = json.dumps(manifest, separators=(',', ':')).encode()
     output = io.BytesIO()
@@ -88,6 +89,41 @@ def test_ready_gate_approval_records_server_identity(accounts, monkeypatch):
     assert response.json()['decision'] == 'approved'
     assert response.json()['design_revision'] == 'release-ready'
     assert response.json()['decided_by'] == users['approver'].username
+
+
+def test_ready_gate_approval_requires_pinned_target_revision(accounts, monkeypatch):
+    _, ids, login = accounts
+
+    def package_for(target_revision):
+        manifest = {'format': 'signoff/evidence-package/v1', 'gate': {
+            'ready': True,
+            'revision_check': {'common_revision': 'release-ready'},
+            'domains': [],
+            'stage': 'final',
+            'target_revision': {'design_revision': target_revision, 'version': 1},
+        }, 'runs': []}
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as archive:
+            archive.writestr('manifest.json', json.dumps(manifest, separators=(',', ':')).encode())
+        return Response(output.getvalue(), media_type='application/zip')
+
+    monkeypatch.setattr(
+        'app.routers.releases.export_signoff_package',
+        lambda project_id, stage, db: package_for(None),
+    )
+    url = f"/projects/{ids['project']}/signoff-releases"
+    payload = {'stage': 'final', 'decision': 'approved', 'reason': 'approve release candidate'}
+    response = login('approver').post(url, json=payload)
+    assert response.status_code == 409
+    assert '릴리스 후보 리비전' in response.json()['detail']
+
+    monkeypatch.setattr(
+        'app.routers.releases.export_signoff_package',
+        lambda project_id, stage, db: package_for('different-revision'),
+    )
+    response = login('approver').post(url, json=payload)
+    assert response.status_code == 409
+    assert '일치하지 않습니다' in response.json()['detail']
 
 
 def test_archived_package_tampering_is_rejected(accounts):
