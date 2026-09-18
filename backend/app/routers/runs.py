@@ -102,7 +102,7 @@ def run_evidence(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.get('/runs/{run_id}/evidence/artifacts/{kind}')
-def export_run_artifact(run_id: int, kind: Literal['netlist', 'liberty', 'sdc'], db: Session = Depends(get_db)):
+def export_run_artifact(run_id: int, kind: Literal['netlist', 'liberty', 'sdc', 'spef'], db: Session = Depends(get_db)):
     run = get_run_or_404(run_id, db)
     if run.evidence_source != 'opensta_execution':
         raise HTTPException(409, '이 런에는 OpenSTA 실행 입력 아티팩트가 없습니다.')
@@ -118,7 +118,7 @@ def export_run_artifact(run_id: int, kind: Literal['netlist', 'liberty', 'sdc'],
     encoded = content.encode('utf-8')
     if hashlib.sha256(encoded).hexdigest() != digest or len(encoded) != byte_length:
         raise HTTPException(409, '저장된 입력 아티팩트의 무결성을 확인할 수 없습니다.')
-    extension = {'netlist': 'v', 'liberty': 'lib', 'sdc': 'sdc'}[kind]
+    extension = {'netlist': 'v', 'liberty': 'lib', 'sdc': 'sdc', 'spef': 'spef'}[kind]
     return Response(encoded, media_type='application/octet-stream', headers={
         'Content-Disposition': f'attachment; filename="run-{run_id}-{kind}.{extension}"',
         'X-Artifact-SHA256': digest, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',

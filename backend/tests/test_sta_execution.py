@@ -81,6 +81,31 @@ def test_stream_worker_failure_does_not_record_run(client, monkeypatch):
     assert client.get(f'/projects/{pid}/runs').json() == []
 
 
+def test_spef_is_recorded_as_verified_optional_artifact(client, monkeypatch):
+    pid = project(client)
+    worker, parsed, image = worker_result()
+    spef = '*SPEF "IEEE 1481-1998"\n*DESIGN "top"\n'
+    worker['inputs']['spef'] = {'sha256': hashlib.sha256(spef.encode()).hexdigest(), 'byte_length': len(spef.encode())}
+    monkeypatch.setattr('app.routers.analysis.run_sta', lambda *args, **kwargs: (worker, parsed, image))
+    body = {'project_id': pid, 'stage': 'routing', 'top_module': 'top', 'design_revision': 'spef-run',
+            'scenario': 'slow-rc', 'netlist': 'module top; endmodule', 'liberty': 'library(x) {}',
+            'sdc': 'create_clock -period 1 clk', 'spef': spef}
+    result = client.post('/analysis/sta-signoff', json=body).json()
+    evidence = client.get(f"/runs/{result['run_id']}/evidence").json()
+    assert evidence['result']['metadata']['parasitics'] == 'spef'
+    assert evidence['result']['input_artifacts']['spef']['byte_length'] == len(spef.encode())
+    artifact = client.get(f"/runs/{result['run_id']}/evidence/artifacts/spef")
+    assert artifact.text == spef and artifact.headers['content-disposition'].endswith('.spef"')
+
+
+def test_blank_spef_is_rejected_before_worker(client, monkeypatch):
+    monkeypatch.setattr('app.routers.analysis.run_sta', lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    body = {'project_id': project(client), 'stage': 'routing', 'top_module': 'top', 'design_revision': 'blank',
+            'scenario': 'slow-rc', 'netlist': 'module top; endmodule', 'liberty': 'library(x) {}',
+            'sdc': 'set x 1', 'spef': '   '}
+    assert client.post('/analysis/sta-signoff', json=body).status_code == 422
+
+
 def test_legacy_embedded_artifacts_are_redacted_but_downloadable(client, monkeypatch):
     pid = project(client)
     worker, parsed, image = worker_result()

@@ -191,6 +191,7 @@ function StaSignoffSection() {
   const [netlist, setNetlist] = useState("");
   const [liberty, setLiberty] = useState("");
   const [sdc, setSdc] = useState("");
+  const [spef, setSpef] = useState("");
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Record<'opensta' | 'persist', { status: 'pending' | 'running' | 'pass' | 'error'; detail?: string }>>({ opensta: { status: 'pending' }, persist: { status: 'pending' } });
   const [result, setResult] = useState<StaExecutionResult | null>(null);
@@ -199,6 +200,7 @@ function StaSignoffSection() {
     { label: "게이트 레벨 Verilog 넷리스트", value: netlist, set: setNetlist, accept: ".v,.sv", max: 1_000_000 },
     { label: "Liberty 타이밍 라이브러리", value: liberty, set: setLiberty, accept: ".lib", max: 5_000_000 },
     { label: "SDC 제약", value: sdc, set: setSdc, accept: ".sdc", max: 500_000 },
+    { label: "SPEF 배선 기생성분 (선택)", value: spef, set: setSpef, accept: ".spef", max: 8_000_000 },
   ];
   function loadFile(file: File | undefined, setter: (value: string) => void, max: number) {
     if (!file) return;
@@ -209,7 +211,7 @@ function StaSignoffSection() {
     setRunning(true); setResult(null); setError(null);
     setProgress({ opensta: { status: 'pending' }, persist: { status: 'pending' } });
     try {
-      await api.staSignoffStream({ project_id: Number(projectId), stage: stage as "rtl" | "synthesis" | "placement" | "routing" | "final", top_module: topModule.trim(), design_revision: revision.trim(), scenario: scenario.trim(), netlist, liberty, sdc }, event => {
+      await api.staSignoffStream({ project_id: Number(projectId), stage: stage as "rtl" | "synthesis" | "placement" | "routing" | "final", top_module: topModule.trim(), design_revision: revision.trim(), scenario: scenario.trim(), netlist, liberty, sdc, ...(spef.trim() ? { spef } : {}) }, event => {
         if (event.event === 'stage_start') setProgress(previous => ({ ...previous, [event.stage]: { status: 'running' } }));
         else if (event.event === 'stage_done') setProgress(previous => ({ ...previous, [event.stage]: { status: 'pass', detail: event.detail } }));
         else setResult(event.result);
@@ -233,12 +235,12 @@ function StaSignoffSection() {
       <Field label="설계 리비전"><input className="input" value={revision} maxLength={160} onChange={e => setRevision(e.target.value)} placeholder="Git SHA" /></Field>
       <Field label="시나리오"><input className="input" value={scenario} maxLength={160} onChange={e => setScenario(e.target.value)} placeholder="ss_0p72v_125c" /></Field>
     </div>
-    <div className="mt-4 grid gap-4 lg:grid-cols-3">{fields.map(field => <Field key={field.label} label={field.label}>
+    <div className="mt-4 grid gap-4 lg:grid-cols-2">{fields.map(field => <Field key={field.label} label={field.label}>
       <input className="mb-2 block w-full text-xs" type="file" accept={field.accept} onChange={e => loadFile(e.target.files?.[0], field.set, field.max)} />
       <textarea className="code-editor w-full" rows={10} value={field.value} maxLength={field.max} spellCheck={false} onChange={e => field.set(e.target.value)} aria-label={field.label} />
       <span className="text-xs text-[var(--text-muted)]">{new Blob([field.value]).size.toLocaleString()} / {field.max.toLocaleString()} bytes</span>
     </Field>)}</div>
-    <p className="mt-3 text-xs text-[var(--text-secondary)]">SDC는 Tcl 기반 제약 파일입니다. 서버는 일반 파일·프로세스·네트워크 명령을 비활성화하고, 네트워크와 호스트 마운트가 없는 제한된 컨테이너에서 실행합니다.</p>
+    <p className="mt-3 text-xs text-[var(--text-secondary)]">SPEF를 제공하면 OpenSTA가 배선 저항·정전용량을 읽어 타이밍에 반영합니다. 비워 두면 기생성분 없는 분석으로 근거에 기록합니다. SDC는 Tcl 기반 제약 파일이며 서버는 일반 파일·프로세스·네트워크 명령을 비활성화한 제한 컨테이너에서 실행합니다.</p>
     <button className="btn btn-primary mt-3" disabled={!valid || running} onClick={execute}>{running ? "OpenSTA 실행 중…" : "OpenSTA 실행 및 기록"}</button>
     {(running || result || error) && <div className="mt-3 grid gap-2 sm:grid-cols-2" aria-live="polite">{(['opensta', 'persist'] as const).map(name => <div key={name} className="rounded-lg border border-[var(--border)] p-3 text-sm"><div className="flex justify-between"><strong>{name === 'opensta' ? 'OpenSTA 분석' : '근거 저장'}</strong><span>{progress[name].status === 'pending' ? '대기' : progress[name].status === 'running' ? '실행 중' : progress[name].status === 'error' ? '중단' : '완료'}</span></div>{progress[name].detail && <p className="mt-1 text-xs text-[var(--text-secondary)]">{progress[name].detail}</p>}</div>)}</div>}
     {error && <p role="alert" className="mt-3 text-sm">{error}</p>}
