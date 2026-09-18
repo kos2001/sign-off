@@ -48,6 +48,11 @@ export interface ReportPreview {
   metrics: { reported_paths: number; violating_paths: number; unconstrained_paths: number; worst_reported_slack_ps: number | null };
   paths: { index: number; type: string; path_type: string; path_group: string; startpoint: string; endpoint: string; slack_ps: number | null; fingerprint: string }[];
 }
+export type StaExecutionResult = ReportPreview & { run_id: number; execution: { backend: string; image_id: string; opensta_commit: string; agent_involved: false } };
+export type StaStreamEvent =
+  | { event: 'stage_start'; stage: 'opensta' | 'persist' }
+  | { event: 'stage_done'; stage: 'opensta' | 'persist'; status: 'pass'; detail: string }
+  | { event: 'result'; result: StaExecutionResult };
 
 export interface KLayoutPreview {
   parser: string; coverage: string; coverage_note: string; status: 'failed' | 'incomplete'; source_sha256: string;
@@ -620,9 +625,48 @@ export const api = {
     }),
   staSignoff: (payload: { project_id: number; stage: Stage; top_module: string; design_revision: string;
     scenario: string; netlist: string; liberty: string; sdc: string }) =>
-    request<ReportPreview & { run_id: number; execution: { backend: string; image_id: string; opensta_commit: string; agent_involved: false } }>("/analysis/sta-signoff", {
+    request<StaExecutionResult>("/analysis/sta-signoff", {
       method: "POST", body: JSON.stringify(payload),
     }),
+  staSignoffStream: async (payload: { project_id: number; stage: Stage; top_module: string; design_revision: string;
+    scenario: string; netlist: string; liberty: string; sdc: string }, onEvent: (event: StaStreamEvent) => void) => {
+    const res = await fetch('/api/analysis/sta-signoff/stream', { method: 'POST', headers: requestHeaders(), body: JSON.stringify(payload) });
+    if (res.status === 401) sessionExpired();
+    if (!res.ok || !res.body) {
+      const body = await res.json().catch(() => null);
+      if (res.status >= 500) throw new Error(serverFailure(res));
+      if (res.status === 429) throw new Error('서버 분석 용량이 모두 사용 중입니다. 아직 실행을 시작하지 않았습니다. 5초 뒤 다시 실행하세요.');
+      throw new Error(body && typeof body.detail === 'string' ? body.detail : validationMessage(body) ?? `${res.status} ${res.statusText}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '', receivedResult = false;
+    const deliver = (line: string) => {
+      if (!line.trim()) return;
+      const event = JSON.parse(line) as StaStreamEvent | { event: 'error'; detail: string };
+      if (event.event === 'error') throw new Error(event.detail || 'OpenSTA 실행을 완료하지 못했습니다.');
+      if (!['stage_start', 'stage_done', 'result'].includes(event.event)) throw new Error('OpenSTA 진행 응답 형식이 올바르지 않습니다.');
+      if (event.event === 'result') {
+        if (!event.result || typeof event.result.run_id !== 'number' || !event.result.metrics || !event.result.execution) throw new Error('OpenSTA 최종 결과 형식이 올바르지 않습니다.');
+        receivedResult = true;
+      }
+      onEvent(event);
+    };
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
+        for (const line of lines) deliver(line);
+      }
+      buffer += decoder.decode(); deliver(buffer);
+      if (!receivedResult) throw new Error('OpenSTA 최종 결과를 받기 전에 연결이 종료되었습니다.');
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw error;
+    } finally { reader.releaseLock(); }
+  },
   reviewRtl: (rtl_signoff_result: unknown) =>
     request<AgentReview>("/agents/review/rtl", {
       method: "POST",

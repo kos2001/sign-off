@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 
-import type { RtlSignoffResult } from "../api";
+import type { RtlSignoffResult, StaExecutionResult } from "../api";
 import { api } from "../api";
 import { AGENT_ROLES, type AgentRoleId } from "../agentRoles";
 import { AgentReviewPanel } from "../components/AgentReviewPanel";
@@ -191,7 +191,10 @@ function StaSignoffSection() {
   const [netlist, setNetlist] = useState("");
   const [liberty, setLiberty] = useState("");
   const [sdc, setSdc] = useState("");
-  const run = useMutation({ mutationFn: () => api.staSignoff({ project_id: Number(projectId), stage: stage as "rtl" | "synthesis" | "placement" | "routing" | "final", top_module: topModule.trim(), design_revision: revision.trim(), scenario: scenario.trim(), netlist, liberty, sdc }) });
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<Record<'opensta' | 'persist', { status: 'pending' | 'running' | 'pass' | 'error'; detail?: string }>>({ opensta: { status: 'pending' }, persist: { status: 'pending' } });
+  const [result, setResult] = useState<StaExecutionResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const fields = [
     { label: "게이트 레벨 Verilog 넷리스트", value: netlist, set: setNetlist, accept: ".v,.sv", max: 1_000_000 },
     { label: "Liberty 타이밍 라이브러리", value: liberty, set: setLiberty, accept: ".lib", max: 5_000_000 },
@@ -201,6 +204,22 @@ function StaSignoffSection() {
     if (!file) return;
     if (file.size > max) return;
     void file.text().then(setter);
+  }
+  async function execute() {
+    setRunning(true); setResult(null); setError(null);
+    setProgress({ opensta: { status: 'pending' }, persist: { status: 'pending' } });
+    try {
+      await api.staSignoffStream({ project_id: Number(projectId), stage: stage as "rtl" | "synthesis" | "placement" | "routing" | "final", top_module: topModule.trim(), design_revision: revision.trim(), scenario: scenario.trim(), netlist, liberty, sdc }, event => {
+        if (event.event === 'stage_start') setProgress(previous => ({ ...previous, [event.stage]: { status: 'running' } }));
+        else if (event.event === 'stage_done') setProgress(previous => ({ ...previous, [event.stage]: { status: 'pass', detail: event.detail } }));
+        else setResult(event.result);
+      });
+    } catch (reason) {
+      const message = (reason as Error).message;
+      setError(message);
+      setProgress(previous => Object.fromEntries(Object.entries(previous).map(([name, value]) => [name, value.status === 'running' ? { status: 'error', detail: message } : value])) as typeof previous);
+    }
+    finally { setRunning(false); }
   }
   const valid = projectId !== "" && /^[A-Za-z_][A-Za-z0-9_$]*$/.test(topModule.trim()) && revision.trim() && scenario.trim() && netlist.trim() && liberty.trim() && sdc.trim();
   return <Card id="sta-signoff" title="OpenSTA 정적 타이밍 실행" subtitle="넷리스트 · Liberty · SDC → 격리 OpenSTA → 저장된 경로·위반·실행 근거">
@@ -220,9 +239,10 @@ function StaSignoffSection() {
       <span className="text-xs text-[var(--text-muted)]">{new Blob([field.value]).size.toLocaleString()} / {field.max.toLocaleString()} bytes</span>
     </Field>)}</div>
     <p className="mt-3 text-xs text-[var(--text-secondary)]">SDC는 Tcl 기반 제약 파일입니다. 서버는 일반 파일·프로세스·네트워크 명령을 비활성화하고, 네트워크와 호스트 마운트가 없는 제한된 컨테이너에서 실행합니다.</p>
-    <button className="btn btn-primary mt-3" disabled={!valid || run.isPending} onClick={() => run.mutate()}>{run.isPending ? "OpenSTA 실행 중…" : "OpenSTA 실행 및 기록"}</button>
-    {run.isError && <p role="alert" className="mt-3 text-sm">{run.error.message}</p>}
-    {run.data && <div className="mt-4 rounded-lg border border-[var(--border)] p-3 text-sm space-y-2"><p><strong>런 #{run.data.run_id}</strong> · 보고 경로 {run.data.metrics.reported_paths}개 · 위반 {run.data.metrics.violating_paths}개 · 최악 슬랙 {run.data.metrics.worst_reported_slack_ps ?? "없음"} ps</p><p className="text-xs text-[var(--text-secondary)]">OpenSTA {run.data.execution.opensta_commit.slice(0, 12)} · AI 개입 없음 · 경로 표본만 생성되어 전체 STA 게이트는 미완료로 유지됩니다.</p><Link className="btn btn-ghost inline-block" to={`/runs/${run.data.run_id}`}>런 작업공간 열기</Link></div>}
+    <button className="btn btn-primary mt-3" disabled={!valid || running} onClick={execute}>{running ? "OpenSTA 실행 중…" : "OpenSTA 실행 및 기록"}</button>
+    {(running || result || error) && <div className="mt-3 grid gap-2 sm:grid-cols-2" aria-live="polite">{(['opensta', 'persist'] as const).map(name => <div key={name} className="rounded-lg border border-[var(--border)] p-3 text-sm"><div className="flex justify-between"><strong>{name === 'opensta' ? 'OpenSTA 분석' : '근거 저장'}</strong><span>{progress[name].status === 'pending' ? '대기' : progress[name].status === 'running' ? '실행 중' : progress[name].status === 'error' ? '중단' : '완료'}</span></div>{progress[name].detail && <p className="mt-1 text-xs text-[var(--text-secondary)]">{progress[name].detail}</p>}</div>)}</div>}
+    {error && <p role="alert" className="mt-3 text-sm">{error}</p>}
+    {result && <div className="mt-4 rounded-lg border border-[var(--border)] p-3 text-sm space-y-2"><p><strong>런 #{result.run_id}</strong> · 보고 경로 {result.metrics.reported_paths}개 · 위반 {result.metrics.violating_paths}개 · 최악 슬랙 {result.metrics.worst_reported_slack_ps ?? "없음"} ps</p><p className="text-xs text-[var(--text-secondary)]">OpenSTA {result.execution.opensta_commit.slice(0, 12)} · AI 개입 없음 · 경로 표본만 생성되어 전체 STA 게이트는 미완료로 유지됩니다.</p><Link className="btn btn-ghost inline-block" to={`/runs/${result.run_id}`}>런 작업공간 열기</Link></div>}
   </Card>;
 }
 

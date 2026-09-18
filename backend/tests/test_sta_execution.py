@@ -52,6 +52,35 @@ def test_missing_project_does_not_start_sta(client, monkeypatch):
     assert client.post('/analysis/sta-signoff', json=body).status_code == 404
 
 
+def test_stream_reports_tool_then_persistence_and_records_once(client, monkeypatch):
+    pid = project(client)
+    monkeypatch.setattr('app.routers.analysis.run_sta', lambda *args, **kwargs: worker_result())
+    body = {'project_id': pid, 'stage': 'synthesis', 'top_module': 'top', 'design_revision': 'stream',
+            'scenario': 'slow', 'netlist': 'module top; endmodule', 'liberty': 'library(x) {}',
+            'sdc': 'create_clock -period 1 clk'}
+    response = client.post('/analysis/sta-signoff/stream', json=body)
+    assert response.status_code == 200
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert [(event['event'], event.get('stage')) for event in events] == [
+        ('stage_start', 'opensta'), ('stage_done', 'opensta'),
+        ('stage_start', 'persist'), ('stage_done', 'persist'), ('result', None),
+    ]
+    run_id = events[-1]['result']['run_id']
+    assert client.get(f'/runs/{run_id}').json()['evidence_source'] == 'opensta_execution'
+    assert len(client.get(f'/projects/{pid}/runs').json()) == 1
+
+
+def test_stream_worker_failure_does_not_record_run(client, monkeypatch):
+    from app.services.sta_worker_client import StaWorkerError
+    pid = project(client)
+    monkeypatch.setattr('app.routers.analysis.run_sta', lambda *args, **kwargs: (_ for _ in ()).throw(StaWorkerError('failed')))
+    body = {'project_id': pid, 'stage': 'synthesis', 'top_module': 'top', 'design_revision': 'stream-fail',
+            'scenario': 'slow', 'netlist': 'module top; endmodule', 'liberty': 'library(x) {}', 'sdc': 'set x 1'}
+    events = [json.loads(line) for line in client.post('/analysis/sta-signoff/stream', json=body).text.splitlines()]
+    assert [event['event'] for event in events] == ['stage_start', 'error']
+    assert client.get(f'/projects/{pid}/runs').json() == []
+
+
 def test_legacy_embedded_artifacts_are_redacted_but_downloadable(client, monkeypatch):
     pid = project(client)
     worker, parsed, image = worker_result()
