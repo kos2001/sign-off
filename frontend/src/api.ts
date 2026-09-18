@@ -525,6 +525,17 @@ export interface ProjectAccessEvent {
   before_role: ProjectRole | null; after_role: ProjectRole | null; created_at: string;
 }
 export interface ProjectMember { user_id: number; username: string; role: ProjectRole; disabled: boolean }
+export interface CollectorCredential {
+  id: number; project_id: number; name: string; expires_at: number;
+  revoked_at: string | null; last_used_at: string | null; created_at: string;
+  status: 'active' | 'expired' | 'revoked';
+}
+export interface IssuedCollectorCredential extends CollectorCredential { token: string }
+export interface CollectorCredentialEvent {
+  id: number; project_id: number; credential_id: number; credential_name: string;
+  action: 'issued' | 'revoked'; actor: string; actor_user_id: number | null;
+  expires_at: number; created_at: string;
+}
 let csrfToken: string | null = null;
 export function setCsrfToken(token: string | null) { csrfToken = token; }
 function requestHeaders() { return { "Content-Type": "application/json", "X-Signoff-Client": "1", ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}) }; }
@@ -625,6 +636,10 @@ export const api = {
   members: (id: number) => request<ProjectMember[]>(`/projects/${id}/members`),
   setMember: (id: number, username: string, role: ProjectRole) => request(`/projects/${id}/members`, { method: "PUT", body: JSON.stringify({ username, role }) }),
   removeMember: (id: number, userId: number) => request(`/projects/${id}/members/${userId}`, { method: "DELETE" }),
+  collectors: (id: number) => request<CollectorCredential[]>(`/projects/${id}/collectors`),
+  collectorHistory: (id: number, before?: number) => request<{ items: CollectorCredentialEvent[]; next_before_id: number | null }>(`/projects/${id}/collectors/history${before ? `?before_id=${before}` : ''}`),
+  createCollector: (id: number, name: string, validDays: number) => request<IssuedCollectorCredential>(`/projects/${id}/collectors`, { method: 'POST', body: JSON.stringify({ name, valid_days: validDays }) }),
+  revokeCollector: (id: number, credentialId: number) => request<CollectorCredential>(`/projects/${id}/collectors/${credentialId}`, { method: 'DELETE' }),
   listProjects: () => request<Project[]>("/projects"),
   createProject: (p: Omit<Project, "id" | "created_at">) =>
     request<Project>("/projects", { method: "POST", body: JSON.stringify(p) }),

@@ -326,6 +326,45 @@ class CollectorContextOut(BaseModel):
     domains: list[CollectorDomainContractOut]
 
 
+class CollectorCredentialCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+
+    name: str = Field(pattern=r'^[a-z0-9][a-z0-9_.-]{0,63}$')
+    valid_days: int = Field(default=90, ge=1, le=3650, strict=True)
+
+
+class CollectorCredentialOut(BaseModel):
+    id: int
+    project_id: int
+    name: str
+    expires_at: int
+    revoked_at: datetime | None
+    last_used_at: datetime | None
+    created_at: datetime
+    status: Literal['active', 'expired', 'revoked']
+
+
+class CollectorCredentialIssuedOut(CollectorCredentialOut):
+    token: str
+
+
+class CollectorCredentialEventOut(BaseModel):
+    id: int
+    project_id: int
+    credential_id: int
+    credential_name: str
+    action: Literal['issued', 'revoked']
+    actor: str
+    actor_user_id: int | None
+    expires_at: int
+    created_at: datetime
+
+
+class CollectorCredentialEventPage(BaseModel):
+    items: list[CollectorCredentialEventOut]
+    next_before_id: int | None
+
+
 class WaiverCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
