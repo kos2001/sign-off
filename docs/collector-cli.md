@@ -71,8 +71,8 @@ curl --fail-with-body \
   https://signoff.example/projects/42/imports/commercial-sta
 ```
 
-`--domain`은 `sta`, `cdc`, `pv`, `lvs`, `lec`, `emir`, `glitch_power`, `thermal`, `rtl` 중 하나다. 제출 URL은 각각
-`commercial-sta`, `commercial-cdc`, `commercial-drc`, `commercial-lvs`, `commercial-lec`, `commercial-emir`, `commercial-power`,
+`--domain`은 `sta`, `cdc`, `pv`, `lvs`, `lec`, `dft`, `emir`, `glitch_power`, `thermal`, `rtl` 중 하나다. 제출 URL은 각각
+`commercial-sta`, `commercial-cdc`, `commercial-drc`, `commercial-lvs`, `commercial-lec`, `commercial-dft`, `commercial-emir`, `commercial-power`,
 `commercial-thermal`, `commercial-rtl`이다. 기본 유효 시간은 1시간이며
 `--valid-for-seconds`로 1초부터 7일까지 지정할 수 있다.
 
