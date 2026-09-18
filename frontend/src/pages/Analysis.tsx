@@ -288,7 +288,7 @@ function StaSignoffSection() {
     {result && <div className="mt-4 rounded-lg border border-[var(--border)] p-3 text-sm space-y-2"><p><strong>런 #{result.run_id}</strong> · 보고 경로 {result.metrics.reported_paths}개 · 위반 {result.metrics.violating_paths}개 · 최악 슬랙 {result.metrics.worst_reported_slack_ps ?? "없음"} ps</p><p className="text-xs text-[var(--text-secondary)]">OpenSTA {result.execution.opensta_commit.slice(0, 12)} · AI 개입 없음 · 경로 표본만 생성되어 전체 STA 게이트는 미완료로 유지됩니다.</p><Link className="btn btn-ghost inline-block" to={`/runs/${result.run_id}`}>런 작업공간 열기</Link></div>}
     <details className="mt-5 rounded-lg border border-[var(--border)] p-4">
       <summary className="cursor-pointer font-semibold">MCMM 시나리오 배치 실행</summary>
-      <p className="mt-2 text-xs text-[var(--text-secondary)]">위의 프로젝트·단계·최상위 모듈·리비전·넷리스트를 공통으로 사용합니다. 서버 작업 큐에 접수되므로 브라우저를 닫아도 실행하며, 한 시나리오의 실패가 뒤 실행을 막지 않습니다. 최대 8개, 전체 입력 32 MiB입니다.</p>
+      <p className="mt-2 text-xs text-[var(--text-secondary)]">위의 프로젝트·단계·최상위 모듈·리비전·넷리스트를 공통으로 사용합니다. 서버 작업 큐에 접수되므로 브라우저를 닫아도 실행하며, 여러 프로젝트는 실행 기회를 공정하게 나눕니다. 한 시나리오의 실패가 뒤 실행을 막지 않습니다. 최대 8개, 전체 입력 32 MiB입니다.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button className="btn btn-ghost" disabled={!expectedScenarios.data?.length || batchRunning} onClick={() => setBatchRows(expectedScenarios.data!.slice(0, 8).map(item => ({ scenario: item.name, liberty: '', sdc: '', spef: '', requireSpef: item.require_spef })))}>기대 시나리오 불러오기</button>
         <button className="btn btn-ghost" disabled={batchRows.length >= 8 || batchRunning} onClick={() => setBatchRows(rows => [...rows, { scenario: '', liberty: '', sdc: '', spef: '', requireSpef: false }])}>시나리오 추가</button>
