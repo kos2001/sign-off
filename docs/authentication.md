@@ -117,6 +117,19 @@ DB 백업에는 계정 해시, 권한, 세션 테이블도 포함됩니다. **�
 현재 구현은 로컬 계정 기반입니다. SSO/OIDC, MFA, 셀프서비스 비밀번호 복구,
 운영자 개인 식별·감사 로그 외부 보관·자동 보존 기간 정책, 조직별 테넌트,
 독립적인 보안 검토와 실제 HTTPS 배포 검증은 남아 있습니다.
+
+## 상용 EDA 수집기 자격증명
+
+인증 필수 모드의 자동 수집기는 브라우저 세션과 CSRF 토큰 대신 프로젝트 범위 Bearer 자격증명을
+사용할 수 있다. 운영자 CLI `python -m app.collectors`로 발급·목록·폐기하며 평문 토큰은 발급할
+때 한 번만 반환한다. 서버는 SHA-256만 저장하고 만료 시각과 폐기 시각을 검사한다.
+
+허용 범위는 해당 프로젝트의 `commercial-sta`, `commercial-drc`, `commercial-emir`,
+`commercial-power`, `commercial-thermal`, `commercial-rtl` 저장 POST로 고정된다. 미리보기와 모든
+조회·검토·승인 API에는 사용할 수 없다. 쿠키와 Bearer 헤더를 함께 보내면 모호한 신원을 허용하지
+않고 401로 거부한다. 머신 제출에는 유효한 coverage attestation을 반드시 포함해야 한다. 저장된
+evidence에는 자격증명 ID와 이름을 남기며 토큰은 남기지 않는다.
+생성 요청과 HMAC 범위 증명 절차는 [상용 EDA 수집기 요청 생성](collector-cli.md)을 참고한다.
 RTL trusted_local 실행은 계정 인증과 별개로 OS 샌드박스가 아니므로 다중 사용자 운영용으로 간주하지 않습니다.
 
 ## 로그인 세션 관리
