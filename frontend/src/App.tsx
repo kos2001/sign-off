@@ -33,6 +33,7 @@ export default function App() {
           <Route path="/projects/:id/compare" element={<RunComparison />} />
           <Route path="/projects/:id/sta-matrix" element={<StaMatrix />} />
           <Route path="/projects/:id/import" element={<ReportImport />} />
+          <Route path="/projects/:id/import/commercial-sta" element={<ReportImport commercialSta />} />
           <Route path="/projects/:id/import/klayout" element={<ReportImport klayout />} />
           <Route path="/runs/:runId/structure" element={<DesignStructure />} />
           <Route path="/runs/:runId" element={<RunWorkspace />} />

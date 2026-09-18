@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..schemas import RunOut
-from ..services.report_import import parse_opensta
+from ..services.report_import import commercial_checks, parse_commercial_sta, parse_opensta
 from .runs import get_run_or_404
 
 router = APIRouter(tags=['timing-paths'])
@@ -21,7 +21,7 @@ router = APIRouter(tags=['timing-paths'])
 
 def captured_run(run_id, db):
     run = get_run_or_404(run_id, db)
-    if run.evidence_source not in {'opensta_report', 'opensta_execution'}:
+    if run.evidence_source not in {'opensta_report', 'opensta_execution', 'commercial_sta_report'}:
         raise HTTPException(409, 'this run has no imported timing paths')
     return run
 
@@ -198,10 +198,14 @@ def path_detail(
         source = run.evidence.source_text
         if hashlib.sha256(source.encode('utf-8')).hexdigest() != run.evidence.source_sha256:
             raise ValueError('source integrity mismatch')
-        parsed = parse_opensta(source)
+        if run.evidence_source == 'commercial_sta_report':
+            parsed = parse_commercial_sta(source)
+            check = commercial_checks(source)[1][path_index - 1]
+        else:
+            parsed = parse_opensta(source)
+            check = json.loads(source.removeprefix('\ufeff'))['checks'][path_index - 1]
         if parsed['paths'] != paths:
             raise ValueError('captured paths do not match source')
-        check = json.loads(source.removeprefix('\ufeff'))['checks'][path_index - 1]
     except (ValueError, AttributeError, KeyError, IndexError, TypeError, RecursionError):
         raise HTTPException(409, 'captured report is unreadable') from None
     field = {'data': 'source_path', 'source_clock': 'source_clock_path', 'target_clock': 'target_clock_path'}[section]

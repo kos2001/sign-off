@@ -17,8 +17,8 @@ export const SIGNOFF_TOOLS: Record<Domain, readonly SignoffToolOption[]> = {
   ],
   sta: [
     { value: 'OpenSTA', label: 'OpenSTA · 추천', description: '정적 타이밍 경로와 슬랙을 검토할 때 적합합니다.', workflow: 'OpenSTA JSON 보고서 가져오기를 지원합니다.' },
-    { value: 'Synopsys PrimeTime', label: 'Synopsys PrimeTime', description: '상용 정적 타이밍 분석 결과의 출처를 기록합니다.', workflow: '현재 전용 보고서 가져오기는 연결되지 않았습니다.' },
-    { value: 'Cadence Tempus', label: 'Cadence Tempus', description: '상용 정적 타이밍 분석 결과의 출처를 기록합니다.', workflow: '현재 전용 보고서 가져오기는 연결되지 않았습니다.' },
+    { value: 'Synopsys PrimeTime', label: 'Synopsys PrimeTime', description: '상용 정적 타이밍 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 STA 경로 JSON 가져오기를 지원합니다.' },
+    { value: 'Cadence Tempus', label: 'Cadence Tempus', description: '상용 정적 타이밍 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 STA 경로 JSON 가져오기를 지원합니다.' },
   ],
   emir: [
     { value: 'Ansys RedHawk-SC', label: 'Ansys RedHawk-SC · 추천', description: 'IR drop과 전자이동 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },

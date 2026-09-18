@@ -21,7 +21,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "opensta_report" | "opensta_execution" | "klayout_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report";
   result_locked: boolean;
 }
 
@@ -44,6 +44,8 @@ export interface ReportImportInput {
   design_revision: string; scenario: string; source_text: string;
 }
 export interface ReportPreview {
+  tool?: string;
+  tool_version?: string;
   parser: string; coverage: string; coverage_note: string; status: "failed" | "incomplete"; source_sha256: string;
   metrics: { reported_paths: number; violating_paths: number; unconstrained_paths: number; worst_reported_slack_ps: number | null };
   paths: { index: number; type: string; path_type: string; path_group: string; startpoint: string; endpoint: string; slack_ps: number | null; fingerprint: string }[];
@@ -478,6 +480,8 @@ export const api = {
   timingPath: (runId: number, index: number, pointOffset: number, section: TimingSection = 'data') => request<TimingPathDetail>(`/runs/${runId}/timing-paths/${index}?point_offset=${pointOffset}&section=${section}`),
   previewOpenSta: (projectId: number, body: ReportImportInput) => request<ReportPreview>(`/projects/${projectId}/imports/opensta/preview`, { method: "POST", body: JSON.stringify(body) }),
   importOpenSta: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/opensta`, { method: "POST", body: JSON.stringify(body) }),
+  previewCommercialSta: (projectId: number, body: ReportImportInput) => request<ReportPreview>(`/projects/${projectId}/imports/commercial-sta/preview`, { method: 'POST', body: JSON.stringify(body) }),
+  importCommercialSta: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/commercial-sta`, { method: 'POST', body: JSON.stringify(body) }),
   previewKLayout: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/klayout/preview`, { method: 'POST', body: JSON.stringify(body) }),
   importKLayout: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/klayout`, { method: 'POST', body: JSON.stringify(body) }),
   markers: (runId: number, filters: Record<string, string>) => request<MarkerPage>(`/runs/${runId}/markers?${new URLSearchParams(filters)}`),

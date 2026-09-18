@@ -72,7 +72,7 @@ export default function RunWorkspace() {
       <p className="text-sm">{DOMAIN_LABELS[item.domain]} · {STAGE_LABELS[item.stage]} · {item.tool}</p>
       <p className="text-xs text-[var(--text-secondary)]">생성 {new Date(item.created_at).toLocaleString()} · {EVIDENCE_LABELS[item.evidence_source]}</p>
       <div className="flex flex-wrap gap-2">
-        {(item.evidence_source === 'opensta_report' || item.evidence_source === 'opensta_execution') && <Link className="btn btn-primary" to={`/runs/${item.id}/paths`}>타이밍 경로 탐색</Link>}
+        {(item.evidence_source === 'opensta_report' || item.evidence_source === 'opensta_execution' || item.evidence_source === 'commercial_sta_report') && <Link className="btn btn-primary" to={`/runs/${item.id}/paths`}>타이밍 경로 탐색</Link>}
         {item.evidence_source === 'klayout_report' && <Link className="btn btn-primary" to={`/runs/${item.id}/markers`}>DRC 마커 탐색</Link>}
         {item.evidence_source === 'rtl_ladder' && <Link className="btn btn-primary" to={`/runs/${item.id}/structure`}>합성 구조 탐색</Link>}
         <Link className="btn btn-ghost" to={`/projects/${item.project_id}/compare?candidate=${item.id}`}>다른 런과 비교</Link>

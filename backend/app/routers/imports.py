@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import ReportImport, RunEvidence, SignoffRun, Stage, Violation
 from ..schemas import RunOut
-from ..services.report_import import parse_opensta
+from ..services.report_import import parse_commercial_sta, parse_opensta
 from ..services.klayout_report import parse_klayout
 
 router = APIRouter(tags=['report-imports'])
@@ -58,6 +58,11 @@ def import_report(project_id: int, payload: ReportImportPayload, db: Session = D
     get_project_or_404(project_id, db)
     result = parse(payload)
     digest = hashlib.sha256(json.dumps(payload.model_dump(mode='json'), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return store_timing_report(project_id, payload, result, digest, 'OpenSTA', 'opensta_report',
+                               'opensta', db)
+
+
+def store_timing_report(project_id, payload, result, digest, tool, evidence_source, check_prefix, db):
     def existing():
         receipt = db.scalar(select(ReportImport).where(ReportImport.project_id == project_id, ReportImport.import_key == str(payload.import_id)))
         if receipt:
@@ -68,13 +73,17 @@ def import_report(project_id: int, payload: ReportImportPayload, db: Session = D
         return run
     user = db.info.get('user')
     result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
+    result['metadata']['report_format'] = result['parser']
     result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
-    run = SignoffRun(project_id=project_id, domain='sta', stage=payload.stage, tool='OpenSTA', status=result['status'], metrics=result['metrics'])
-    run.evidence = RunEvidence(source='opensta_report', source_text=payload.source_text, source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
+    run = SignoffRun(project_id=project_id, domain='sta', stage=payload.stage, tool=tool,
+                     status=result['status'], metrics=result['metrics'])
+    run.evidence = RunEvidence(source=evidence_source, source_text=payload.source_text,
+                               source_sha256=result['source_sha256'],
+                               design_revision=payload.design_revision, result=result)
     for path in result['paths']:
         if path['slack_ps'] is None or path['slack_ps'] < 0:
             run.violations.append(Violation(
-                check_name=f"opensta/{path['path_type']}/{path['fingerprint'][:32]}",
+                check_name=f"{check_prefix}/{path['path_type']}/{path['fingerprint'][:32]}",
                 severity='warning' if path['slack_ps'] is None else 'error', location=path['endpoint'],
                 description=f"{payload.scenario} · {path['path_group']} · {path['startpoint']} → {path['endpoint']}\n" + ('Unconstrained path' if path['slack_ps'] is None else f"Reported slack: {slack_text(path['slack_ps'])} ps")))
     db.add(run)
@@ -88,6 +97,30 @@ def import_report(project_id: int, payload: ReportImportPayload, db: Session = D
             return run
         raise
     return run
+
+
+@router.post('/projects/{project_id}/imports/commercial-sta/preview')
+def preview_commercial_sta(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = parse(payload, parse_commercial_sta)
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    return result
+
+
+@router.post('/projects/{project_id}/imports/commercial-sta', response_model=RunOut, status_code=201)
+def import_commercial_sta(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = parse(payload, parse_commercial_sta)
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    digest = hashlib.sha256(json.dumps({'format': 'commercial-sta',
+        'payload': payload.model_dump(mode='json')}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    prefix = 'primetime' if result['tool'] == 'Synopsys PrimeTime' else 'tempus'
+    return store_timing_report(project_id, payload, result, digest, result['tool'],
+                               'commercial_sta_report', prefix, db)
 
 
 @router.post('/projects/{project_id}/imports/klayout/preview')
