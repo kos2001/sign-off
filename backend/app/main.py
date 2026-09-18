@@ -18,7 +18,7 @@ from .services.rtl.worker_client import WorkerError
 from .services.rtl.admission import capacity
 from .services.sta_admission import capacity as sta_capacity
 from .review_capacity import capacity as review_capacity
-from .routers import markers, power_integrity, run_reviews, auth, agents, analysis, comparison, imports, projects, runs, sta_batches, sta_matrix, timing_paths, violations
+from .routers import markers, power_integrity, regressions, run_reviews, auth, agents, analysis, comparison, imports, projects, runs, sta_batches, sta_matrix, timing_paths, violations
 
 logger = logging.getLogger('uvicorn.error.signoff')
 
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(timing_paths.router, dependencies=[Depends(authorize)])
     app.include_router(markers.router, dependencies=[Depends(authorize)])
     app.include_router(power_integrity.router, dependencies=[Depends(authorize)])
+    app.include_router(regressions.router, dependencies=[Depends(authorize)])
     app.include_router(analysis.router, dependencies=[Depends(authorize)])
     app.include_router(run_reviews.router, dependencies=[Depends(authorize)])
     app.include_router(agents.router, dependencies=[Depends(authorize)])
