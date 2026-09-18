@@ -16,6 +16,15 @@ REQUIRED_STA_CLAIMS = {
     'findings_complete',
     'unconstrained_paths_zero',
 }
+REQUIRED_DRC_CLAIMS = {
+    'tool_run_completed',
+    'rule_deck_complete',
+    'layout_inputs_complete',
+    'hierarchy_complete',
+    'checks_complete',
+    'findings_complete',
+}
+REQUIRED_CLAIMS = {'sta': REQUIRED_STA_CLAIMS, 'pv': REQUIRED_DRC_CLAIMS}
 
 
 class AttestationConfigurationError(RuntimeError):
@@ -56,7 +65,7 @@ def canonical_payload(attestation) -> bytes:
     return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(',', ':')).encode()
 
 
-def verify_sta_attestation(attestation, *, project_id, payload, result, now=None):
+def verify_attestation(attestation, *, domain, project_id, payload, result, now=None):
     if attestation is None:
         return None
     for field in ('design_revision', 'tool_version', 'scenario'):
@@ -65,7 +74,7 @@ def verify_sta_attestation(attestation, *, project_id, payload, result, now=None
     if str(attestation.attestation_id) != str(payload.import_id):
         raise ValueError('coverage attestation id must equal import_id')
     bindings = {
-        'project_id': project_id, 'stage': payload.stage, 'domain': 'sta',
+        'project_id': project_id, 'stage': payload.stage, 'domain': domain,
         'design_revision': payload.design_revision,
         'source_sha256': result['source_sha256'], 'tool': result['tool'],
         'tool_version': payload.tool_version, 'scenario': payload.scenario,
@@ -76,10 +85,13 @@ def verify_sta_attestation(attestation, *, project_id, payload, result, now=None
         expected = expected.value if hasattr(expected, 'value') else expected
         if actual != expected:
             raise ValueError(f'coverage attestation {field} does not match the report request')
-    if set(attestation.claims) != REQUIRED_STA_CLAIMS or not all(attestation.claims.values()):
-        raise ValueError('coverage attestation must affirm every required STA coverage claim')
-    if result['metrics']['unconstrained_paths']:
+    required = REQUIRED_CLAIMS[domain]
+    if set(attestation.claims) != required or not all(attestation.claims.values()):
+        raise ValueError(f'coverage attestation must affirm every required {domain.upper()} coverage claim')
+    if domain == 'sta' and result['metrics']['unconstrained_paths']:
         raise ValueError('coverage attestation claims zero unconstrained paths but the report contains one')
+    if domain == 'pv' and not result.get('description', '').strip():
+        raise ValueError('coverage attestation claims a complete rule deck but the report does not identify one')
 
     issued_at, expires_at = attestation.issued_at, attestation.expires_at
     if issued_at.tzinfo is None or expires_at.tzinfo is None:
@@ -100,3 +112,11 @@ def verify_sta_attestation(attestation, *, project_id, payload, result, now=None
     preserved = attestation.model_dump(mode='json')
     preserved['verified'] = True
     return preserved
+
+
+def verify_sta_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='sta', **context)
+
+
+def verify_drc_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='pv', **context)
