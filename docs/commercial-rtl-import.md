@@ -18,5 +18,14 @@
 따라서 깨끗한 결과도 `incomplete`이고 기존 RTL 래더 근거 없이 게이트를 통과하지 않습니다.
 가져오기·판정·탐색에는 AI가 개입하지 않습니다.
 
+## 신뢰된 전체 범위
+
+운영자가 등록한 수집기는 가져오기 요청에 `signoff/coverage-attestation/v1`을 함께 보낼 수
+있습니다. 서버는 프로젝트·스테이지·리비전·툴·시나리오·원본 SHA-256과 테스트 계획,
+컴파일, 시뮬레이션, assertion, 코드/기능 커버리지, 결과 완전성 claim의 HMAC 서명을 검증합니다.
+유효한 증명과 컴파일·테스트·assertion 실패 0건이 함께 확인될 때만 런을 `passed`로 저장하고
+RTL 게이트 근거로 사용합니다. 상세 계약은 [수집기 커버리지 증명](coverage-attestation.md)을
+참고하세요.
+
 API는 `POST /projects/{id}/imports/commercial-rtl/preview`,
 `POST /projects/{id}/imports/commercial-rtl`, `GET /runs/{id}/rtl-regression`입니다.

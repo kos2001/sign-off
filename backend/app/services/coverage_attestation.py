@@ -51,12 +51,23 @@ REQUIRED_THERMAL_CLAIMS = {
     'mesh_convergence_complete',
     'findings_complete',
 }
+REQUIRED_RTL_CLAIMS = {
+    'tool_run_completed',
+    'test_plan_complete',
+    'compile_complete',
+    'simulation_complete',
+    'assertions_complete',
+    'code_coverage_complete',
+    'functional_coverage_complete',
+    'results_complete',
+}
 REQUIRED_CLAIMS = {
     'sta': REQUIRED_STA_CLAIMS,
     'pv': REQUIRED_DRC_CLAIMS,
     'emir': REQUIRED_EMIR_CLAIMS,
     'glitch_power': REQUIRED_POWER_CLAIMS,
     'thermal': REQUIRED_THERMAL_CLAIMS,
+    'rtl': REQUIRED_RTL_CLAIMS,
 }
 
 
@@ -172,3 +183,7 @@ def verify_power_attestation(attestation, **context):
 
 def verify_thermal_attestation(attestation, **context):
     return verify_attestation(attestation, domain='thermal', **context)
+
+
+def verify_rtl_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='rtl', **context)
