@@ -223,9 +223,28 @@ class Waiver(Base):
     reason: Mapped[str] = mapped_column(Text)
     approved_by: Mapped[str] = mapped_column(String(80))
     approved_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    design_revision: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     violation: Mapped[Violation] = relationship(back_populates="waiver")
+
+    @property
+    def inactive_reason(self) -> str | None:
+        if self.expires_at is not None:
+            expiry = self.expires_at.replace(tzinfo=timezone.utc) if self.expires_at.tzinfo is None else self.expires_at
+            if expiry <= datetime.now(timezone.utc):
+                return "expired"
+        if self.design_revision is not None:
+            evidence = self.violation.run.evidence
+            current_revision = evidence.design_revision if evidence else None
+            if current_revision != self.design_revision:
+                return "design_revision_mismatch"
+        return None
+
+    @property
+    def active(self) -> bool:
+        return self.inactive_reason is None
 
 
 class ViolationEvent(Base):
@@ -240,6 +259,8 @@ class ViolationEvent(Base):
     actor: Mapped[str] = mapped_column(String(80))
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     reason: Mapped[str] = mapped_column(Text)
+    waiver_design_revision: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    waiver_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

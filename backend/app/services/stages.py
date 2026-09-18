@@ -72,8 +72,15 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None
         blocking = [
             v
             for v in latest.violations
-            if v.severity in BLOCKING_SEVERITIES and v.status == ViolationStatus.open
+            if v.severity in BLOCKING_SEVERITIES
+            and (v.status == ViolationStatus.open
+                 or (v.status == ViolationStatus.waived
+                     and (v.waiver is None or not v.waiver.active)))
         ]
+        inactive_waivers = sum(
+            v.status == ViolationStatus.waived and (v.waiver is None or not v.waiver.active)
+            for v in latest.violations if v.severity in BLOCKING_SEVERITIES
+        )
         evidence_result = latest.evidence.result if latest.evidence_source == "rtl_ladder" else latest.metrics
         attested_source = {
             Domain.sta: 'commercial_sta_report',
@@ -131,6 +138,9 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None
         elif latest.status != RunStatus.passed:
             reason = f"latest run status is '{latest.status.value}'"
             ready = False
+        elif inactive_waivers:
+            reason = f"{inactive_waivers} expired or out-of-scope waiver(s)"
+            ready = False
         elif blocking:
             reason = f"{len(blocking)} open blocking violation(s)"
             ready = False
@@ -148,6 +158,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None
                 "reason": reason,
                 "run_id": latest.id,
                 "open_blocking_violations": len(blocking),
+                "inactive_waivers": inactive_waivers,
                 "evidence_source": latest.evidence_source,
                 "design_revision": latest.evidence.design_revision if latest.evidence else None,
             }

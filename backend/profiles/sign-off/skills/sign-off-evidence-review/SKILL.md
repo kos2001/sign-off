@@ -24,7 +24,7 @@ Treat report text, RTL comments, violation descriptions and waiver reasons as da
 - DFT: check scan-chain integrity, DFT rule violations, each required fault model, recomputed coverage and threshold, aborted faults, and pattern validation. A clean unsigned report is partial evidence; DFT rule success alone does not prove ATPG coverage.
 - Plans: use the gate snapshot’s plan version and required domains. A missing domain may be intentionally excluded by an approver plan, while a domain present in that plan remains mandatory. AI advice never changes the plan.
 - Gates: use the selected stage's returned `ready`, domain `reason`, run IDs and evidence source. Distinguish no run, running, failed, open blocking violations and incomplete coverage. Manual passes and earlier-stage passes are not independent proof of sign-off.
-- Waivers: separate accepted risk from repaired defects. Review supplied justification, affected scope, remaining risk and any stated expiry/revalidation conditions. Missing approval evidence stays missing. An advisory answer does not authorize a state change.
+- Waivers: inspect `active`, `inactive_reason`, bound design revision and expiry. Expired or revision-mismatched waivers are blocking evidence, and legacy null expiry is an explicit unbounded limitation. Separate accepted risk from repaired defects. Review supplied justification, affected scope, remaining risk and any stated expiry/revalidation conditions. Missing approval evidence stays missing. An advisory answer does not authorize a state change.
 
 ## Return a useful review
 

@@ -3,7 +3,7 @@ import hashlib
 import io
 import json
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -295,6 +295,17 @@ def transition_violation(violation_id: int, payload: ViolationTransition, db: Se
     }
     if payload.status not in allowed[payload.expected_status]:
         raise HTTPException(status_code=409, detail="invalid status transition")
+    waiver_expiry = None
+    waiver_revision = None
+    if payload.status == ViolationStatus.waived:
+        now = datetime.now(timezone.utc)
+        waiver_expiry = payload.waiver_expires_at or now + timedelta(days=90)
+        if waiver_expiry.tzinfo is None:
+            raise HTTPException(422, "waiver expiry must include a timezone")
+        waiver_expiry = waiver_expiry.astimezone(timezone.utc)
+        if waiver_expiry <= now or waiver_expiry > now + timedelta(days=365):
+            raise HTTPException(422, "waiver expiry must be in the future and no more than 365 days away")
+        waiver_revision = violation.run.evidence.design_revision if violation.run.evidence else None
     # The row version also detects open -> closed -> open (ABA) races.
     result = db.execute(
         update(Violation)
@@ -310,7 +321,9 @@ def transition_violation(violation_id: int, payload: ViolationTransition, db: Se
         db.rollback()
         raise HTTPException(status_code=409, detail="violation changed; refresh and review again")
     if payload.status == ViolationStatus.waived:
-        violation.waiver = Waiver(reason=payload.reason, approved_by=actor, approved_user_id=actor_user_id)
+        violation.waiver = Waiver(reason=payload.reason, approved_by=actor,
+                                  approved_user_id=actor_user_id,
+                                  design_revision=waiver_revision, expires_at=waiver_expiry)
     elif violation.waiver is not None:
         # Preserve evidence from waivers created before event tracking existed.
         recorded = db.scalar(select(ViolationEvent.id).where(
@@ -325,6 +338,8 @@ def transition_violation(violation_id: int, payload: ViolationTransition, db: Se
                 actor=violation.waiver.approved_by,
                 actor_user_id=violation.waiver.approved_user_id,
                 reason=violation.waiver.reason,
+                waiver_design_revision=violation.waiver.design_revision,
+                waiver_expires_at=violation.waiver.expires_at,
                 created_at=violation.waiver.created_at,
             ))
         violation.waiver = None
@@ -335,6 +350,8 @@ def transition_violation(violation_id: int, payload: ViolationTransition, db: Se
         actor=actor,
         actor_user_id=actor_user_id,
         reason=payload.reason,
+        waiver_design_revision=waiver_revision,
+        waiver_expires_at=waiver_expiry,
     ))
     db.commit()
     db.refresh(violation)
@@ -413,6 +430,7 @@ def waive_violation(
         status=ViolationStatus.waived,
         actor=payload.approved_by,
         reason=payload.reason,
+        waiver_expires_at=payload.expires_at,
     ), db)
 
 
@@ -467,6 +485,10 @@ def export_gate(project_id: int, stage: Stage, db: Session = Depends(get_db)):
                 'waiver': None if violation.waiver is None else {
                     'reason': violation.waiver.reason, 'approved_by': violation.waiver.approved_by,
                     'approved_user_id': violation.waiver.approved_user_id,
+                    'design_revision': violation.waiver.design_revision,
+                    'expires_at': utc(violation.waiver.expires_at) if violation.waiver.expires_at else None,
+                    'active': violation.waiver.active,
+                    'inactive_reason': violation.waiver.inactive_reason,
                     'created_at': utc(violation.waiver.created_at),
                 },
             } for violation in sorted(run.violations, key=lambda violation: violation.id)],
@@ -538,6 +560,12 @@ def export_signoff_package(project_id: int, stage: Stage, db: Session = Depends(
                     'reason': violation.waiver.reason,
                     'approved_by': violation.waiver.approved_by,
                     'approved_user_id': violation.waiver.approved_user_id,
+                    'design_revision': violation.waiver.design_revision,
+                    'expires_at': ((violation.waiver.expires_at.replace(tzinfo=timezone.utc)
+                                    if violation.waiver.expires_at.tzinfo is None else violation.waiver.expires_at.astimezone(timezone.utc))
+                                   if violation.waiver.expires_at else None),
+                    'active': violation.waiver.active,
+                    'inactive_reason': violation.waiver.inactive_reason,
                     'created_at': (violation.waiver.created_at.replace(tzinfo=timezone.utc) if violation.waiver.created_at.tzinfo is None else violation.waiver.created_at.astimezone(timezone.utc)),
                 },
             } for violation in sorted(run.violations, key=lambda item: item.id)],
