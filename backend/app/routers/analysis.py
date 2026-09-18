@@ -1,5 +1,6 @@
 import json
 import hashlib
+import logging
 import math
 import threading
 from contextlib import closing
@@ -14,6 +15,7 @@ from ..schemas import (
     GlitchPowerRequest,
     IrDropRequest,
     RtlSignoffRequest,
+    StaBatchRequest,
     StaSignoffRequest,
     TimingSummaryRequest,
 )
@@ -29,6 +31,7 @@ from .imports import slack_text
 from ..services.timing import summarize_corners
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
+logger = logging.getLogger('uvicorn.error.signoff')
 
 _RULE_SEVERITY = {"error": Severity.error, "warn": Severity.warning, "info": Severity.info}
 
@@ -252,5 +255,61 @@ def sta_signoff_stream(payload: StaSignoffRequest, db: Session = Depends(get_db)
         except Exception:
             if not cancel.is_set():
                 yield json.dumps({'event': 'error', 'detail': 'STA result could not be recorded.'}) + '\n'
+
+    return AdmittedStreamingResponse(gen(), acquire_slot(), on_close=cancel.set)
+
+
+@router.post('/sta-signoff/batch/stream')
+def sta_signoff_batch_stream(payload: StaBatchRequest, db: Session = Depends(get_db)):
+    """Run bounded MCMM-style scenarios sequentially, preserving each as an independent run."""
+    if db.get(Project, payload.project_id) is None:
+        raise HTTPException(404, 'project not found')
+    require_project(db, payload.project_id, 'editor')
+    user = db.info.get('user')
+    submitted_by = {'user_id': user.id, 'username': user.username} if user else None
+    cancel = threading.Event()
+
+    def gen():
+        completed, failed = [], []
+        yield json.dumps({'event': 'batch_start', 'total': len(payload.scenarios)}) + '\n'
+        for index, scenario in enumerate(payload.scenarios):
+            if cancel.is_set():
+                return
+            name = scenario.scenario.strip()
+            yield json.dumps({'event': 'scenario_start', 'index': index, 'scenario': name}) + '\n'
+            single = StaSignoffRequest(
+                project_id=payload.project_id, stage=payload.stage, top_module=payload.top_module,
+                design_revision=payload.design_revision, scenario=name, netlist=payload.netlist,
+                liberty=scenario.liberty, sdc=scenario.sdc, spef=scenario.spef,
+            )
+            try:
+                worker, result, image_id = run_sta(single.netlist, single.liberty, single.sdc,
+                                                    single.top_module, single.spef, cancel=cancel)
+                if cancel.is_set():
+                    return
+                session = SessionLocal()
+                try:
+                    recorded = _record_sta_run(session, single, worker, result, image_id, submitted_by)
+                finally:
+                    session.close()
+                completed.append({'scenario': name, 'run_id': recorded['run_id'],
+                                  'status': recorded['status']})
+                yield json.dumps({'event': 'scenario_done', 'index': index, 'scenario': name,
+                                  'result': recorded}) + '\n'
+            except StaWorkerError as error:
+                if cancel.is_set():
+                    return
+                failed.append({'scenario': name, 'detail': str(error)})
+                yield json.dumps({'event': 'scenario_error', 'index': index, 'scenario': name,
+                                  'detail': str(error)}) + '\n'
+            except Exception as error:
+                logger.error('sta_batch_persist_failed project_id=%s scenario_index=%s failure=%s',
+                             payload.project_id, index, type(error).__name__)
+                failed.append({'scenario': name, 'detail': 'STA result could not be recorded.'})
+                yield json.dumps({'event': 'scenario_error', 'index': index, 'scenario': name,
+                                  'detail': 'STA result could not be recorded.'}) + '\n'
+        if not cancel.is_set():
+            yield json.dumps({'event': 'batch_done', 'total': len(payload.scenarios),
+                              'completed': completed, 'failed': failed}) + '\n'
 
     return AdmittedStreamingResponse(gen(), acquire_slot(), on_close=cancel.set)

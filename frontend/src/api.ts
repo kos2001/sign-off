@@ -53,6 +53,14 @@ export type StaStreamEvent =
   | { event: 'stage_start'; stage: 'opensta' | 'persist' }
   | { event: 'stage_done'; stage: 'opensta' | 'persist'; status: 'pass'; detail: string }
   | { event: 'result'; result: StaExecutionResult };
+export interface StaBatchScenarioInput { scenario: string; liberty: string; sdc: string; spef?: string }
+export type StaBatchEvent =
+  | { event: 'batch_start'; total: number }
+  | { event: 'scenario_start'; index: number; scenario: string }
+  | { event: 'scenario_done'; index: number; scenario: string; result: StaExecutionResult }
+  | { event: 'scenario_error'; index: number; scenario: string; detail: string }
+  | { event: 'batch_done'; total: number; completed: { scenario: string; run_id: number; status: RunStatus }[];
+      failed: { scenario: string; detail: string }[] };
 
 export interface KLayoutPreview {
   parser: string; coverage: string; coverage_note: string; status: 'failed' | 'incomplete'; source_sha256: string;
@@ -697,6 +705,42 @@ export const api = {
       }
       buffer += decoder.decode(); deliver(buffer);
       if (!receivedResult) throw new Error('OpenSTA 최종 결과를 받기 전에 연결이 종료되었습니다.');
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw error;
+    } finally { reader.releaseLock(); }
+  },
+  staBatchStream: async (payload: { project_id: number; stage: Stage; top_module: string;
+    design_revision: string; netlist: string; scenarios: StaBatchScenarioInput[] }, onEvent: (event: StaBatchEvent) => void) => {
+    const res = await fetch('/api/analysis/sta-signoff/batch/stream', { method: 'POST', headers: requestHeaders(), body: JSON.stringify(payload) });
+    if (res.status === 401) sessionExpired();
+    if (!res.ok || !res.body) {
+      const body = await res.json().catch(() => null);
+      if (res.status >= 500) throw new Error(serverFailure(res));
+      if (res.status === 429) throw new Error('서버 분석 용량이 모두 사용 중입니다. 아직 실행을 시작하지 않았습니다. 5초 뒤 다시 실행하세요.');
+      throw new Error(body && typeof body.detail === 'string' ? body.detail : validationMessage(body) ?? `${res.status} ${res.statusText}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '', receivedDone = false;
+    const deliver = (line: string) => {
+      if (!line.trim()) return;
+      const event = JSON.parse(line) as StaBatchEvent;
+      if (!['batch_start', 'scenario_start', 'scenario_done', 'scenario_error', 'batch_done'].includes(event.event)) throw new Error('OpenSTA 배치 진행 응답 형식이 올바르지 않습니다.');
+      if (event.event === 'scenario_done' && (!event.result || typeof event.result.run_id !== 'number')) throw new Error('OpenSTA 배치 결과 형식이 올바르지 않습니다.');
+      if (event.event === 'batch_done') receivedDone = true;
+      onEvent(event);
+    };
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
+        for (const line of lines) deliver(line);
+      }
+      buffer += decoder.decode(); deliver(buffer);
+      if (!receivedDone) throw new Error('OpenSTA 배치 결과를 받기 전에 연결이 종료되었습니다.');
     } catch (error) {
       await reader.cancel().catch(() => {});
       throw error;
