@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { api, DOMAIN_LABELS, STAGE_LABELS, type ComparisonKind, type SignoffRun, type Violation, type RunProvenance } from "../api";
@@ -48,8 +48,24 @@ export default function RunComparison() {
   const projectId = Number(useParams().id);
   const [params, setParams] = useSearchParams();
   const project = useQuery({ queryKey: ["project", projectId], queryFn: () => api.getProject(projectId) });
-  const runs = useQuery({ queryKey: ["runs", projectId], queryFn: () => api.listRuns(projectId), enabled: !!project.data });
-  const ordered = [...(runs.data ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
+  const runs = useInfiniteQuery({
+    queryKey: ['comparison-runs', projectId],
+    queryFn: ({ pageParam }) => api.runPage(projectId, pageParam, 100),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: page => page.next_before_id ?? undefined,
+    enabled: !!project.data,
+  });
+  const requestedIds = [...new Set(['baseline', 'candidate'].map(key => Number(params.get(key)))
+    .filter(id => Number.isSafeInteger(id) && id > 0))];
+  const requestedRuns = useQueries({ queries: requestedIds.map(id => ({
+    queryKey: ['run', id], queryFn: () => api.getRun(id), enabled: !!project.data,
+  })) });
+  const requestedRunsPending = requestedRuns.some(query => query.isPending);
+  const requestedRunsError = requestedRuns.find(query => query.isError)?.error;
+  const loaded = [...(runs.data?.pages.flatMap(page => page.items) ?? []),
+    ...requestedRuns.flatMap(query => query.data?.project_id === projectId ? [query.data] : [])];
+  const ordered = [...new Map(loaded.map(run => [run.id, run])).values()]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
   const compatible = (a: SignoffRun, b: SignoffRun) => a.id !== b.id && a.domain === b.domain && a.stage === b.stage;
   const candidates = ordered.filter(run => ordered.some(other => compatible(run, other)));
   const candidateId = params.has("candidate") ? Number(params.get("candidate")) : candidates[0]?.id;
@@ -96,7 +112,7 @@ export default function RunComparison() {
       <p className="text-sm text-[var(--text-muted)]">같은 도메인·단계의 두 실행에서 지표와 위반 기록이 어떻게 달라졌는지 확인합니다.</p>
     </header>
     <Card title="비교할 실행" subtitle="기준 → 비교 대상 순서입니다. 선택한 실행과 조회 조건은 URL에 보존됩니다.">
-      {runs.isPending ? <p role="status">런 불러오는 중…</p> : runs.isError ? <p role="alert">{runs.error.message} <button className="btn btn-ghost" onClick={() => runs.refetch()}>다시 시도</button></p> : candidates.length === 0 ? <p className="text-sm">같은 도메인·단계의 런이 두 개 이상 필요합니다. <Link className="underline" to={`/projects/${projectId}`}>프로젝트에서 런 생성</Link></p> : <>
+      {runs.isPending || requestedRunsPending ? <p role="status">런 불러오는 중…</p> : runs.isError || requestedRunsError ? <p role="alert">{runs.error?.message ?? requestedRunsError?.message} <button className="btn btn-ghost" onClick={() => runs.refetch()}>다시 시도</button></p> : candidates.length === 0 ? <p className="text-sm">같은 도메인·단계의 런이 두 개 이상 필요합니다. <Link className="underline" to={`/projects/${projectId}`}>프로젝트에서 런 생성</Link></p> : <>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="기준 런"><select className="input w-full min-w-0" value={baselineId ?? ""} onChange={e => update("baseline", e.target.value)}>
             {!baselines.some(run => run.id === baselineId) && <option value={baselineId ?? ""}>유효한 기준 런을 선택하세요</option>}
@@ -113,6 +129,7 @@ export default function RunComparison() {
         </div>
         {!valid && <p role="alert" className="mt-3 text-sm">링크의 실행 조합을 비교할 수 없습니다. 같은 도메인·단계의 서로 다른 런을 선택하세요.</p>}
       </>}
+      {runs.hasNextPage && <button className="btn btn-ghost mt-3" disabled={runs.isFetchingNextPage} onClick={() => runs.fetchNextPage()}>{runs.isFetchingNextPage ? '이전 런 불러오는 중…' : '이전 런 더 보기'}</button>}
     </Card>
     {valid && (comparison.isPending ? <p role="status">비교 결과 불러오는 중…</p> : comparison.isError ? <Card><p role="alert">{comparison.error.message}</p><button className="btn btn-ghost mt-3" onClick={() => comparison.refetch()}>다시 시도</button></Card> : <>
       <div className="grid gap-3 sm:grid-cols-2">
