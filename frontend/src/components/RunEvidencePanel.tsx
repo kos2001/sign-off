@@ -7,7 +7,7 @@ import { useState } from "react";
 import { api, type SignoffRun } from "../api";
 import { StatusBadge } from "./ui";
 
-export const EVIDENCE_LABELS = { rtl_ladder: "서버 실행 · RTL 분석", klayout_report: "가져온 보고서 · KLayout DRC", opensta_report: "가져온 보고서 · OpenSTA", opensta_execution: "서버 실행 · OpenSTA", commercial_sta_report: "가져온 보고서 · PrimeTime / Tempus", manual: "수동 입력", legacy: "이전 데이터 · 실행 근거 없음" };
+export const EVIDENCE_LABELS = { rtl_ladder: "서버 실행 · RTL 분석", klayout_report: "가져온 보고서 · KLayout DRC", commercial_drc_report: "가져온 보고서 · Calibre / Pegasus", opensta_report: "가져온 보고서 · OpenSTA", opensta_execution: "서버 실행 · OpenSTA", commercial_sta_report: "가져온 보고서 · PrimeTime / Tempus", manual: "수동 입력", legacy: "이전 데이터 · 실행 근거 없음" };
 
 export function RunEvidencePanel({ run }: { run: SignoffRun }) {
   const [open, setOpen] = useState(false);
@@ -57,18 +57,18 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
     </div>
     {open && <section className="rounded-lg border border-[var(--border)] p-3 text-xs space-y-3" aria-label={`런 #${run.id} 실행 근거`}>
       {run.evidence_source === "legacy" ? <p>이 실행은 원본 입력과 판정 근거가 보존되기 전에 등록되었습니다. RTL 분석을 다시 실행하면 근거를 기록할 수 있습니다.</p> : evidence.isPending ? <p role="status">실행 근거 불러오는 중…</p> : evidence.isError ? <p role="alert">{evidence.error.message} <button className="btn btn-ghost" onClick={() => evidence.refetch()}>다시 시도</button></p> : <>
-        {(run.evidence_source === 'opensta_report' || run.evidence_source === 'opensta_execution' || run.evidence_source === 'commercial_sta_report' || run.evidence_source === 'rtl_ladder' || run.evidence_source === 'klayout_report') && <div className="space-y-2">
-          <button className="btn btn-ghost" disabled={sourceDownload.isPending} onClick={() => sourceDownload.mutate({ runId: run.id, extension: run.evidence_source === 'klayout_report' ? 'lyrdb' : run.evidence_source === 'opensta_report' || run.evidence_source === 'opensta_execution' || run.evidence_source === 'commercial_sta_report' ? 'json' : 'sv' })}>{sourceDownload.isPending ? '원본 확인 중…' : '원본 파일 다운로드'}</button>
+        {(run.evidence_source === 'opensta_report' || run.evidence_source === 'opensta_execution' || run.evidence_source === 'commercial_sta_report' || run.evidence_source === 'rtl_ladder' || run.evidence_source === 'klayout_report' || run.evidence_source === 'commercial_drc_report') && <div className="space-y-2">
+          <button className="btn btn-ghost" disabled={sourceDownload.isPending} onClick={() => sourceDownload.mutate({ runId: run.id, extension: run.evidence_source === 'klayout_report' ? 'lyrdb' : run.evidence_source === 'rtl_ladder' ? 'sv' : 'json' })}>{sourceDownload.isPending ? '원본 확인 중…' : '원본 파일 다운로드'}</button>
           <p className="text-[var(--text-muted)]">저장된 SHA-256과 일치하는 원본 입력을 UTF-8 파일로 내려받습니다. 파일 일치는 툴 실행의 진위나 전체 검증 완료를 증명하지 않습니다.</p>
           {sourceDownload.variables?.runId === run.id && sourceDownload.isError && <p role="alert">{sourceDownload.error.message}</p>}
           {sourceDownload.variables?.runId === run.id && sourceDownload.isSuccess && <p role="status">원본 일치 확인 · 파일 다운로드를 시작했습니다.</p>}
         </div>}
-        {run.evidence_source === "manual" ? <p>수동으로 등록한 런입니다. 상태를 Pass로 바꾸어도 서버에서 툴을 실행하거나 결과를 검증한 것은 아닙니다.</p> : run.evidence_source === "klayout_report" ? <>
-          <p className="font-semibold">KLayout DRC 보고서 · {evidence.data.result.metadata?.filename}</p>
+        {run.evidence_source === "manual" ? <p>수동으로 등록한 런입니다. 상태를 Pass로 바꾸어도 서버에서 툴을 실행하거나 결과를 검증한 것은 아닙니다.</p> : (run.evidence_source === "klayout_report" || run.evidence_source === "commercial_drc_report") ? <>
+          <p className="font-semibold">{run.evidence_source === 'commercial_drc_report' ? run.tool : 'KLayout DRC'} 보고서 · {evidence.data.result.metadata?.filename}</p>
           <p>설계 리비전: {evidence.data.design_revision} · 입력된 툴 버전: {evidence.data.result.metadata?.tool_version}</p>
           <p>룰덱 / 실행 조건: {evidence.data.result.metadata?.scenario} · 업로드: {evidence.data.result.submitted_by?.username ?? '로컬 모드'}</p>
           <p>보고된 마커 {evidence.data.result.metrics?.reported_items}개 · 중복 발생 수 합계 {evidence.data.result.metrics?.reported_multiplicity}</p>
-          <p>보고된 마커만 보존합니다. 셀 좌표 원문은 계층 변환하지 않습니다. 전체 DRC 범위는 미확인이며 원본 태그는 승인으로 반영하지 않습니다. 마커는 보수적으로 error로 등록합니다.</p>
+          <p>보고된 마커만 보존합니다. 셀 좌표는 계층 변환하지 않습니다. 전체 DRC 범위는 미확인이며 보고된 심각도나 원본 태그는 승인으로 반영하지 않습니다.</p>
           <p className="break-all">원본 SHA-256: {evidence.data.source_sha256}</p>
           <button className="btn btn-ghost" onClick={download}>근거 JSON 다운로드</button>
           <details><summary className="cursor-pointer">원본 DRC 보고서</summary><pre className="max-h-80 overflow-auto" tabIndex={0}>{evidence.data.source_text}</pre></details>
