@@ -1,4 +1,4 @@
-export type Domain = "rtl" | "sta" | "emir" | "pv" | "glitch_power" | "thermal";
+export type Domain = "rtl" | "sta" | "emir" | "pv" | "lvs" | "glitch_power" | "thermal";
 export type Stage = "rtl" | "synthesis" | "placement" | "routing" | "final";
 export type RunStatus = "running" | "passed" | "failed" | "incomplete";
 export type Severity = "info" | "warning" | "error" | "critical";
@@ -21,7 +21,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report";
   result_locked: boolean;
 }
 
@@ -31,7 +31,7 @@ export interface RunEvidence {
   source_text: string | null;
   source_sha256: string | null;
   design_revision: string | null;
-  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & {
+  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & {
     metadata?: { filename: string; tool_version: string; scenario: string; parasitics?: 'spef' | 'none' };
     submitted_by?: { user_id: number; username: string } | { collector_id: number; name: string } | null;
     input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc' | 'spef', { sha256: string; byte_length: number }>>;
@@ -142,6 +142,10 @@ export interface ThermalPage{run:SignoffRun;metadata:{filename?:string;tool_vers
 export interface RegressionTest{index:number;name:string;status:'passed'|'failed'|'skipped';duration_ms:number;seed:number|null;assertions:{passed:number;failed:number;disabled:number};log_excerpt:string;fingerprint:string}
 export interface RegressionPreview{parser:string;tool:string;tool_version:string;status:'passed'|'failed'|'incomplete';source_sha256:string;coverage_attestation?:CoverageAttestation;compile_status:'passed'|'failed';compile_log_excerpt:string;metrics:{reported_tests:number;passed_tests:number;failed_tests:number;skipped_tests:number;failed_assertions:number;duration_ms:number};items:RegressionTest[]}
 export interface RegressionPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;compile_status:string;compile_log_excerpt:string;reported_total:number;total:number;offset:number;limit:number;summary:RegressionPreview['metrics'];items:RegressionTest[]}
+export type LvsKind='open'|'short'|'missing_device'|'extra_device'|'device_mismatch'|'port_mismatch'|'property_mismatch';
+export interface LvsMismatch{index:number;kind:LvsKind;name:string;severity:'error'|'critical';layout_object:string|null;schematic_object:string|null;message:string;fingerprint:string}
+export interface LvsPreview{parser:string;tool:string;tool_version:string;status:'passed'|'failed'|'incomplete';source_sha256:string;coverage_attestation?:CoverageAttestation;lvs_status:'matched'|'mismatched'|'error';layout_top:string;schematic_top:string;error_message:string|null;summary:{layout_devices:number;schematic_devices:number;layout_nets:number;schematic_nets:number};metrics:Record<string,number>;items:LvsMismatch[]}
+export interface LvsPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;lvs_status:LvsPreview['lvs_status'];layout_top:string;schematic_top:string;error_message:string|null;summary:LvsPreview['summary'];reported_total:number;total:number;offset:number;limit:number;items:LvsMismatch[]}
 
 export type TimingPath = ReportPreview['paths'][number] & { status: 'violated' | 'met' | 'unconstrained' };
 export interface TimingPathSummary {
@@ -549,6 +553,9 @@ export const api = {
   previewCommercialRtl:(projectId:number,body:ReportImportInput)=>request<RegressionPreview>(`/projects/${projectId}/imports/commercial-rtl/preview`,{method:'POST',body:JSON.stringify(body)}),
   importCommercialRtl:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-rtl`,{method:'POST',body:JSON.stringify(body)}),
   rtlRegression:(runId:number,filters:Record<string,string>)=>request<RegressionPage>(`/runs/${runId}/rtl-regression?${new URLSearchParams(filters)}`),
+  previewCommercialLvs:(projectId:number,body:ReportImportInput)=>request<LvsPreview>(`/projects/${projectId}/imports/commercial-lvs/preview`,{method:'POST',body:JSON.stringify(body)}),
+  importCommercialLvs:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-lvs`,{method:'POST',body:JSON.stringify(body)}),
+  lvsMismatches:(runId:number,filters:Record<string,string>)=>request<LvsPage>(`/runs/${runId}/lvs-mismatches?${new URLSearchParams(filters)}`),
   previewKLayout: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/klayout/preview`, { method: 'POST', body: JSON.stringify(body) }),
   importKLayout: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/klayout`, { method: 'POST', body: JSON.stringify(body) }),
   markers: (runId: number, filters: Record<string, string>) => request<MarkerPage>(`/runs/${runId}/markers?${new URLSearchParams(filters)}`),
@@ -878,6 +885,7 @@ export const DOMAIN_LABELS: Record<Domain, string> = {
   sta: "STA",
   emir: "EM/IR",
   pv: "PV",
+  lvs: "LVS",
   glitch_power: "Glitch Power",
   thermal: "Thermal",
 };
