@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
@@ -13,6 +15,7 @@ from ..auth import auth_required
 from ..auth import require_project
 from ..models import Project, ProjectMember, ProjectSignoffPlanRevision, RunStatus, SignoffRun, Stage
 from ..schemas import (CollectorContextOut, ProjectCreate, ProjectOut, ProjectSummaryOut,
+                       ProjectSummaryPageOut,
                        SignoffPlanHistoryOut, SignoffPlanOut,
                        SignoffPlanStageOut, SignoffPlanUpdate)
 
@@ -77,6 +80,63 @@ def project_summaries(db: Session = Depends(get_db)):
         'foundry': project.foundry, 'created_at': project.created_at,
         'total_runs': sum(counts[project.id].values()), 'status_counts': counts[project.id],
     } for project in projects]
+
+
+@router.get('/summary/page', response_model=ProjectSummaryPageOut)
+def project_summary_page(q: str | None = Query(None, min_length=1, max_length=120),
+                         sort: Literal['newest', 'oldest', 'name'] = 'newest',
+                         offset: int = Query(0, ge=0), limit: int = Query(24, ge=1, le=100),
+                         db: Session = Depends(get_db)):
+    query = select(Project)
+    user = db.info.get('user')
+    if auth_required() and user and not user.is_admin:
+        query = query.join(ProjectMember).where(ProjectMember.user_id == user.id)
+    if q is not None:
+        search = q.strip()
+        if not search:
+            raise HTTPException(422, detail='q must contain non-whitespace characters')
+        needle = search.casefold()
+        query = query.where(
+            func.lower(Project.name).contains(needle, autoescape=True)
+            | func.lower(Project.process_node).contains(needle, autoescape=True)
+            | func.lower(Project.foundry).contains(needle, autoescape=True)
+        )
+
+    project_ids = query.with_only_columns(Project.id).order_by(None).subquery()
+    total = db.scalar(select(func.count()).select_from(project_ids)) or 0
+    foundry_count = db.scalar(select(func.count(func.distinct(Project.foundry)))
+                              .where(Project.id.in_(select(project_ids.c.id)))) or 0
+    latest_process_node = db.scalar(select(Project.process_node)
+                                    .where(Project.id.in_(select(project_ids.c.id)))
+                                    .order_by(Project.created_at.desc(), Project.id.desc()).limit(1))
+    aggregate = {status.value: 0 for status in RunStatus}
+    for status, count in db.execute(select(SignoffRun.status, func.count())
+                                    .where(SignoffRun.project_id.in_(select(project_ids.c.id)))
+                                    .group_by(SignoffRun.status)):
+        aggregate[status.value] = count
+
+    ordering = {
+        'newest': (Project.created_at.desc(), Project.id.desc()),
+        'oldest': (Project.created_at.asc(), Project.id.asc()),
+        'name': (func.lower(Project.name).asc(), Project.id.asc()),
+    }[sort]
+    projects = db.scalars(query.order_by(*ordering).offset(offset).limit(limit)).all()
+    ids = [project.id for project in projects]
+    counts = {project_id: {status.value: 0 for status in RunStatus} for project_id in ids}
+    if ids:
+        for project_id, status, count in db.execute(select(
+            SignoffRun.project_id, SignoffRun.status, func.count(),
+        ).where(SignoffRun.project_id.in_(ids)).group_by(SignoffRun.project_id, SignoffRun.status)):
+            counts[project_id][status.value] = count
+    return {
+        'items': [{
+            'id': project.id, 'name': project.name, 'process_node': project.process_node,
+            'foundry': project.foundry, 'created_at': project.created_at,
+            'total_runs': sum(counts[project.id].values()), 'status_counts': counts[project.id],
+        } for project in projects],
+        'total': total, 'offset': offset, 'limit': limit, 'foundry_count': foundry_count,
+        'latest_process_node': latest_process_node, 'status_counts': aggregate,
+    }
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
