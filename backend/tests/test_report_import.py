@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.models import ReportImport, RunEvidence, SignoffRun, Violation
-from app.services.report_import import parse_opensta
+from app.services.report_import import parse_commercial_sta, parse_opensta
 from test_auth import accounts  # Reuse authenticated project fixture.
 
 
@@ -26,6 +26,28 @@ def payload(document=None):
     return {'import_id': str(uuid.uuid4()), 'stage': 'placement', 'filename': 'timing.json',
             'tool_version': 'QA fixture', 'design_revision': 'rev-abc', 'scenario': 'slow',
             'source_text': json.dumps(report() if document is None else document, indent=2) + '\n'}
+
+
+def commercial_report(tool='Synopsys PrimeTime', slack=-0.025):
+    return {'format': 'signoff/commercial-sta-paths/v1', 'tool': tool,
+            'tool_version': 'T-2025.06', 'time_unit': 'ns', 'paths': [{
+                'check_type': 'setup', 'path_type': 'max', 'path_group': 'core_clk',
+                'startpoint': 'launch/Q', 'endpoint': 'capture/D', 'slack': slack,
+                'source_clock': 'core_clk', 'target_clock': 'core_clk',
+                'data_arrival_time': 0.8, 'required_time': 0.775,
+                'points': [
+                    {'pin': 'launch/Q', 'instance': 'launch', 'cell': 'DFF', 'arrival': 0.1, 'slew': 0.02},
+                    {'pin': 'u1/Y', 'instance': 'u1', 'cell': 'BUF', 'net': 'n1', 'arrival': 0.4},
+                    {'pin': 'capture/D', 'instance': 'capture', 'cell': 'DFF', 'arrival': 0.8},
+                ],
+            }]}
+
+
+def commercial_payload(document=None):
+    document = commercial_report() if document is None else document
+    return {'import_id': str(uuid.uuid4()), 'stage': 'routing', 'filename': 'primetime-paths.json',
+            'tool_version': document.get('tool_version', 'T-2025.06'), 'design_revision': 'rev-commercial',
+            'scenario': 'ss-setup', 'source_text': json.dumps(document, ensure_ascii=False, indent=2) + '\n'}
 
 
 def project(client):
@@ -49,6 +71,61 @@ def test_parser_units_identity_duplicates_and_empty_coverage():
     doc['checks'][0].update(type='unconstrained')
     del doc['checks'][0]['slack']
     assert parse_opensta(json.dumps(doc))['metrics']['unconstrained_paths'] == 1
+
+
+def test_commercial_sta_parser_units_identity_and_points():
+    source = json.dumps(commercial_report())
+    result = parse_commercial_sta(source)
+    assert result['tool'] == 'Synopsys PrimeTime' and result['tool_version'] == 'T-2025.06'
+    assert result['parser'] == 'commercial-sta-path-json/v1'
+    assert result['metrics'] == {'reported_paths': 1, 'violating_paths': 1,
+        'unconstrained_paths': 0, 'worst_reported_slack_ps': -25.0}
+    changed = commercial_report(slack=0.1)
+    assert parse_commercial_sta(json.dumps(changed))['paths'][0]['fingerprint'] == result['paths'][0]['fingerprint']
+    tempus = commercial_report(tool='Cadence Tempus', slack=None)
+    parsed = parse_commercial_sta(json.dumps(tempus))
+    assert parsed['status'] == 'incomplete' and parsed['metrics']['unconstrained_paths'] == 1
+
+
+@pytest.mark.parametrize('patch', [
+    {'format': 'wrong'}, {'tool': 'Unknown STA'}, {'tool_version': ' '}, {'time_unit': 'cycles'},
+    {'paths': [{}]}, {'paths': [{**commercial_report()['paths'][0], 'slack': float('nan')}]},
+    {'paths': [{k: v for k, v in commercial_report()['paths'][0].items() if k != 'slack'}]},
+    {'paths': [{**commercial_report()['paths'][0], 'points': []}]},
+    {'paths': [{**commercial_report()['paths'][0], 'endpoint': 'wrong/D'}]},
+])
+def test_bad_commercial_sta_report_is_rejected(patch):
+    document = {**commercial_report(), **patch}
+    with pytest.raises(ValueError):
+        parse_commercial_sta(json.dumps(document))
+
+
+def test_commercial_sta_preview_import_paths_and_evidence(client):
+    pid = project(client)
+    path = f'/projects/{pid}/imports/commercial-sta'
+    body = commercial_payload()
+    preview = client.post(path + '/preview', json=body)
+    assert preview.status_code == 200 and preview.json()['metrics']['violating_paths'] == 1
+    response = client.post(path, json=body)
+    assert response.status_code == 201, response.text
+    run = response.json()
+    assert run['tool'] == 'Synopsys PrimeTime' and run['evidence_source'] == 'commercial_sta_report'
+    assert run['result_locked'] and run['status'] == 'failed'
+    evidence = client.get(f"/runs/{run['id']}/evidence").json()
+    assert evidence['source_text'] == body['source_text']
+    assert evidence['result']['metadata']['report_format'] == 'commercial-sta-path-json/v1'
+    violations = client.get(f"/runs/{run['id']}/violations").json()
+    assert violations[0]['check_name'].startswith('primetime/max/')
+    paths = client.get(f"/runs/{run['id']}/timing-paths").json()
+    assert paths['items'][0]['slack_ps'] == pytest.approx(-25)
+    detail = client.get(f"/runs/{run['id']}/timing-paths/1").json()
+    assert detail['point_total'] == 3 and detail['points'][1]['arrival_ps'] == pytest.approx(400)
+    assert detail['arrival_delta_summary']['reported_pairs'] == 2
+    download = client.get(f"/runs/{run['id']}/evidence/source")
+    assert download.status_code == 200 and download.content == body['source_text'].encode()
+    assert client.post(path, json=body).json()['id'] == run['id']
+    assert client.post(path, json={**body, 'scenario': 'ff-hold'}).status_code == 409
+    assert client.post(path + '/preview', json={**body, 'tool_version': 'mismatch'}).status_code == 422
 
 
 @pytest.mark.parametrize('source', [

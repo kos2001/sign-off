@@ -1,5 +1,8 @@
 # OpenSTA 보고서 가져오기
 
+Synopsys PrimeTime 또는 Cadence Tempus 결과는 [상용 STA 경로 JSON 가져오기](commercial-sta-import.md)를
+사용합니다. 이 페이지의 OpenSTA 고유 JSON과 상용 툴 교환 형식을 서로 바꾸어 해석하지 않습니다.
+
 프로젝트의 **보고서 가져오기**에서 OpenSTA 버전, 설계 리비전, 시나리오/코너와 스테이지를
 입력한 뒤 JSON 파일을 선택하거나 내용을 붙여 넣습니다. **가져오기 미리보기**는 저장하지
 않습니다. 경로·위반 수·슬랙을 확인하고 **런으로 저장**하면 STA 런, 원본 근거와 위반을 함께
