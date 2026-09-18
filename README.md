@@ -127,6 +127,8 @@ RTL 테스트벤치 입력, 실제 Icarus 실행, 컴파일·실행 로그와 �
 핀 목록을 검증하고 같은 경로 탐색·비교·위반 검토 흐름에 연결합니다.
 [신뢰된 수집기 커버리지 증명](docs/coverage-attestation.md)을 STA, DRC, EM/IR, 전력, 열 또는 RTL 회귀 보고서와 함께 제출하면
 서버에 등록된 HMAC 키로 실행 범위를 검증하며, 서명 없는 보고서는 계속 부분 근거로 처리합니다.
+[상용 EDA 수집기 CLI](docs/collector-cli.md)는 보고서를 같은 파서로 검증하고 비밀키를 명령행이나
+출력 파일에 노출하지 않은 채 서버에 바로 제출할 요청 JSON을 생성합니다.
 [Calibre / Pegasus DRC 마커 JSON 가져오기](docs/commercial-drc-import.md)는 툴·버전·좌표 단위·심각도와
 도형을 검증하고 마커 탐색과 위반 검토 흐름에 연결합니다.
 [RedHawk-SC / Voltus / Totem EM/IR 결과 가져오기](docs/commercial-emir-import.md)는 전압 강하와
