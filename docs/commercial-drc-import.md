@@ -59,7 +59,7 @@ JSON 계약으로 변환해야 하며, 잘못된 마커가 하나라도 있으�
 검토할 수 있습니다. 원본 심각도는 해결, 승인 또는 웨이버가 아니며 권한 있는 사용자의 처리
 이력과 분리됩니다.
 
-이 계약은 제출된 마커만 증명합니다. 룰덱 파일과 해시, 레이어 매핑, 전체 셀 계층, 실행 완료,
+커버리지 증명이 없는 이 계약은 제출된 마커만 증명합니다. 룰덱 파일과 해시, 레이어 매핑, 전체 셀 계층, 실행 완료,
 라이선스 상태, DRC clean 여부를 증명하지 않습니다. 마커가 없어도 런은 `incomplete`이고 이
 근거만으로 PV 게이트를 통과하지 않습니다. 좌표에는 계층 변환을 적용하지 않습니다. 수집,
 저장, 탐색과 위반 생성에는 AI가 개입하지 않습니다.
@@ -67,3 +67,16 @@ JSON 계약으로 변환해야 하며, 잘못된 마커가 하나라도 있으�
 API는 `POST /projects/{id}/imports/commercial-drc/preview`와
 `POST /projects/{id}/imports/commercial-drc`입니다. 요청 본문과 UUID 기반 재시도 규약은
 [OpenSTA 보고서 가져오기](report-import.md#api와-재시도)와 같습니다.
+
+## 신뢰된 수집기의 전체 범위 증명
+
+선택 필드 `coverage_attestation`에 서버 등록 키로 서명한
+`signoff/coverage-attestation/v1` 증명을 첨부할 수 있습니다. 증명은 `domain`을 `pv`로
+지정하고 `tool_run_completed`, `rule_deck_complete`, `layout_inputs_complete`,
+`hierarchy_complete`, `checks_complete`, `findings_complete`를 모두 `true`로 선언해야 합니다.
+서버는 프로젝트·스테이지·리비전·원본·툴·버전·룰덱 시나리오 결합과 서명을 확인합니다.
+
+유효한 증명에서 error/critical 마커가 없을 때만 `passed`로 저장하고 PV 게이트 근거로
+인정합니다. warning/info 마커는 보존하지만 차단하지 않습니다. 서명 없는 보고서는 계속
+`incomplete`입니다. 공통 키 설정과 서명 규칙은 [수집기 커버리지 증명](coverage-attestation.md)을
+참고하세요.

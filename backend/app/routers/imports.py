@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Domain, ReportImport, RunEvidence, SignoffRun, Stage, Violation
-from ..services.coverage_attestation import AttestationConfigurationError, verify_sta_attestation
+from ..services.coverage_attestation import AttestationConfigurationError, verify_drc_attestation, verify_sta_attestation
 from ..schemas import RunOut
 from ..services.report_import import parse_commercial_sta, parse_opensta
 from ..services.commercial_drc import parse_commercial_drc
@@ -66,6 +66,10 @@ class CommercialStaImportPayload(ReportImportPayload):
     coverage_attestation: CoverageAttestationPayload | None = None
 
 
+class CommercialDrcImportPayload(ReportImportPayload):
+    coverage_attestation: CoverageAttestationPayload | None = None
+
+
 def apply_sta_attestation(project_id, payload, result):
     try:
         verified = verify_sta_attestation(payload.coverage_attestation, project_id=project_id,
@@ -79,6 +83,23 @@ def apply_sta_attestation(project_id, payload, result):
         result['coverage'] = 'collector_attested_complete'
         result['coverage_note'] = 'Configured collector attests complete STA execution scope; source report and claims are preserved.'
         if result['metrics']['violating_paths'] == 0:
+            result['status'] = 'passed'
+    return result
+
+
+def apply_drc_attestation(project_id, payload, result):
+    try:
+        verified = verify_drc_attestation(payload.coverage_attestation, project_id=project_id,
+                                          payload=payload, result=result)
+    except AttestationConfigurationError as error:
+        raise HTTPException(503, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    if verified:
+        result['coverage_attestation'] = verified
+        result['coverage'] = 'collector_attested_complete'
+        result['coverage_note'] = 'Configured collector attests complete DRC execution scope; source report and claims are preserved.'
+        if result['metrics']['blocking_multiplicity'] == 0:
             result['status'] = 'passed'
     return result
 
@@ -340,24 +361,32 @@ def store_drc_report(project_id, payload, result, digest, tool, evidence_source,
 
 
 @router.post('/projects/{project_id}/imports/commercial-drc/preview')
-def preview_commercial_drc(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+def preview_commercial_drc(project_id: int, payload: CommercialDrcImportPayload, db: Session = Depends(get_db)):
     from .projects import get_project_or_404
     get_project_or_404(project_id, db)
-    result = parse(payload, parse_commercial_drc)
+    result = apply_drc_attestation(project_id, payload, parse(payload, parse_commercial_drc))
     if result['tool_version'] != payload.tool_version.strip():
         raise HTTPException(422, 'tool_version must match the version captured in the report')
     return result
 
 
 @router.post('/projects/{project_id}/imports/commercial-drc', response_model=RunOut, status_code=201)
-def import_commercial_drc(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+def import_commercial_drc(project_id: int, payload: CommercialDrcImportPayload, db: Session = Depends(get_db)):
     from .projects import get_project_or_404
     get_project_or_404(project_id, db)
-    result = parse(payload, parse_commercial_drc)
-    if result['tool_version'] != payload.tool_version.strip():
-        raise HTTPException(422, 'tool_version must match the version captured in the report')
     digest = hashlib.sha256(json.dumps({'format': 'commercial-drc',
         'payload': payload.model_dump(mode='json')}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    receipt = db.scalar(select(ReportImport).where(
+        ReportImport.project_id == project_id,
+        ReportImport.import_key == str(payload.import_id),
+    ))
+    if receipt:
+        if receipt.payload_sha256 != digest:
+            raise HTTPException(409, 'import identifier already used with different content')
+        return db.get(SignoffRun, receipt.run_id)
+    result = apply_drc_attestation(project_id, payload, parse(payload, parse_commercial_drc))
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
     return store_drc_report(project_id, payload, result, digest, result['tool'],
                             'commercial_drc_report', result['violation_prefix'], db)
 

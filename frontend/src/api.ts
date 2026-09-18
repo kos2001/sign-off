@@ -87,7 +87,8 @@ export interface StaBatchExecution {
 
 export interface KLayoutPreview {
   tool?: string; tool_version?: string; coordinate_unit?: string;
-  parser: string; coverage: string; coverage_note: string; status: 'failed' | 'incomplete'; source_sha256: string;
+  parser: string; coverage: string; coverage_note: string; status: 'passed' | 'failed' | 'incomplete'; source_sha256: string;
+  coverage_attestation?: CoverageAttestation;
   metrics: { reported_items: number; reported_multiplicity: number };
   items: { index: number; category: string; cell: string; values: string[]; multiplicity: number; severity?: Severity; tags: string; comment: string }[];
 }
