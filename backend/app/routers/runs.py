@@ -8,7 +8,7 @@ from sqlalchemy import select, update, func, or_
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 from ..db import get_db
-from ..models import Domain, RunEvidence, SignoffRun, Stage, Violation, ViolationStatus, Waiver, ViolationEvent
+from ..models import Domain, RunEvidence, Severity, SignoffRun, Stage, Violation, ViolationStatus, Waiver, ViolationEvent
 from ..schemas import (
     RunCreate,
     RunOut,
@@ -59,6 +59,11 @@ def list_runs(
     if stage is not None:
         query = query.where(SignoffRun.stage == stage)
     return db.scalars(query.options(selectinload(SignoffRun.evidence)).order_by(SignoffRun.id)).all()
+
+
+@router.get("/runs/{run_id}", response_model=RunOut)
+def get_run(run_id: int, db: Session = Depends(get_db)):
+    return get_run_or_404(run_id, db)
 
 
 @router.patch("/runs/{run_id}", response_model=RunOut)
@@ -182,6 +187,54 @@ def list_violations(
     if status is not None:
         query = query.where(Violation.status == status)
     return db.scalars(query.order_by(Violation.id)).all()
+
+
+@router.get("/runs/{run_id}/violations/page")
+def page_run_violations(
+    run_id: int,
+    q: str = Query(default="", max_length=200),
+    status: ViolationStatus | None = None,
+    severity: Severity | None = None,
+    offset: int = Query(default=0, ge=0, le=10000),
+    limit: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    get_run_or_404(run_id, db)
+    filters = [Violation.run_id == run_id]
+    if status is not None:
+        filters.append(Violation.status == status)
+    if severity is not None:
+        filters.append(Violation.severity == severity)
+    if q:
+        filters.append(or_(
+            Violation.check_name.icontains(q, autoescape=True),
+            func.coalesce(Violation.location, "").icontains(q, autoescape=True),
+            func.coalesce(Violation.description, "").icontains(q, autoescape=True),
+        ))
+    total = db.scalar(select(func.count()).select_from(Violation).where(*filters)) or 0
+    items = db.scalars(
+        select(Violation).where(*filters).options(selectinload(Violation.waiver))
+        .order_by(Violation.id).offset(offset).limit(limit)
+    ).all()
+    status_counts = {item.value: 0 for item in ViolationStatus}
+    severity_counts = {item.value: 0 for item in Severity}
+    for value, count in db.execute(
+        select(Violation.status, func.count()).where(Violation.run_id == run_id).group_by(Violation.status)
+    ):
+        status_counts[value.value] = count
+    for value, count in db.execute(
+        select(Violation.severity, func.count()).where(Violation.run_id == run_id).group_by(Violation.severity)
+    ):
+        severity_counts[value.value] = count
+    return {
+        "total": total,
+        "run_total": sum(status_counts.values()),
+        "offset": offset,
+        "limit": limit,
+        "status_counts": status_counts,
+        "severity_counts": severity_counts,
+        "items": [ViolationOut.model_validate(item) for item in items],
+    }
 
 
 def transition_violation(violation_id: int, payload: ViolationTransition, db: Session):
