@@ -331,7 +331,7 @@ function RunRow({ run, onChange }: { run: SignoffRun; onChange: () => void }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link className="btn btn-ghost" to={`/runs/${run.id}`}>런 워크스페이스</Link>
-          {run.evidence_source === 'opensta_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/paths`}>타이밍 경로</Link>}
+          {(run.evidence_source === 'opensta_report' || run.evidence_source === 'opensta_execution') && <Link className="btn btn-ghost" to={`/runs/${run.id}/paths`}>타이밍 경로</Link>}
           {run.evidence_source === 'klayout_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/markers`}>DRC 마커 탐색</Link>}
           <button className="btn btn-ghost" disabled={!auth.can(run.project_id, "editor") || update.isPending || run.result_locked} title={run.result_locked ? "서버 분석 결과는 다시 실행하여 갱신하세요" : "수동 상태 변경"} onClick={() => update.mutate("passed")}>
             Pass
