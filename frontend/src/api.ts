@@ -223,6 +223,23 @@ export interface RunComparison {
   limit: number;
 }
 
+export interface StaMatrix {
+  project_id: number;
+  stage: Stage;
+  design_revision: string;
+  summary: {
+    scenario_count: number; failed_scenarios: number; incomplete_scenarios: number;
+    spef_scenarios: number; total_violating_paths: number; worst_reported_slack_ps: number | null;
+  };
+  scenarios: {
+    scenario: string; run_id: number; run_count: number; status: RunStatus; tool: string;
+    tool_version: string; parasitics: 'spef' | 'none'; source_sha256: string;
+    metrics: Record<string, unknown>; created_at: string;
+  }[];
+  coverage: 'reported_paths_only';
+  coverage_note: string;
+}
+
 export interface GateDomain {
   domain: Domain;
   ready: boolean;
@@ -463,6 +480,10 @@ export const api = {
   compareRuns: (projectId: number, baseline: number, candidate: number, kind: string, offset: number) =>
     request<RunComparison>(`/projects/${projectId}/run-comparison?${new URLSearchParams({
       baseline_run_id: String(baseline), candidate_run_id: String(candidate), kind, offset: String(offset),
+    })}`),
+  staMatrix: (projectId: number, stage: Stage, designRevision: string) =>
+    request<StaMatrix>(`/projects/${projectId}/sta-matrix?${new URLSearchParams({
+      stage, design_revision: designRevision,
     })}`),
   createRun: (
     projectId: number,
