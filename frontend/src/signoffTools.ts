@@ -21,9 +21,9 @@ export const SIGNOFF_TOOLS: Record<Domain, readonly SignoffToolOption[]> = {
     { value: 'Cadence Tempus', label: 'Cadence Tempus', description: '상용 정적 타이밍 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 STA 경로 JSON 가져오기를 지원합니다.' },
   ],
   emir: [
-    { value: 'Ansys RedHawk-SC', label: 'Ansys RedHawk-SC · 추천', description: 'IR drop과 전자이동 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
-    { value: 'Cadence Voltus', label: 'Cadence Voltus', description: '전압 강하와 전력 무결성 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
-    { value: 'Ansys Totem', label: 'Ansys Totem', description: '아날로그·혼합신호 전력 무결성 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
+    { value: 'Ansys RedHawk-SC', label: 'Ansys RedHawk-SC · 추천', description: 'IR drop과 전자이동 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 EM/IR 결과 JSON 가져오기를 지원합니다.' },
+    { value: 'Cadence Voltus', label: 'Cadence Voltus', description: '전압 강하와 전력 무결성 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 EM/IR 결과 JSON 가져오기를 지원합니다.' },
+    { value: 'Ansys Totem', label: 'Ansys Totem', description: '아날로그·혼합신호 전력 무결성 결과의 출처를 기록합니다.', workflow: '검증된 상용 EM/IR 결과 JSON 가져오기를 지원합니다.' },
   ],
   pv: [
     { value: 'KLayout DRC', label: 'KLayout DRC · 추천', description: 'DRC 마커와 도형을 검토할 때 적합합니다.', workflow: 'KLayout LYRDB 보고서 가져오기를 지원합니다.' },
