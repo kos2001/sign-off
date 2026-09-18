@@ -36,9 +36,9 @@ export const SIGNOFF_TOOLS: Record<Domain, readonly SignoffToolOption[]> = {
     { value: 'Ansys PowerArtist', label: 'Ansys PowerArtist', description: 'RTL 전력 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 전력 요약 JSON 가져오기를 지원합니다.' },
   ],
   thermal: [
-    { value: 'Cadence Celsius', label: 'Cadence Celsius · 추천', description: '칩·패키지 열 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
-    { value: 'Ansys Icepak', label: 'Ansys Icepak', description: '전자 시스템 열·유동 분석 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
-    { value: 'Siemens Calibre 3DSTACK', label: 'Siemens Calibre 3DSTACK', description: '3D IC 열·물리 검증 결과의 출처를 기록합니다.', workflow: '현재 자동 실행이나 결과 가져오기는 연결되지 않았습니다.' },
+    { value: 'Cadence Celsius', label: 'Cadence Celsius · 추천', description: '칩·패키지 열 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 열 핫스폿 JSON 가져오기를 지원합니다.' },
+    { value: 'Ansys Icepak', label: 'Ansys Icepak', description: '전자 시스템 열·유동 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 열 핫스폿 JSON 가져오기를 지원합니다.' },
+    { value: 'Siemens Calibre 3DSTACK', label: 'Siemens Calibre 3DSTACK', description: '3D IC 열·물리 검증 결과의 출처를 기록합니다.', workflow: '검증된 상용 열 핫스폿 JSON 가져오기를 지원합니다.' },
   ],
 };
 

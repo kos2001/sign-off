@@ -95,3 +95,14 @@ def power_breakdown(
             'summary': result['summary'], 'glitch_share_limit': result['glitch_share_limit'],
             'reported_total': len(result['items']), 'total': len(items), 'offset': offset, 'limit': limit,
             'violated_total': sum(item['violated'] for item in items), 'items': items[offset:offset + limit]}
+
+@router.get('/runs/{run_id}/thermal-hotspots')
+def thermal_hotspots(run_id:int,status:Literal['all','violated','met']='all',offset:int=Query(0,ge=0,le=5000),limit:int=Query(25,ge=1,le=100),db:Session=Depends(get_db)):
+    run=get_run_or_404(run_id,db)
+    if run.evidence_source!='commercial_thermal_report':raise HTTPException(409,'this run has no imported thermal hotspots')
+    result=run.evidence.result;items=[x for x in result['items'] if status=='all' or x['violated']==(status=='violated')];items.sort(key=lambda x:(-x['temperature_c'],x['index']))
+    return {'run':RunOut.model_validate(run),'metadata':result.get('metadata',{}),'source_sha256':run.evidence.source_sha256,'design_revision':run.evidence.design_revision,'reported_total':len(result['items']),'total':len(items),'violated_total':sum(x['violated'] for x in items),'bounds_um':thermal_bounds(items),'offset':offset,'limit':limit,'items':items[offset:offset+limit]}
+
+def thermal_bounds(items):
+    if not items:return None
+    return {name:fn(float(x[key]) for x in items) for name,key,fn in [('xmin','x_um',min),('xmax','x_um',max),('ymin','y_um',min),('ymax','y_um',max),('zmin','z_um',min),('zmax','z_um',max)]}
