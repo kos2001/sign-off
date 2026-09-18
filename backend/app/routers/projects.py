@@ -6,14 +6,25 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..services.access import change_membership
+from ..services.coverage_attestation import REQUIRED_CLAIMS
 from ..services.stages import resolve_signoff_plan
+from ..services.sta_scenario_plans import resolve_sta_scenario_plan
 from ..auth import auth_required
 from ..auth import require_project
 from ..models import Project, ProjectMember, ProjectSignoffPlanRevision, Stage
-from ..schemas import (ProjectCreate, ProjectOut, SignoffPlanHistoryOut,
-                       SignoffPlanOut, SignoffPlanStageOut, SignoffPlanUpdate)
+from ..schemas import (CollectorContextOut, ProjectCreate, ProjectOut,
+                       SignoffPlanHistoryOut, SignoffPlanOut,
+                       SignoffPlanStageOut, SignoffPlanUpdate)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+IMPORT_PATHS = {
+    'rtl': 'commercial-rtl', 'cdc': 'commercial-cdc', 'sta': 'commercial-sta',
+    'emir': 'commercial-emir', 'pv': 'commercial-drc', 'lvs': 'commercial-lvs',
+    'lec': 'commercial-lec', 'dft': 'commercial-dft',
+    'low_power': 'commercial-low-power', 'glitch_power': 'commercial-power',
+    'thermal': 'commercial-thermal',
+}
 
 
 def get_project_or_404(project_id: int, db: Session) -> Project:
@@ -50,6 +61,22 @@ def list_projects(db: Session = Depends(get_db)):
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(project_id: int, db: Session = Depends(get_db)):
     return get_project_or_404(project_id, db)
+
+
+@router.get('/{project_id}/collector-context/{stage}', response_model=CollectorContextOut)
+def collector_context(project_id: int, stage: Stage, db: Session = Depends(get_db)):
+    """Return the current machine-readable contract for a project-stage collector."""
+    get_project_or_404(project_id, db)
+    plan = resolve_signoff_plan(db, project_id, stage)
+    return {
+        'format': 'signoff/collector-context/v1', 'project_id': project_id, 'stage': stage,
+        'signoff_plan': plan,
+        'sta_scenario_plan': resolve_sta_scenario_plan(db, project_id, stage),
+        'domains': [{
+            'domain': domain, 'import_path': f'/projects/{project_id}/imports/{IMPORT_PATHS[domain]}',
+            'required_claims': sorted(REQUIRED_CLAIMS[domain]),
+        } for domain in plan['required_domains']],
+    }
 
 
 @router.get("/{project_id}/signoff-plan", response_model=SignoffPlanOut)

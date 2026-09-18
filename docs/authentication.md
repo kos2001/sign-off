@@ -130,6 +130,8 @@ DB 백업에는 계정 해시, 권한, 세션 테이블도 포함됩니다. **�
 않고 401로 거부한다. 머신 제출에는 유효한 coverage attestation을 반드시 포함해야 한다. 저장된
 evidence에는 자격증명 ID와 이름을 남기며 토큰은 남기지 않는다.
 생성 요청과 HMAC 범위 증명 절차는 [상용 EDA 수집기 요청 생성](collector-cli.md)을 참고한다.
+프로젝트 전용 Bearer 토큰은 `GET /projects/{id}/collector-context/{stage}`에서 현재 게이트·STA 계획과
+필수 claim을 읽을 수 있다. 그 밖의 일반 조회 권한은 부여하지 않는다.
 RTL trusted_local 실행은 계정 인증과 별개로 OS 샌드박스가 아니므로 다중 사용자 운영용으로 간주하지 않습니다.
 
 ## 로그인 세션 관리
