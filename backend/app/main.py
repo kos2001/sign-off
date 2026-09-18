@@ -17,6 +17,7 @@ from .worker_readiness import WorkerReadiness
 from .services.rtl.worker_client import WorkerError
 from .services.rtl.admission import capacity
 from .services.sta_admission import capacity as sta_capacity
+from .services.coverage_attestation import validate_optional_configuration
 from .review_capacity import capacity as review_capacity
 from .routers import markers, power_integrity, regressions, releases, run_reviews, auth, agents, analysis, comparison, imports, projects, runs, sta_batches, sta_matrix, timing_paths, violations
 
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     capacity()
     sta_capacity()
     review_capacity()
+    validate_optional_configuration()
     initialize_schema(engine)
     app = FastAPI(
         lifespan=worker_lifespan,

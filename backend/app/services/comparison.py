@@ -96,10 +96,22 @@ def compare_runs(baseline: SignoffRun, candidate: SignoffRun) -> dict:
         kind_rank[row["kind"]], severity_rank[(row["candidate"] or row["baseline"]).severity],
         (row["candidate"] or row["baseline"]).id,
     ))
+    def partial_run(run):
+        result = run.evidence.result if run.evidence and isinstance(run.evidence.result, dict) else {}
+        attested_sta = (run.evidence_source == 'commercial_sta_report'
+                        and result.get('coverage') == 'collector_attested_complete'
+                        and result.get('coverage_attestation', {}).get('verified') is True)
+        imported_partial = run.evidence_source in {
+            'commercial_rtl_report', 'opensta_report', 'opensta_execution', 'commercial_sta_report',
+            'klayout_report', 'commercial_drc_report', 'commercial_emir_report',
+            'commercial_power_report', 'commercial_thermal_report',
+        }
+        return run.status in (RunStatus.running, RunStatus.incomplete) or imported_partial and not attested_sta
+
     return {
         "baseline_run": baseline, "candidate_run": candidate,
         "baseline_provenance": provenance(baseline), "candidate_provenance": provenance(candidate),
-        "partial": any(run.status in (RunStatus.running, RunStatus.incomplete) or run.evidence_source in {'commercial_rtl_report', 'opensta_report', 'opensta_execution', 'commercial_sta_report', 'klayout_report', 'commercial_drc_report', 'commercial_emir_report', 'commercial_power_report', 'commercial_thermal_report'} for run in (baseline, candidate)),
+        "partial": any(partial_run(run) for run in (baseline, candidate)),
         "different_tools": baseline.tool != candidate.tool,
         "summary": {kind: sum(row["kind"] == kind for row in changes) for kind in kind_rank},
         "metrics": compare_metrics(baseline.metrics, candidate.metrics),

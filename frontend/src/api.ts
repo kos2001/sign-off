@@ -42,12 +42,20 @@ export interface RunEvidence {
 export interface ReportImportInput {
   import_id: string; stage: Stage; filename: string; tool_version: string;
   design_revision: string; scenario: string; source_text: string;
+  coverage_attestation?: CoverageAttestation;
+}
+export interface CoverageAttestation {
+  format: 'signoff/coverage-attestation/v1'; attestation_id: string; key_id: string;
+  issued_at: string; expires_at: string; project_id: number; stage: Stage; domain: Domain;
+  design_revision: string; source_sha256: string; tool: string; tool_version: string;
+  scenario: string; claims: Record<string, boolean>; signature: string; verified?: boolean;
 }
 export interface ReportPreview {
   tool?: string;
   tool_version?: string;
-  parser: string; coverage: string; coverage_note: string; status: "failed" | "incomplete"; source_sha256: string;
+  parser: string; coverage: string; coverage_note: string; status: "passed" | "failed" | "incomplete"; source_sha256: string;
   metrics: { reported_paths: number; violating_paths: number; unconstrained_paths: number; worst_reported_slack_ps: number | null };
+  coverage_attestation?: CoverageAttestation;
   paths: { index: number; type: string; path_type: string; path_group: string; startpoint: string; endpoint: string; slack_ps: number | null; fingerprint: string }[];
 }
 export type StaExecutionResult = ReportPreview & { run_id: number; execution: { backend: string; image_id: string; opensta_commit: string; agent_involved: false } };
