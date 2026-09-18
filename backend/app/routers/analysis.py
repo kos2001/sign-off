@@ -8,11 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db import SessionLocal, get_db
+from ..auth import require_project
 from ..models import Domain, Project, RunEvidence, Severity, SignoffRun, Stage, Violation
 from ..schemas import (
     GlitchPowerRequest,
     IrDropRequest,
     RtlSignoffRequest,
+    StaSignoffRequest,
     TimingSummaryRequest,
 )
 from ..services.glitch import estimate_glitch_power
@@ -22,6 +24,8 @@ from ..services.rtl.signoff import run_signoff, stream_signoff
 from ..services.rtl.tools import strip_fences
 from ..services.rtl.admission import acquire_slot, AdmittedStreamingResponse
 from ..services.rtl.worker_client import container_mode, stream_worker, WorkerError
+from ..services.sta_worker_client import run_sta, StaWorkerError
+from .imports import slack_text
 from ..services.timing import summarize_corners
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -168,3 +172,39 @@ def rtl_signoff_stream(payload: RtlSignoffRequest, db: Session = Depends(get_db)
 @router.post('/timing-summary')
 def timing_summary(payload: TimingSummaryRequest):
     return screening_result(summarize_corners, **payload.model_dump())
+
+
+@router.post('/sta-signoff', status_code=201)
+def sta_signoff(payload: StaSignoffRequest, db: Session = Depends(get_db)):
+    """Execute a fixed OpenSTA flow in an isolated container and capture its evidence."""
+    if db.get(Project, payload.project_id) is None:
+        raise HTTPException(404, 'project not found')
+    require_project(db, payload.project_id, 'editor')
+    with acquire_slot():
+        try:
+            worker, result, image_id = run_sta(payload.netlist, payload.liberty, payload.sdc, payload.top_module)
+        except StaWorkerError as error:
+            raise HTTPException(503, str(error)) from None
+    user = db.info.get('user')
+    result['metadata'] = {'filename': 'server-generated-report.json', 'tool_version': f"OpenSTA {worker['opensta_commit'][:12]}",
+                          'scenario': payload.scenario, 'top_module': payload.top_module}
+    result['execution'] = {'backend': 'container', 'image_id': image_id, 'opensta_commit': worker['opensta_commit'],
+                           'agent_involved': False, 'log': worker['log'], 'inputs': worker['inputs']}
+    result['input_artifacts'] = {key: {'text': getattr(payload, key), **worker['inputs'][key]}
+                                 for key in ('netlist', 'liberty', 'sdc')}
+    result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
+    run = SignoffRun(project_id=payload.project_id, domain=Domain.sta, stage=payload.stage, tool='OpenSTA',
+                     status=result['status'], metrics=result['metrics'])
+    run.evidence = RunEvidence(source='opensta_execution', source_text=worker['report'],
+                               source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
+    for path in result['paths']:
+        if path['slack_ps'] is None or path['slack_ps'] < 0:
+            run.violations.append(Violation(
+                check_name=f"opensta/{path['path_type']}/{path['fingerprint'][:32]}",
+                severity=Severity.warning if path['slack_ps'] is None else Severity.error,
+                location=path['endpoint'],
+                description=f"{payload.scenario} · {path['path_group']} · {path['startpoint']} → {path['endpoint']}\n" +
+                            ('Unconstrained path' if path['slack_ps'] is None else f"Reported slack: {slack_text(path['slack_ps'])} ps")))
+    db.add(run)
+    db.commit()
+    return {'run_id': run.id, **result}

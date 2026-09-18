@@ -7,7 +7,7 @@ import { useState } from "react";
 import { api, type SignoffRun } from "../api";
 import { StatusBadge } from "./ui";
 
-export const EVIDENCE_LABELS = { rtl_ladder: "서버 실행 · RTL 분석", klayout_report: "가져온 보고서 · KLayout DRC", opensta_report: "가져온 보고서 · OpenSTA", manual: "수동 입력", legacy: "이전 데이터 · 실행 근거 없음" };
+export const EVIDENCE_LABELS = { rtl_ladder: "서버 실행 · RTL 분석", klayout_report: "가져온 보고서 · KLayout DRC", opensta_report: "가져온 보고서 · OpenSTA", opensta_execution: "서버 실행 · OpenSTA", manual: "수동 입력", legacy: "이전 데이터 · 실행 근거 없음" };
 
 export function RunEvidencePanel({ run }: { run: SignoffRun }) {
   const [open, setOpen] = useState(false);
@@ -48,8 +48,8 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
     </div>
     {open && <section className="rounded-lg border border-[var(--border)] p-3 text-xs space-y-3" aria-label={`런 #${run.id} 실행 근거`}>
       {run.evidence_source === "legacy" ? <p>이 실행은 원본 입력과 판정 근거가 보존되기 전에 등록되었습니다. RTL 분석을 다시 실행하면 근거를 기록할 수 있습니다.</p> : evidence.isPending ? <p role="status">실행 근거 불러오는 중…</p> : evidence.isError ? <p role="alert">{evidence.error.message} <button className="btn btn-ghost" onClick={() => evidence.refetch()}>다시 시도</button></p> : <>
-        {(run.evidence_source === 'opensta_report' || run.evidence_source === 'rtl_ladder' || run.evidence_source === 'klayout_report') && <div className="space-y-2">
-          <button className="btn btn-ghost" disabled={sourceDownload.isPending} onClick={() => sourceDownload.mutate({ runId: run.id, extension: run.evidence_source === 'klayout_report' ? 'lyrdb' : run.evidence_source === 'opensta_report' ? 'json' : 'sv' })}>{sourceDownload.isPending ? '원본 확인 중…' : '원본 파일 다운로드'}</button>
+        {(run.evidence_source === 'opensta_report' || run.evidence_source === 'opensta_execution' || run.evidence_source === 'rtl_ladder' || run.evidence_source === 'klayout_report') && <div className="space-y-2">
+          <button className="btn btn-ghost" disabled={sourceDownload.isPending} onClick={() => sourceDownload.mutate({ runId: run.id, extension: run.evidence_source === 'klayout_report' ? 'lyrdb' : run.evidence_source === 'opensta_report' || run.evidence_source === 'opensta_execution' ? 'json' : 'sv' })}>{sourceDownload.isPending ? '원본 확인 중…' : '원본 파일 다운로드'}</button>
           <p className="text-[var(--text-muted)]">저장된 SHA-256과 일치하는 원본 입력을 UTF-8 파일로 내려받습니다. 파일 일치는 툴 실행의 진위나 전체 검증 완료를 증명하지 않습니다.</p>
           {sourceDownload.variables?.runId === run.id && sourceDownload.isError && <p role="alert">{sourceDownload.error.message}</p>}
           {sourceDownload.variables?.runId === run.id && sourceDownload.isSuccess && <p role="status">원본 일치 확인 · 파일 다운로드를 시작했습니다.</p>}
@@ -63,13 +63,13 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
           <p className="break-all">원본 SHA-256: {evidence.data.source_sha256}</p>
           <button className="btn btn-ghost" onClick={download}>근거 JSON 다운로드</button>
           <details><summary className="cursor-pointer">원본 DRC 보고서</summary><pre className="max-h-80 overflow-auto" tabIndex={0}>{evidence.data.source_text}</pre></details>
-        </> : run.evidence_source === "opensta_report" ? <>
+        </> : (run.evidence_source === "opensta_report" || run.evidence_source === "opensta_execution") ? <>
           <p className="font-semibold">OpenSTA 보고서 · {evidence.data.result.metadata?.filename}</p>
           <p>입력된 툴 버전: {evidence.data.result.metadata?.tool_version} · 시나리오: {evidence.data.result.metadata?.scenario}</p>
           <p>설계 리비전: {evidence.data.design_revision} (입력된 식별자)</p>
           <p>업로드: {evidence.data.result.submitted_by?.username ?? "로컬 모드 · 인증 없음"}</p>
           <p>보고된 경로 {evidence.data.result.metrics?.reported_paths}개 · 위반 {evidence.data.result.metrics?.violating_paths}개 · 제약 없는 경로 {evidence.data.result.metrics?.unconstrained_paths}개</p>
-          <p>외부에서 제출된 경로 보고서입니다. 전체 STA 검증 범위와 툴 실행의 진위는 확인되지 않았습니다. 위반 처리 후에도 이 보고서만으로 게이트를 통과하지 않습니다.</p>
+          {run.evidence_source === 'opensta_execution' ? <><p className="break-all">서버 실행: 격리 컨테이너 · 이미지 {evidence.data.result.execution?.image_id} · OpenSTA {evidence.data.result.execution?.opensta_commit}</p><p>이 런 생성에는 AI가 개입하지 않았습니다. 저장된 입력으로 서버가 OpenSTA를 실행했습니다. 경로 표본만 생성하므로 이 결과만으로 전체 STA 게이트를 통과하지 않습니다.</p></> : <p>외부에서 제출된 경로 보고서입니다. 전체 STA 검증 범위와 툴 실행의 진위는 확인되지 않았습니다. 위반 처리 후에도 이 보고서만으로 게이트를 통과하지 않습니다.</p>}
           <p className="break-all">원본 SHA-256: {evidence.data.source_sha256}</p>
           <button className="btn btn-ghost" onClick={download}>근거 JSON 다운로드</button>
           <details><summary className="cursor-pointer font-semibold">원본 보고서</summary><pre tabIndex={0} aria-label="OpenSTA 원본 보고서" className="mt-2 max-h-80 overflow-auto rounded-lg bg-[var(--surface-2)] p-3">{evidence.data.source_text}</pre></details>
@@ -114,7 +114,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
           {evidence.data.result.simulation && <SimulationDetails simulation={evidence.data.result.simulation} />}
           <details><summary className="cursor-pointer font-semibold">실행한 RTL 소스</summary><pre tabIndex={0} aria-label="실행한 RTL 코드" className="mt-2 max-h-80 overflow-auto rounded-lg bg-[var(--surface-2)] p-3">{evidence.data.source_text}</pre></details>
         </>}
-        {(run.evidence_source === 'rtl_ladder' || run.evidence_source === 'opensta_report') && <RunReviewHistory key={run.id} run={run} />}
+        {(run.evidence_source === 'rtl_ladder' || run.evidence_source === 'opensta_report' || run.evidence_source === 'opensta_execution') && <RunReviewHistory key={run.id} run={run} />}
       </>}
     </section>}
   </div>;

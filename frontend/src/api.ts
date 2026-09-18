@@ -21,7 +21,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "opensta_report" | "klayout_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "opensta_report" | "opensta_execution" | "klayout_report";
   result_locked: boolean;
 }
 
@@ -284,7 +284,7 @@ export interface RtlSignoffResult {
   netlist?: { format: 'yosys-generic-verilog/v1'; text: string; sha256: string; byte_length: number } | null;
   top_module_requested?: string | null;
   tool_runs?: Partial<Record<'lint' | 'width' | 'synthesize', { command: string[]; exit_code: number | null; error: string | null; log: string } | null>>;
-  execution?: { backend: 'container'; image_id: string };
+  execution?: { backend: 'container'; image_id: string; opensta_commit?: string; agent_involved?: boolean; log?: string };
   simulation?: SimulationEvidence;
   verdict: "SIGNED_OFF" | "CONDITIONAL" | "REJECTED";
   score: number;
@@ -612,6 +612,11 @@ export const api = {
     request<TimingResult>("/analysis/timing-summary", {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+  staSignoff: (payload: { project_id: number; stage: Stage; top_module: string; design_revision: string;
+    scenario: string; netlist: string; liberty: string; sdc: string }) =>
+    request<ReportPreview & { run_id: number; execution: { backend: string; image_id: string; opensta_commit: string; agent_involved: false } }>("/analysis/sta-signoff", {
+      method: "POST", body: JSON.stringify(payload),
     }),
   reviewRtl: (rtl_signoff_result: unknown) =>
     request<AgentReview>("/agents/review/rtl", {

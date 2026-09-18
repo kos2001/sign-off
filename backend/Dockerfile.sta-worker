@@ -1,0 +1,7 @@
+ARG OPENSTA_BASE=signoff-opensta-base:d97587f
+FROM ${OPENSTA_BASE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+COPY app/sta_worker.py /worker/sta_worker.py
+USER 65534:65534
+ENTRYPOINT ["python3", "/worker/sta_worker.py"]

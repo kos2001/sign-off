@@ -49,8 +49,9 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
         if latest.domain == Domain.rtl and latest.evidence_source != "rtl_ladder":
             reason = "RTL requires captured ladder evidence; rerun the analysis"
             ready = False
-        elif latest.evidence_source == 'opensta_report':
-            reason = 'Imported path report does not establish full STA coverage'
+        elif latest.evidence_source in {'opensta_report', 'opensta_execution'}:
+            reason = ('Executed path sample does not establish full STA coverage' if latest.evidence_source == 'opensta_execution'
+                      else 'Imported path report does not establish full STA coverage')
             ready = False
         elif latest.evidence_source == 'klayout_report':
             reason = 'Imported marker report does not establish full DRC coverage'

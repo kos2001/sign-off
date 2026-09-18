@@ -79,6 +79,7 @@ export function Sidebar() {
           title="분석 도구"
           items={[
             { to: "/analysis#rtl-signoff", label: "RTL 사인오프 래더" },
+            { to: "/analysis#sta-signoff", label: "OpenSTA 타이밍 실행" },
             { to: "/analysis#ir-drop", label: "IR-drop 스크리닝" },
             { to: "/analysis#timing", label: "MMMC 타이밍" },
             { to: "/analysis#glitch-power", label: "글리치 파워" },
