@@ -55,6 +55,12 @@ def test_detached_batch_survives_request_and_records_artifacts(client, monkeypat
     result = wait_terminal(client, pid, receipt['id'])
     assert result['status'] == 'completed' and result['started_at'] and result['finished_at']
     assert all(item['status'] == 'completed' and item['run_id'] for item in result['items'])
+    assert all(item['started_at'] and item['finished_at'] for item in result['items'])
+    assert [event['kind'] for event in result['events']] == [
+        'submitted', 'started', 'scenario_started', 'scenario_completed',
+        'scenario_started', 'scenario_completed', 'finalized',
+    ]
+    assert all(event['actor'] for event in result['events'])
     with SessionLocal() as db:
         artifacts = db.query(StaBatchInputArtifact).filter_by(batch_id=receipt['id']).all()
         assert len(artifacts) == 5
@@ -142,6 +148,10 @@ def test_running_detached_batch_can_be_cancelled(client, monkeypatch):
     result = wait_terminal(client, pid, receipt['id'])
     assert result['status'] == 'cancelled'
     assert result['items'][0]['status'] == 'cancelled' and result['items'][0]['run_id'] is None
+    assert [event['kind'] for event in result['events']] == [
+        'submitted', 'started', 'scenario_started', 'cancel_requested',
+        'scenario_cancelled', 'finalized',
+    ]
     assert client.post(f"/projects/{pid}/sta-batches/{receipt['id']}/cancel").status_code == 409
 
 
@@ -159,6 +169,7 @@ def test_queued_detached_batch_can_be_cancelled(client):
     result = response.json()
     assert result['status'] == 'cancelled' and result['cancel_requested'] is True
     assert result['items'][0]['status'] == 'cancelled' and result['finished_at']
+    assert [event['kind'] for event in result['events']] == ['scenario_cancelled', 'finalized']
 
 
 def test_detached_batch_rejects_tampered_stored_input(client, monkeypatch):
@@ -188,6 +199,7 @@ def test_detached_batch_rejects_tampered_stored_input(client, monkeypatch):
 
 def test_stale_worker_lease_is_finalized_without_reexecution(client, monkeypatch):
     from app.services.sta_batch_queue import reconcile_stale_batches
+    from app.services.sta_execution import update_batch_item
     pid = project(client)
     with SessionLocal() as db:
         batch = StaBatchExecution(project_id=pid, stage=Stage.routing, top_module='top',
@@ -205,3 +217,10 @@ def test_stale_worker_lease_is_finalized_without_reexecution(client, monkeypatch
     assert result['status'] == 'partial' and result['finished_at']
     assert result['items'][1]['status'] == 'failed'
     assert result['items'][1]['detail'] == 'Batch execution was interrupted.'
+    assert [event['kind'] for event in result['events']] == ['scenario_failed', 'finalized']
+    reconcile_stale_batches(now=11)
+    assert len(client.get(f'/projects/{pid}/sta-batches/{batch_id}').json()['events']) == 2
+    assert update_batch_item(batch_id, 1, 'completed', run_id=999) is False
+    unchanged = client.get(f'/projects/{pid}/sta-batches/{batch_id}').json()
+    assert unchanged['items'][1]['status'] == 'failed' and unchanged['items'][1]['run_id'] is None
+    assert len(unchanged['events']) == 2

@@ -381,6 +381,24 @@ class StaBatchExecutionItemOut(BaseModel):
     status: Literal['pending', 'running', 'completed', 'failed', 'cancelled']
     run_id: int | None
     detail: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class StaBatchExecutionEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kind: Literal['submitted', 'retry_submitted', 'started', 'scenario_started',
+                  'scenario_completed', 'scenario_failed', 'scenario_cancelled',
+                  'cancel_requested', 'finalized']
+    status: str
+    position: int | None
+    scenario: str | None
+    actor_user_id: int | None
+    actor: str
+    detail: str | None
+    created_at: datetime
 
 
 class StaBatchRetryRequest(BaseModel):
@@ -406,6 +424,7 @@ class StaBatchExecutionOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     items: list[StaBatchExecutionItemOut] = Field(default_factory=list)
+    events: list[StaBatchExecutionEventOut] = Field(default_factory=list)
 
 
 class StaBatchExecutionPage(BaseModel):

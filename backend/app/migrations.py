@@ -42,6 +42,10 @@ def initialize_schema(engine):
             for index in Base.metadata.tables['sta_batch_executions'].indexes:
                 if index.name == 'ux_sta_batch_executions_retry_request_key':
                     index.create(connection, checkfirst=True)
+            item_columns = {item["name"] for item in inspect(connection).get_columns("sta_batch_execution_items")}
+            for column in ('started_at', 'finished_at'):
+                if column not in item_columns:
+                    connection.execute(text(f"ALTER TABLE sta_batch_execution_items ADD COLUMN {column} DATETIME"))
             connection.commit()
         except Exception:
             connection.rollback()
