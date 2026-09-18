@@ -23,6 +23,20 @@ UTF-8 JSON 최대 2,000,000바이트와 1,000개 경로를 지원합니다. BOM�
 그대로 보존하며 SHA-256은 보존한 원본 UTF-8 바이트를 대상으로 계산합니다.
 기타 출력 필드와 경로 상세는 원본 JSON에 유지합니다. 원본은 실행 코드로 평가하지 않습니다.
 
+## 경로 상세와 클록 경로
+
+타이밍 경로 화면에서 데이터 경로와 `source_clock_path`, `target_clock_path`를 구간별로
+탐색할 수 있습니다. 구간별 핀은 100개씩 표시하며 선택한 구간과 페이지는 URL의 `section`,
+`point_offset`으로 복원됩니다. 시작·끝 클록 에지와 OpenSTA가 보고한 `crpr`, `margin`,
+`path_margin`, `path_delay`, `multi_cycle_path`도 원본 보고 값으로 표시합니다. 시간 값은 ps로
+변환하지만 슬랙을 다시 계산하지 않습니다. 클록 경로가 없으면 미보고와 빈 목록을 구분하며,
+미보고 값을 0으로 취급하지 않습니다.
+
+상세 API는 응답 전에 보존 원본의 SHA-256을 확인하고 원본을 다시 파싱해 저장된 경로 목록과
+일치하는지 검증합니다. 손상되거나 불일치하는 근거는 409로 거부합니다. 이 탐색은 읽기 전용이며
+AI 검토를 호출하지 않습니다. 클록 간 도착 시간 차이는 스큐로 추정하지 않으며, 전체 SDC 제약과
+계산 항목의 적용 순서는 단일 경로 보고서만으로 복원하지 않습니다.
+
 호환성 기준은 OpenSTA 커밋 `d97587f669b4f169be7132346df70e7d634500c3`의
 [공식 JSON 출력 구현](https://github.com/parallaxsw/OpenSTA/blob/d97587f669b4f169be7132346df70e7d634500c3/search/ReportPath.cc)과
 [report_json1 회귀 출력](https://github.com/parallaxsw/OpenSTA/blob/d97587f669b4f169be7132346df70e7d634500c3/test/report_json1.ok),
