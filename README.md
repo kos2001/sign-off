@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1058개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1059개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -132,6 +132,8 @@ RTL 테스트벤치 입력, 실제 Icarus 실행, 컴파일·실행 로그와 �
 출력 파일에 노출하지 않은 채 서버에 바로 제출할 요청 JSON을 생성합니다.
 인증 필수 배포에서는 프로젝트 범위·만료·폐기를 적용한 수집기 Bearer 자격증명으로 브라우저
 세션 없이 열한 개 상용 보고서 저장 API만 호출할 수 있으며 제출 신원은 실행 근거에 보존됩니다.
+수집기는 실행 전에 현재 단계의 필수 도메인·claim·제출 경로와 MMMC 계획 버전을 읽어 자동화 설정을
+서버 계획과 맞출 수 있습니다.
 [Calibre / Pegasus DRC 마커 JSON 가져오기](docs/commercial-drc-import.md)는 툴·버전·좌표 단위·심각도와
 도형을 검증하고 마커 탐색과 위반 검토 흐름에 연결합니다.
 [Calibre / Pegasus LVS 결과 가져오기](docs/commercial-lvs-import.md)는 레이아웃·회로도 TOP과 추출

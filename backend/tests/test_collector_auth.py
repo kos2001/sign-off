@@ -44,6 +44,15 @@ def test_project_collector_can_only_submit_and_identity_is_preserved(accounts, m
     token, collector_id = credential(ids['project'])
     headers = {'Authorization': f'Bearer {token}'}
     machine = TestClient(login('outsider').app, headers=headers)
+    context = machine.get(f"/projects/{ids['project']}/collector-context/routing")
+    assert context.status_code == 200, context.text
+    contract = context.json()
+    assert contract['format'] == 'signoff/collector-context/v1'
+    assert contract['signoff_plan']['required_domains'] == ['sta', 'emir', 'pv', 'lvs']
+    assert contract['sta_scenario_plan']['version'] == 0
+    sta = next(item for item in contract['domains'] if item['domain'] == 'sta')
+    assert sta['import_path'].endswith('/imports/commercial-sta')
+    assert sta['required_claims'] == sorted(REQUIRED_CLAIMS['sta'])
     response = machine.post(f"/projects/{ids['project']}/imports/commercial-sta",
         json=request_body(ids['project']))
     assert response.status_code == 201, response.text
@@ -78,9 +87,35 @@ def test_collector_rejects_cross_project_expired_revoked_unknown_and_cookie_mix(
     valid, _ = credential(ids['project'], name='cross-project')
     assert client.post(f"/projects/{other.id}/imports/commercial-sta", json={},
         headers={'Authorization': f'Bearer {valid}'}).status_code == 401
+    assert client.get(f"/projects/{other.id}/collector-context/routing",
+        headers={'Authorization': f'Bearer {valid}'}).status_code == 401
     editor = login('editor')
     assert editor.post(path, json={}, headers={'Authorization': f'Bearer {valid}'}).status_code == 401
     client.close()
+
+
+def test_project_user_can_read_collector_context(accounts):
+    _, ids, login = accounts
+    approver = login('approver')
+    assert approver.put(f"/projects/{ids['project']}/signoff-plan/final", json={
+        'expected_version': 0, 'required_domains': ['sta', 'low_power'],
+        'reason': 'UPF design final contract',
+    }).status_code == 200
+    assert approver.put(f"/projects/{ids['project']}/sta-scenario-plan/final", json={
+        'expected_version': 0,
+        'scenarios': [{'name': 'ss-functional', 'require_spef': True}],
+        'reason': 'final extracted timing contract',
+    }).status_code == 200
+    response = login('viewer').get(f"/projects/{ids['project']}/collector-context/final")
+    assert response.status_code == 200
+    contract = response.json()
+    assert contract['stage'] == 'final' and contract['signoff_plan']['version'] == 1
+    assert [item['domain'] for item in contract['domains']] == ['sta', 'low_power']
+    assert contract['sta_scenario_plan']['version'] == 1
+    assert contract['sta_scenario_plan']['scenarios'] == [
+        {'name': 'ss-functional', 'require_spef': True}]
+    assert login('outsider').get(
+        f"/projects/{ids['project']}/collector-context/final").status_code == 404
 
 
 def test_issue_credential_stores_only_hash_and_enforces_scope(accounts):

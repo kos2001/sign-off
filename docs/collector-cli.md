@@ -29,8 +29,8 @@ PYTHONPATH=. .venv/bin/python -m app.collectors revoke 42 primetime-prod
 ```
 
 API 토큰은 전송자를 인증하고 HMAC 키는 보고서와 전체 실행 범위 claim을 결합한다. 서로 다른
-비밀값을 사용한다. API 토큰은 지정 프로젝트의 열한 `commercial-*` 저장 POST에만 사용할 수
-있고 미리보기, 조회, 위반 처리, 게이트 승인에는 사용할 수 없다. 만료·폐기 또는 다른 프로젝트의
+비밀값을 사용한다. API 토큰은 지정 프로젝트의 열한 `commercial-*` 저장 POST와 읽기 전용 수집기
+컨텍스트 조회에만 사용할 수 있고 일반 조회, 미리보기, 위반 처리, 게이트 승인에는 사용할 수 없다. 만료·폐기 또는 다른 프로젝트의
 토큰은 일반적인 401로 거부된다. 머신 제출은 coverage attestation이 없는 요청도 거부하므로
 서비스 자격증명만으로 서명 없는 최신 런을 만들어 게이트를 방해할 수 없다.
 
@@ -50,6 +50,21 @@ claim 파일은 해당 도메인의 [정확한 claim 집합](coverage-attestatio
 ```
 
 ## 요청 생성과 제출
+
+실행 전에 현재 단계의 계약을 조회한다. 응답은 게이트가 요구하는 도메인과 각 도메인의 정확한 claim,
+제출 경로, 사인오프 계획 버전, STA 시나리오 계획 버전·mode/corner·SPEF 요구를 제공한다. 수집기는
+응답에 없는 도메인을 게이트 필수 항목으로 추측하지 않고, STA 요청에는 반환된
+`sta_scenario_plan.version`을 사용한다.
+
+```sh
+curl --fail-with-body \
+  -H "Authorization: Bearer $SIGNOFF_COLLECTOR_API_TOKEN" \
+  https://signoff.example/projects/42/collector-context/final \
+  > /collector/out/signoff-context.json
+```
+
+이 조회는 프로젝트 범위의 현재 설정만 반환하고 런·위반·결정 데이터는 노출하지 않는다. 계획이 조회
+후 변경되는 경합은 저장 API가 계획 버전 불일치로 다시 차단하므로 컨텍스트를 새로 읽고 재실행한다.
 
 ```sh
 PYTHONPATH=. .venv/bin/python scripts/create_coverage_import.py \
@@ -75,7 +90,7 @@ curl --fail-with-body \
 `commercial-sta`, `commercial-cdc`, `commercial-drc`, `commercial-lvs`, `commercial-lec`, `commercial-dft`, `commercial-low-power`, `commercial-emir`, `commercial-power`,
 `commercial-thermal`, `commercial-rtl`이다. 기본 유효 시간은 1시간이며
 `--valid-for-seconds`로 1초부터 7일까지 지정할 수 있다.
-STA 도메인에서 버전형 MMMC 계획을 사용하면 `--scenario-plan-version`에 현재 계획 버전을 지정한다.
+STA 도메인에서는 `--scenario-plan-version`에 컨텍스트가 반환한 현재 계획 버전을 지정한다.
 서버는 이 값을 HMAC 서명과 함께 검증하며 현재 계획과 다르면 저장을 거부한다.
 
 CLI는 UTF-8 원본 바이트, 툴과 버전, claim 집합을 검증한 후 요청을 생성한다. `--output` 파일은
