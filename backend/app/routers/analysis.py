@@ -186,12 +186,17 @@ def sta_signoff(payload: StaSignoffRequest, db: Session = Depends(get_db)):
         except StaWorkerError as error:
             raise HTTPException(503, str(error)) from None
     user = db.info.get('user')
+    return _record_sta_run(db, payload, worker, result, image_id,
+                           {'user_id': user.id, 'username': user.username} if user else None)
+
+
+def _record_sta_run(db, payload, worker, result, image_id, submitted_by):
     result['metadata'] = {'filename': 'server-generated-report.json', 'tool_version': f"OpenSTA {worker['opensta_commit'][:12]}",
                           'scenario': payload.scenario, 'top_module': payload.top_module}
     result['execution'] = {'backend': 'container', 'image_id': image_id, 'opensta_commit': worker['opensta_commit'],
                            'agent_involved': False, 'log': worker['log'], 'inputs': worker['inputs']}
     result['input_artifacts'] = worker['inputs']
-    result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
+    result['submitted_by'] = submitted_by
     run = SignoffRun(project_id=payload.project_id, domain=Domain.sta, stage=payload.stage, tool='OpenSTA',
                      status=result['status'], metrics=result['metrics'])
     run.evidence = RunEvidence(source='opensta_execution', source_text=worker['report'],
@@ -209,3 +214,42 @@ def sta_signoff(payload: StaSignoffRequest, db: Session = Depends(get_db)):
     db.add(run)
     db.commit()
     return {'run_id': run.id, **result}
+
+
+@router.post('/sta-signoff/stream')
+def sta_signoff_stream(payload: StaSignoffRequest, db: Session = Depends(get_db)):
+    """Stream OpenSTA lifecycle events and cancel the worker on disconnect."""
+    if db.get(Project, payload.project_id) is None:
+        raise HTTPException(404, 'project not found')
+    require_project(db, payload.project_id, 'editor')
+    user = db.info.get('user')
+    submitted_by = {'user_id': user.id, 'username': user.username} if user else None
+    cancel = threading.Event()
+
+    def gen():
+        yield json.dumps({'event': 'stage_start', 'stage': 'opensta'}) + '\n'
+        try:
+            worker, result, image_id = run_sta(payload.netlist, payload.liberty, payload.sdc,
+                                                payload.top_module, cancel=cancel)
+            if cancel.is_set():
+                return
+            yield json.dumps({'event': 'stage_done', 'stage': 'opensta', 'status': 'pass',
+                              'detail': f"OpenSTA reported {result['metrics']['reported_paths']} paths."}) + '\n'
+            yield json.dumps({'event': 'stage_start', 'stage': 'persist'}) + '\n'
+            session = SessionLocal()
+            try:
+                recorded = _record_sta_run(session, payload, worker, result, image_id, submitted_by)
+            finally:
+                session.close()
+            if not cancel.is_set():
+                yield json.dumps({'event': 'stage_done', 'stage': 'persist', 'status': 'pass',
+                                  'detail': f"Recorded run #{recorded['run_id']}."}) + '\n'
+                yield json.dumps({'event': 'result', 'result': recorded}) + '\n'
+        except StaWorkerError as error:
+            if not cancel.is_set():
+                yield json.dumps({'event': 'error', 'detail': str(error)}) + '\n'
+        except Exception:
+            if not cancel.is_set():
+                yield json.dumps({'event': 'error', 'detail': 'STA result could not be recorded.'}) + '\n'
+
+    return AdmittedStreamingResponse(gen(), acquire_slot(), on_close=cancel.set)

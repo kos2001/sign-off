@@ -5,6 +5,7 @@ import re
 import selectors
 import signal
 import subprocess
+import threading
 import time
 import uuid
 
@@ -57,7 +58,10 @@ def remove_container(name):
         raise StaWorkerError('STA worker cleanup could not be confirmed.') from error
 
 
-def bounded_worker(command, payload, name):
+def bounded_worker(command, payload, name, cancel=None):
+    cancel = cancel if cancel is not None else threading.Event()
+    if cancel.is_set():
+        raise StaWorkerError('STA worker cancelled.')
     try:
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    start_new_session=True)
@@ -72,6 +76,8 @@ def bounded_worker(command, payload, name):
                 os.set_blocking(pipe.fileno(), False)
                 selector.register(pipe, events)
             while selector.get_map():
+                if cancel.is_set():
+                    raise StaWorkerError('STA worker cancelled.')
                 if time.monotonic() >= deadline:
                     raise StaWorkerError('STA worker deadline exceeded.')
                 for key, _ in selector.select(0.1):
@@ -96,6 +102,8 @@ def bounded_worker(command, payload, name):
                     if len(target) > limit:
                         raise StaWorkerError(message)
             while process.poll() is None:
+                if cancel.is_set():
+                    raise StaWorkerError('STA worker cancelled.')
                 if time.monotonic() >= deadline:
                     raise StaWorkerError('STA worker deadline exceeded.')
                 time.sleep(0.05)
@@ -113,11 +121,14 @@ def bounded_worker(command, payload, name):
         remove_container(name)
 
 
-def run_sta(netlist, liberty, sdc, top_module):
+def run_sta(netlist, liberty, sdc, top_module, *, cancel=None):
+    cancel = cancel if cancel is not None else threading.Event()
     request = {'protocol': PROTOCOL, 'request': {'netlist': netlist, 'liberty': liberty, 'sdc': sdc, 'top_module': top_module}}
     payload = json.dumps(request, ensure_ascii=False).encode()
     if len(payload) > MAX_INPUT_BYTES:
         raise StaWorkerError('STA worker input limit exceeded.')
+    if cancel.is_set():
+        raise StaWorkerError('STA worker cancelled.')
     image = configured_image()
     try:
         inspected = subprocess.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image], capture_output=True, timeout=10)
@@ -127,7 +138,7 @@ def run_sta(netlist, liberty, sdc, top_module):
     if inspected.returncode or not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id):
         raise StaWorkerError('STA worker image is unavailable.')
     name = 'signoff-sta-job-' + uuid.uuid4().hex
-    returncode, stdout, stderr = bounded_worker(worker_command(name, image_id), payload, name)
+    returncode, stdout, stderr = bounded_worker(worker_command(name, image_id), payload, name, cancel)
     if returncode:
         raise StaWorkerError((stderr.decode(errors='replace')[-2000:] or 'STA worker failed.').strip())
     try:
