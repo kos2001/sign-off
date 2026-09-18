@@ -67,6 +67,26 @@ class Project(Base):
     )
 
 
+class ProjectSignoffPlanRevision(Base):
+    """Append-only revision of one stage's required sign-off domains."""
+
+    __tablename__ = "project_signoff_plan_revisions"
+    __table_args__ = (
+        UniqueConstraint("project_id", "stage", "version"),
+        Index("ix_project_signoff_plan_latest", "project_id", "stage", "version"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    stage: Mapped[Stage] = mapped_column(Enum(Stage))
+    version: Mapped[int]
+    required_domains: Mapped[list[str]] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[str] = mapped_column(String(80))
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class StaScenarioDefinition(Base):
     __tablename__ = "sta_scenario_definitions"
     __table_args__ = (UniqueConstraint("project_id", "stage", "name"),)

@@ -1002,6 +1002,13 @@ STA/PV/EMIR/전력/열/RTL 보고서를 서버와 같은 파서로 검증하고,
 열한 개 상용 저장 POST만 허용하며 미리보기·조회·검토·승인, 타 프로젝트, 만료·폐기 토큰과 쿠키
 혼합을 거부한다. evidence에는 토큰 대신 자격증명 ID와 이름을 보존한다.
 
+### 2026-09-19 · 프로젝트별 버전형 사인오프 계획
+
+단계별 필수 도메인을 프로젝트 approver가 변경 사유와 함께 지정하는 계획 API와 UI를 추가했다.
+기본 매트릭스는 버전 0으로 유지하고 변경은 append-only 버전으로 보존한다. expected version 경합을
+409로 차단하며 현재 게이트·JSON·검증 ZIP·사람의 결정에 정확한 계획 스냅샷을 결합한다. 저전력·DFT
+적용 여부를 설계별로 명시할 수 있고 AI는 계획 변경이나 게이트 계산에 개입하지 않는다.
+
 ### 2026-09-19 · VC LP / Conformal Low Power 정적 검증
 
 UPF 전력 의도와 power domain/state, domain crossing, isolation·level shifter·retention·power switch·
