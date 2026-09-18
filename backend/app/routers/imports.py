@@ -13,6 +13,7 @@ from ..models import ReportImport, RunEvidence, SignoffRun, Stage, Violation
 from ..schemas import RunOut
 from ..services.report_import import parse_commercial_sta, parse_opensta
 from ..services.commercial_drc import parse_commercial_drc
+from ..services.commercial_emir import parse_commercial_emir
 from ..services.klayout_report import parse_klayout
 
 router = APIRouter(tags=['report-imports'])
@@ -192,3 +193,57 @@ def import_commercial_drc(project_id: int, payload: ReportImportPayload, db: Ses
         'payload': payload.model_dump(mode='json')}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return store_drc_report(project_id, payload, result, digest, result['tool'],
                             'commercial_drc_report', result['violation_prefix'], db)
+
+
+@router.post('/projects/{project_id}/imports/commercial-emir/preview')
+def preview_commercial_emir(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = parse(payload, parse_commercial_emir)
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    return result
+
+
+@router.post('/projects/{project_id}/imports/commercial-emir', response_model=RunOut, status_code=201)
+def import_commercial_emir(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = parse(payload, parse_commercial_emir)
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    digest = hashlib.sha256(json.dumps({'format': 'commercial-emir',
+        'payload': payload.model_dump(mode='json')}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    def existing():
+        receipt = db.scalar(select(ReportImport).where(ReportImport.project_id == project_id, ReportImport.import_key == str(payload.import_id)))
+        if receipt:
+            if receipt.payload_sha256 != digest:
+                raise HTTPException(409, 'import identifier already used with different content')
+            return db.get(SignoffRun, receipt.run_id)
+    if run := existing():
+        return run
+    user = db.info.get('user')
+    result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
+    result['metadata']['report_format'] = result['parser']
+    result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
+    run = SignoffRun(project_id=project_id, domain='emir', stage=payload.stage, tool=result['tool'],
+                     status=result['status'], metrics=result['metrics'])
+    run.evidence = RunEvidence(source='commercial_emir_report', source_text=payload.source_text,
+        source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
+    prefix = {'Ansys RedHawk-SC': 'redhawk', 'Cadence Voltus': 'voltus', 'Ansys Totem': 'totem'}[result['tool']]
+    for item in result['items']:
+        if item['violated']:
+            run.violations.append(Violation(check_name=f"{prefix}/{item['fingerprint'][:32]}",
+                severity=item['severity'], location=item['instance'] or item['net'] or f"({item['x_um']}, {item['y_um']}) um",
+                description=f"{item['analysis']} · {item['metric']} · {item['check']}\nReported: {item['value']} {item['unit']} · limit: {item['limit']} {item['unit']}\nLayer: {item['layer'] or 'not reported'}\n{item['message']}"))
+    db.add(run)
+    try:
+        db.flush()
+        db.add(ReportImport(project_id=project_id, import_key=str(payload.import_id), payload_sha256=digest, run_id=run.id))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if run := existing():
+            return run
+        raise
+    return run
