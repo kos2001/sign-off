@@ -68,7 +68,11 @@ export interface StaBatchExecution {
   submitted_by_user_id: number | null; submitted_by: string; created_at: string; started_at: string | null; finished_at: string | null;
   items: { position: number; scenario: string; require_spef: boolean;
     status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-    run_id: number | null; detail: string | null }[];
+    run_id: number | null; detail: string | null; started_at: string | null; finished_at: string | null }[];
+  events: { id: number; kind: 'submitted' | 'retry_submitted' | 'started' | 'scenario_started' |
+    'scenario_completed' | 'scenario_failed' | 'scenario_cancelled' | 'cancel_requested' | 'finalized';
+    status: string; position: number | null; scenario: string | null; actor_user_id: number | null;
+    actor: string; detail: string | null; created_at: string }[];
 }
 
 export interface KLayoutPreview {

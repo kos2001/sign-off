@@ -5,7 +5,7 @@ from sqlalchemy import select, update
 
 from ..db import SessionLocal
 from ..models import (Domain, RunArtifact, RunEvidence, Severity, SignoffRun,
-                      StaBatchExecution, StaBatchExecutionItem, Violation)
+                      StaBatchExecution, StaBatchExecutionEvent, StaBatchExecutionItem, Violation)
 
 
 def slack_text(value: float) -> str:
@@ -42,15 +42,48 @@ def record_sta_run(db, payload, worker, result, image_id, submitted_by):
 
 def update_batch_item(batch_id, position, status, *, run_id=None, detail=None):
     with SessionLocal() as session:
-        session.execute(update(StaBatchExecutionItem).where(
+        item = session.scalar(select(StaBatchExecutionItem).where(
             StaBatchExecutionItem.batch_id == batch_id,
             StaBatchExecutionItem.position == position,
-        ).values(status=status, run_id=run_id, detail=detail).execution_options(synchronize_session=False))
+        ))
+        if item is None or item.status == status:
+            return False
+        allowed = {'pending': {'running', 'failed', 'cancelled'},
+                   'running': {'completed', 'failed', 'cancelled'}}
+        if status not in allowed.get(item.status, set()):
+            return False
+        now = datetime.now(timezone.utc)
+        item.status, item.run_id, item.detail = status, run_id, detail
+        if status == 'running':
+            item.started_at = now
+        elif status in {'completed', 'failed', 'cancelled'}:
+            item.finished_at = now
+        kind = {'running': 'scenario_started', 'completed': 'scenario_completed',
+                'failed': 'scenario_failed', 'cancelled': 'scenario_cancelled'}[status]
+        session.add(StaBatchExecutionEvent(batch_id=batch_id, kind=kind, status=status,
+            position=position, scenario=item.scenario, actor='system', detail=detail))
         session.commit()
+        return True
 
 
-def finish_sta_batch(batch_id, outcome):
+def finish_sta_batch(batch_id, outcome, *, expired_before=None):
     with SessionLocal() as session:
+        if expired_before is not None:
+            claimed = session.execute(update(StaBatchExecution).where(
+                StaBatchExecution.id == batch_id, StaBatchExecution.status == 'running',
+                StaBatchExecution.finished_at.is_(None),
+                StaBatchExecution.lease_expires_at.is_not(None),
+                StaBatchExecution.lease_expires_at < expired_before,
+            ).values(worker_token=None, lease_expires_at=None)
+                .execution_options(synchronize_session=False))
+            if claimed.rowcount != 1:
+                session.rollback()
+                return False
+        batch = session.get(StaBatchExecution, batch_id)
+        if batch is None or batch.finished_at is not None:
+            session.rollback()
+            return False
+        now = datetime.now(timezone.utc)
         unfinished = session.scalars(select(StaBatchExecutionItem).where(
             StaBatchExecutionItem.batch_id == batch_id,
             StaBatchExecutionItem.status.in_(['pending', 'running']),
@@ -59,7 +92,11 @@ def finish_sta_batch(batch_id, outcome):
             state = 'cancelled' if outcome == 'cancelled' else 'failed'
             detail = 'Batch request was cancelled.' if outcome == 'cancelled' else 'Batch execution was interrupted.'
             for item in unfinished:
-                item.status, item.detail = state, detail
+                item.status, item.detail, item.finished_at = state, detail, now
+                session.add(StaBatchExecutionEvent(batch_id=batch_id,
+                    kind='scenario_cancelled' if state == 'cancelled' else 'scenario_failed',
+                    status=state, position=item.position, scenario=item.scenario,
+                    actor='system', detail=detail))
         statuses = list(session.scalars(select(StaBatchExecutionItem.status).where(
             StaBatchExecutionItem.batch_id == batch_id,
         )))
@@ -68,7 +105,10 @@ def finish_sta_batch(batch_id, outcome):
         else:
             completed = statuses.count('completed')
             status = 'completed' if completed == len(statuses) else 'partial' if completed else 'failed'
-        session.execute(update(StaBatchExecution).where(StaBatchExecution.id == batch_id).values(
-            status=status, finished_at=datetime.now(timezone.utc), worker_token=None, lease_expires_at=None,
-        ).execution_options(synchronize_session=False))
+        batch.status, batch.finished_at = status, now
+        batch.worker_token = batch.lease_expires_at = None
+        session.add(StaBatchExecutionEvent(batch_id=batch_id, kind='finalized', status=status,
+            actor='system', detail={'normal': None, 'cancelled': 'Cancellation completed.',
+                                    'interrupted': 'Worker execution was interrupted.'}[outcome]))
         session.commit()
+        return True

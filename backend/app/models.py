@@ -303,6 +303,9 @@ class StaBatchExecution(Base):
     items: Mapped[list['StaBatchExecutionItem']] = relationship(
         back_populates='batch', cascade='all, delete-orphan', order_by='StaBatchExecutionItem.position'
     )
+    events: Mapped[list['StaBatchExecutionEvent']] = relationship(
+        back_populates='batch', cascade='all, delete-orphan', order_by='StaBatchExecutionEvent.id'
+    )
 
 
 class StaBatchExecutionItem(Base):
@@ -317,7 +320,26 @@ class StaBatchExecutionItem(Base):
     status: Mapped[str] = mapped_column(String(20), default='pending')
     run_id: Mapped[int | None] = mapped_column(ForeignKey('signoff_runs.id'), nullable=True)
     detail: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     batch: Mapped[StaBatchExecution] = relationship(back_populates='items')
+
+
+class StaBatchExecutionEvent(Base):
+    __tablename__ = 'sta_batch_execution_events'
+    __table_args__ = (Index('ix_sta_batch_execution_events_batch_id_id', 'batch_id', 'id'),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey('sta_batch_executions.id'))
+    kind: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(20))
+    position: Mapped[int | None] = mapped_column(nullable=True)
+    scenario: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    actor: Mapped[str] = mapped_column(String(80))
+    detail: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    batch: Mapped[StaBatchExecution] = relationship(back_populates='events')
 
 
 class StaBatchInputArtifact(Base):
