@@ -88,6 +88,37 @@ class SignoffPlanHistoryOut(BaseModel):
     next_before_id: int | None
 
 
+class TargetRevisionUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    expected_version: int = Field(ge=0)
+    design_revision: str | None = Field(default=None, min_length=1, max_length=160)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+class TargetRevisionOut(BaseModel):
+    stage: Stage
+    version: int
+    design_revision: str | None
+    reason: str | None
+    updated_by: str | None
+    updated_by_user_id: int | None
+    created_at: datetime | None
+
+
+class TargetRevisionsOut(BaseModel):
+    project_id: int
+    stages: list[TargetRevisionOut]
+
+
+class TargetRevisionEventOut(TargetRevisionOut):
+    id: int
+
+
+class TargetRevisionHistoryOut(BaseModel):
+    items: list[TargetRevisionEventOut]
+    next_before_id: int | None
+
+
 class SignoffReleaseDecisionCreate(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
 
@@ -425,6 +456,7 @@ class CollectorContextOut(BaseModel):
     stage: Stage
     signoff_plan: SignoffPlanStageOut
     sta_scenario_plan: StaScenarioPlanOut
+    target_revision: TargetRevisionOut
     domains: list[CollectorDomainContractOut]
 
 

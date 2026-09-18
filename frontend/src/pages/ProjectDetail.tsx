@@ -35,6 +35,46 @@ function SignoffPlanEditor({ projectId, stage, readOnly = false }: { projectId: 
   </section>;
 }
 
+function TargetRevisionEditor({ projectId, stage, readOnly = false }: { projectId: number; stage: Stage; readOnly?: boolean }) {
+  const auth = useAuth();
+  const qc = useQueryClient();
+  const targets = useQuery({ queryKey: ['target-revisions', projectId], queryFn: () => api.targetRevisions(projectId) });
+  const revisions = useQuery({ queryKey: ['run-revisions', projectId], queryFn: () => api.runRevisions(projectId) });
+  const history = useQuery({ queryKey: ['target-revision-history', projectId, stage], queryFn: () => api.targetRevisionHistory(projectId, stage) });
+  const current = targets.data?.stages.find(item => item.stage === stage);
+  const [revision, setRevision] = useState('');
+  const [reason, setReason] = useState('');
+  useEffect(() => { if (current) { setRevision(current.design_revision ?? ''); setReason(''); } }, [current?.stage, current?.version]);
+  const update = useMutation({
+    mutationFn: () => api.updateTargetRevision(projectId, stage, {
+      expected_version: current!.version, design_revision: revision.trim() || null, reason: reason.trim(),
+    }),
+    onSuccess: async () => {
+      setReason('');
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['target-revisions', projectId] }),
+        qc.invalidateQueries({ queryKey: ['target-revision-history', projectId, stage] }),
+        qc.invalidateQueries({ queryKey: ['gate', projectId, stage] }),
+        qc.invalidateQueries({ queryKey: ['signoff-releases', projectId] }),
+      ]);
+    },
+  });
+  if (targets.isPending) return <p className="text-sm">목표 리비전 불러오는 중…</p>;
+  if (targets.isError || !current) return <p role="alert" className="text-sm">목표 리비전을 불러오지 못했습니다.</p>;
+  const changed = (revision.trim() || null) !== current.design_revision;
+  return <section className="rounded-lg border border-[var(--border)] p-3 space-y-3" aria-label="스테이지 목표 리비전">
+    <div><h3 className="font-semibold text-sm">릴리스 후보 리비전 · {STAGE_LABELS[stage]}</h3><p className="text-xs text-[var(--text-muted)]">{current.design_revision ? `${current.design_revision} · 고정 v${current.version}` : '고정 안 함 · 전체 최신 런 사용'}{current.reason && ` · ${current.updated_by}: ${current.reason}`}</p></div>
+    {auth.can(projectId, 'approver') && !readOnly && <div className="space-y-3">
+      <Field label="정확한 설계 리비전"><input className="input w-full" list="target-revision-options" maxLength={160} value={revision} onChange={event => setRevision(event.target.value)} placeholder="비우면 고정 해제" /><datalist id="target-revision-options">{(revisions.data?.items ?? []).map(item => <option key={item.design_revision} value={item.design_revision}>{item.run_count}개 런</option>)}</datalist></Field>
+      <Field label="변경 사유"><textarea className="input w-full" rows={2} maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} /></Field>
+      <button className="btn btn-primary" disabled={!changed || !reason.trim() || update.isPending} onClick={() => update.mutate()}>{update.isPending ? '저장 중…' : revision.trim() ? '목표 리비전 고정' : '목표 리비전 고정 해제'}</button>
+      {update.isError && <p role="alert" className="text-sm">{update.error.message}</p>}
+      <p className="text-xs text-[var(--text-muted)]">고정하면 게이트·내보내기·승인 패키지는 이 리비전의 최신 런만 사용합니다. 변경은 버전형 이력으로 보존되며 AI가 선택하지 않습니다.</p>
+    </div>}
+    {history.data?.items.length ? <details><summary className="cursor-pointer text-sm font-medium">최근 목표 변경 이력</summary><ul className="mt-2 space-y-2">{history.data.items.map(item => <li className="rounded border p-2 text-xs" key={item.id}>v{item.version} · {item.design_revision || '고정 해제'} · {item.updated_by} · {item.reason}</li>)}</ul></details> : null}
+  </section>;
+}
+
 function gateReasonLabel(reason?: string | null) {
   const labels: Record<string, string> = {
     'no run for this stage': '이 단계 검증 미실행',
@@ -247,6 +287,7 @@ export default function ProjectDetail() {
         subtitle="도메인별 최신 런의 검증 범위와 설계 리비전을 확인합니다. 수동 통과 상태만으로는 게이트를 통과할 수 없습니다."
       >
         <SignoffPlanEditor key={stage} projectId={projectId} stage={stage} readOnly={!!p.archived_at} />
+        <div className="mt-3"><TargetRevisionEditor key={`target-${stage}`} projectId={projectId} stage={stage} readOnly={!!p.archived_at} /></div>
         <div className="mb-4 mt-4 space-y-2 text-sm">
           <div className="flex flex-wrap gap-2">
             <button className="btn btn-primary" disabled={evidencePackage.isPending} onClick={() => evidencePackage.mutate({ projectId, stage })}>{evidencePackage.isPending ? `${STAGE_LABELS[evidencePackage.variables.stage]} 패키지 준비 중…` : '검증된 근거 패키지 다운로드'}</button>

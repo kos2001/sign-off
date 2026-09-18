@@ -105,6 +105,24 @@ class ProjectSignoffPlanRevision(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ProjectStageTargetRevision(Base):
+    """Append-only release-candidate revision selected for one stage."""
+    __tablename__ = 'project_stage_target_revisions'
+    __table_args__ = (
+        UniqueConstraint('project_id', 'stage', 'version'),
+        Index('ix_project_stage_target_latest', 'project_id', 'stage', 'version'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('projects.id'), index=True)
+    stage: Mapped[Stage] = mapped_column(Enum(Stage))
+    version: Mapped[int]
+    design_revision: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    reason: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[str] = mapped_column(String(80))
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class StaScenarioDefinition(Base):
     __tablename__ = "sta_scenario_definitions"
     __table_args__ = (UniqueConstraint("project_id", "stage", "name"),)
