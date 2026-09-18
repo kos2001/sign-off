@@ -12,7 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from ..db import SessionLocal
-from ..models import StaBatchExecution, StaBatchExecutionItem, StaBatchInputArtifact
+from ..models import (StaBatchExecution, StaBatchExecutionEvent, StaBatchExecutionItem,
+                      StaBatchInputArtifact)
 from ..schemas import StaSignoffRequest
 from .rtl.admission import acquire_slot
 from .sta_execution import finish_sta_batch, record_sta_run, update_batch_item
@@ -37,6 +38,8 @@ def submit_batch(db, payload, user, expected):
         items=[StaBatchExecutionItem(position=index, scenario=item.scenario.strip(),
             require_spef=expected.get(item.scenario.strip(), False), status='pending')
             for index, item in enumerate(payload.scenarios)],
+        events=[StaBatchExecutionEvent(kind='submitted', status='queued',
+            actor_user_id=user.id if user else None, actor=user.username if user else 'local')],
     )
     db.add(batch)
     db.flush()
@@ -82,6 +85,9 @@ def retry_batch(db, source, user, request_key):
         submitted_by=user.username if user else 'local', status='queued',
         items=[StaBatchExecutionItem(position=item.position, scenario=item.scenario,
             require_spef=item.require_spef, status='pending') for item in source.items],
+        events=[StaBatchExecutionEvent(kind='retry_submitted', status='queued',
+            actor_user_id=user.id if user else None, actor=user.username if user else 'local',
+            detail=f'Retry of batch #{source.id}.')],
     )
     db.add(batch)
     try:
@@ -116,9 +122,12 @@ def claim_next(worker_token):
             ).values(status='running', worker_token=worker_token,
                      started_at=datetime.now(timezone.utc), lease_expires_at=int(time.time()) + LEASE_SECONDS)
                 .execution_options(synchronize_session=False))
-            db.commit()
             if changed.rowcount == 1:
+                db.add(StaBatchExecutionEvent(batch_id=batch_id, kind='started', status='running',
+                                              actor='system'))
+                db.commit()
                 return batch_id
+            db.rollback()
     return None
 
 
@@ -255,13 +264,5 @@ def reconcile_stale_batches(now=None):
                 StaBatchExecution.lease_expires_at.is_not(None),
                 StaBatchExecution.lease_expires_at < now).limit(100)))
     for batch_id, cancelled in candidates:
-        with SessionLocal() as db:
-            claimed = db.execute(update(StaBatchExecution).where(
-                StaBatchExecution.id == batch_id, StaBatchExecution.status == 'running',
-                StaBatchExecution.lease_expires_at < now,
-            ).values(status='cancelled' if cancelled else 'failed', worker_token=None,
-                     lease_expires_at=None).execution_options(synchronize_session=False))
-            db.commit()
-        if claimed.rowcount == 1:
-            finish_sta_batch(batch_id, 'cancelled' if cancelled else 'interrupted')
+        if finish_sta_batch(batch_id, 'cancelled' if cancelled else 'interrupted', expired_before=now):
             logger.warning('sta_batch_stale_finalized batch_id=%s', batch_id)

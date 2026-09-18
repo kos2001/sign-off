@@ -4,6 +4,7 @@ import logging
 import math
 import threading
 from contextlib import closing
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..db import SessionLocal, get_db
 from ..auth import require_project
 from ..models import (Domain, Project, RunEvidence, Severity, SignoffRun, StaBatchExecution,
-                      StaBatchExecutionItem, StaScenarioDefinition, Stage, Violation)
+                      StaBatchExecutionEvent, StaBatchExecutionItem, StaScenarioDefinition, Stage, Violation)
 from ..schemas import (
     GlitchPowerRequest,
     IrDropRequest,
@@ -255,9 +256,13 @@ def sta_signoff_batch_stream(payload: StaBatchRequest, db: Session = Depends(get
             project_id=payload.project_id, stage=payload.stage, top_module=payload.top_module,
             design_revision=payload.design_revision.strip(), submitted_by_user_id=user.id if user else None,
             submitted_by=user.username if user else 'local', status='running',
+            started_at=datetime.now(timezone.utc),
             items=[StaBatchExecutionItem(position=index, scenario=item.scenario.strip(),
                 require_spef=expected.get(item.scenario.strip(), False), status='pending')
                 for index, item in enumerate(payload.scenarios)],
+            events=[StaBatchExecutionEvent(kind='submitted', status='running',
+                actor_user_id=user.id if user else None, actor=user.username if user else 'local'),
+                StaBatchExecutionEvent(kind='started', status='running', actor='system')],
         )
         db.add(batch)
         db.commit()

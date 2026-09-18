@@ -44,7 +44,7 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET /projects/{id}/sta-matrix?stage=routing&design_revision=...` — 기대 세트와 최신 OpenSTA 실행의 누락·요구 충족·경로 표본 집계
 - `POST /analysis/sta-signoff/batch` — 공통 넷리스트와 최대 8개 시나리오 입력을 영속 작업 큐에 접수하고 `202` 배치 매니페스트 반환
 - `POST /analysis/sta-signoff/batch/stream` — 연결 수명에 종속된 대화형 배치 실행과 NDJSON 진행 상황 반환
-- `GET /projects/{id}/sta-batches` · `GET /projects/{id}/sta-batches/{batch_id}` — 배치 접수자·범위·항목별 상태·생성 런을 보존한 실행 매니페스트 조회
+- `GET /projects/{id}/sta-batches` · `GET /projects/{id}/sta-batches/{batch_id}` — 배치 접수자·범위·항목별 시각·생성 런·불변 실행 이벤트 타임라인 조회
 - `POST /projects/{id}/sta-batches/{batch_id}/cancel` — 대기 또는 실행 중인 영속 배치 취소
 - `POST /projects/{id}/sta-batches/{batch_id}/retry` — 종결 배치의 해시 검증된 입력을 복제해 새 시도로 접수; UUID 요청 키로 중복 방지
 - `POST /analysis/ir-drop` · `POST /analysis/glitch-power` · `POST /analysis/timing-summary`

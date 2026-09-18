@@ -125,6 +125,12 @@ def test_batch_stream_records_independent_runs_and_continues_after_failure(clien
     batch = history['items'][0]
     assert batch['id'] == events[0]['batch_id'] and batch['status'] == 'partial'
     assert batch['submitted_by'] == 'local' and batch['finished_at']
+    assert batch['started_at'] and all(item['started_at'] and item['finished_at'] for item in batch['items'])
+    assert [event['kind'] for event in batch['events']] == [
+        'submitted', 'started', 'scenario_started', 'scenario_completed',
+        'scenario_started', 'scenario_failed', 'scenario_started',
+        'scenario_completed', 'finalized',
+    ]
     assert [(item['scenario'], item['status'], item['run_id']) for item in batch['items']] == [
         ('slow-rc', 'completed', final['completed'][0]['run_id']),
         ('broken', 'failed', None),
@@ -169,6 +175,11 @@ def test_batch_cancellation_marks_unfinished_items_terminal(client):
     assert result['status'] == 'cancelled' and result['finished_at']
     assert [item['status'] for item in result['items']] == ['completed', 'cancelled', 'cancelled']
     assert result['items'][1]['detail'] == 'Batch request was cancelled.'
+    assert [event['kind'] for event in result['events']] == [
+        'scenario_cancelled', 'scenario_cancelled', 'finalized',
+    ]
+    finish_sta_batch(batch_id, 'cancelled')
+    assert len(client.get(f'/projects/{pid}/sta-batches/{batch_id}').json()['events']) == 3
 
 
 def test_spef_is_recorded_as_verified_optional_artifact(client, monkeypatch):
