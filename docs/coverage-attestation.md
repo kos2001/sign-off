@@ -12,7 +12,7 @@ SIGNOFF_COVERAGE_HMAC_KEYS='{"sta-collector-2026q3":{"secret":"32-bytes-minimum-
 ```
 
 JSON 객체의 키는 `key_id`이며 각 값은 `secret`과 `domains`를 정확히 포함한다. `secret`은 최소
-32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `emir`, `glitch_power`, `thermal`, `rtl` 중 이 키가
+32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `lvs`, `emir`, `glitch_power`, `thermal`, `rtl` 중 이 키가
 서명할 수 있는 범위다. 빈 범위,
 중복 또는 알 수 없는 도메인은 거부한다. 최대 16개 키를 동시에 등록해 교체 기간을 운영할 수 있다.
 실제 키는 저장소나 보고서에 넣지 말고 비밀 관리 시스템에서
@@ -94,6 +94,14 @@ Calibre/Pegasus 증명은 `domain: "pv"`와 다음 여섯 키를 정확히 사�
 
 DRC 보고서에 error/critical 마커가 있으면 증명이 유효해도 런은 `failed`다. warning/info만
 있거나 마커가 없으면 `passed`가 될 수 있다. 증명은 웨이버를 만들거나 마커 상태를 바꾸지 않는다.
+
+### LVS claim 집합
+
+Calibre/Pegasus LVS 증명은 `domain: "lvs"`와 다음 키를 정확히 사용하며 모두 `true`여야 한다:
+`tool_run_completed`, `rule_deck_complete`, `layout_inputs_complete`,
+`schematic_inputs_complete`, `hierarchy_complete`, `extraction_complete`,
+`comparison_complete`, `findings_complete`. 보고서 판정이 `matched`이고 불일치가 없을 때만
+유효한 증명과 함께 `passed`가 된다. `mismatched`, 실행 오류 또는 불일치 항목은 `failed`다.
 
 ### EM/IR claim 집합
 

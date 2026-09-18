@@ -18,6 +18,7 @@ function gateReasonLabel(reason?: string | null) {
     'RTL requires captured ladder evidence; rerun the analysis': 'RTL 실행 근거 필요 · 재분석 필요',
     'Imported path report does not establish full STA coverage': 'STA 전체 검증 범위 미확인',
     'Imported marker report does not establish full DRC coverage': 'DRC 전체 검증 범위 미확인',
+    'Imported LVS result does not establish full LVS coverage': 'LVS 전체 검증 범위 미확인',
     'Captured verification coverage required; manual status is not evidence': '검증 범위 근거 필요 · 수동 상태만으로 통과 불가',
     "latest run status is 'running'": '최신 런 실행 중',
     "latest run status is 'failed'": '최신 런 실패',
@@ -362,6 +363,7 @@ function RunsCard({
         <p className="text-xs text-[var(--text-secondary)]">{selectedTool.workflow} 여기서 런을 생성하면 툴을 실행하지 않고 수동 런의 출처만 기록하며, 검증 근거가 없어 게이트를 통과시키지 않습니다.</p>
         {form.domain === 'rtl' && <Link className="text-xs underline" to="/analysis#rtl">RTL 분석 실행으로 이동</Link>}
         {(form.domain === 'sta' || form.domain === 'pv') && <Link className="text-xs underline" to={`/projects/${projectId}/import${form.domain === 'pv' ? '/klayout' : ''}`}>{form.domain === 'sta' ? 'OpenSTA' : 'KLayout DRC'} 보고서 가져오기로 이동</Link>}
+        {form.domain === 'lvs' && <Link className="text-xs underline" to={`/projects/${projectId}/import/commercial-lvs`}>Calibre / Pegasus LVS 결과 가져오기로 이동</Link>}
       </section>
 
       {create.isError && <p role="alert">{create.error.message}</p>}
@@ -411,6 +413,7 @@ function RunRow({ run, onChange }: { run: SignoffRun; onChange: () => void }) {
           {run.evidence_source === 'commercial_power_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/power-breakdown`}>전력 계층</Link>}
           {run.evidence_source === 'commercial_thermal_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/thermal-hotspots`}>열 핫스폿</Link>}
           {run.evidence_source === 'commercial_rtl_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/rtl-regression`}>RTL 회귀</Link>}
+          {run.evidence_source === 'commercial_lvs_report' && <Link className="btn btn-ghost" to={`/runs/${run.id}/lvs-mismatches`}>LVS 불일치</Link>}
           <button className="btn btn-ghost" disabled={!auth.can(run.project_id, "editor") || update.isPending || run.result_locked} title={run.result_locked ? "서버 분석 결과는 다시 실행하여 갱신하세요" : "수동 상태 변경"} onClick={() => update.mutate("passed")}>
             Pass
           </button>

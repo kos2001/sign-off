@@ -16,8 +16,8 @@ REQUIRED_DOMAINS: dict[Stage, tuple[Domain, ...]] = {
     Stage.rtl: (Domain.rtl, Domain.sta),
     Stage.synthesis: (Domain.sta, Domain.glitch_power),
     Stage.placement: (Domain.sta, Domain.emir, Domain.pv),
-    Stage.routing: (Domain.sta, Domain.emir, Domain.pv),
-    Stage.final: (Domain.sta, Domain.emir, Domain.pv, Domain.glitch_power, Domain.thermal),
+    Stage.routing: (Domain.sta, Domain.emir, Domain.pv, Domain.lvs),
+    Stage.final: (Domain.sta, Domain.emir, Domain.pv, Domain.lvs, Domain.glitch_power, Domain.thermal),
 }
 
 BLOCKING_SEVERITIES = (Severity.error, Severity.critical)
@@ -53,6 +53,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             Domain.glitch_power: 'commercial_power_report',
             Domain.thermal: 'commercial_thermal_report',
             Domain.rtl: 'commercial_rtl_report',
+            Domain.lvs: 'commercial_lvs_report',
         }.get(latest.domain)
         attested_coverage = bool(
             attested_source
@@ -79,6 +80,9 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             ready = False
         elif latest.evidence_source == 'commercial_thermal_report' and not attested_coverage:
             reason = 'Imported thermal hotspots do not establish full thermal coverage'
+            ready = False
+        elif latest.evidence_source == 'commercial_lvs_report' and not attested_coverage:
+            reason = 'Imported LVS result does not establish full LVS coverage'
             ready = False
         elif latest.domain == Domain.rtl and latest.evidence_source == 'rtl_ladder' and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
             reason = f"RTL evidence is {rtl_result_status(evidence_result).value}; required stages must all pass"
