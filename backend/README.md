@@ -142,7 +142,7 @@ Linux의 실제 툴 통합 검사는 `Dockerfile.rtl-check`로 재실행할 수 
 
 `../scripts/build_sta_worker.sh`는 OpenSTA를 파서와 맞춘 커밋 `d97587f669b4f169be7132346df70e7d634500c3`으로 고정해 `signoff-sta-worker:d97587f` 이미지를 만듭니다. `SIGNOFF_STA_WORKER_IMAGE`로 이미지 이름을 바꿀 수 있습니다. `/analysis/sta-signoff`는 게이트 레벨 Verilog, Liberty, SDC를 네트워크와 호스트 마운트가 없는 읽기 전용 컨테이너에서 실행합니다. SDC의 일반 프로세스·소켓·동적 로드 Tcl 명령은 비활성화됩니다.
 
-결과에는 입력별 SHA-256과 원문, 워커 이미지 ID, OpenSTA 커밋, 생성된 `report_checks -format json`을 보존합니다. 이 실행에는 AI가 개입하지 않습니다. 생성된 경로는 제한된 표본이므로 전체 STA 커버리지를 주장하거나 단독으로 스테이지 게이트를 통과시키지 않습니다. 저장된 런에서 A2 검토를 별도로 요청할 때만 Hermes 에이전트가 보고된 최저 슬랙 경로의 제한된 스냅샷을 받습니다.
+결과에는 입력별 SHA-256과 원문, 워커 이미지 ID, OpenSTA 커밋, 생성된 `report_checks -format json`을 보존합니다. 대형 넷리스트·Liberty·SDC 원문은 `run_artifacts`에 분리하고 일반 근거 응답에는 해시와 크기만 반환합니다. 원문 다운로드는 서버가 SHA-256과 바이트 길이를 다시 확인한 뒤 제공합니다. 이 실행에는 AI가 개입하지 않습니다. 생성된 경로는 제한된 표본이므로 전체 STA 커버리지를 주장하거나 단독으로 스테이지 게이트를 통과시키지 않습니다. 저장된 런에서 A2 검토를 별도로 요청할 때만 Hermes 에이전트가 보고된 최저 슬랙 경로의 제한된 스냅샷을 받습니다.
   `result_locked=true`인 분석 결과에는 PATCH 및 수동 위반 추가가 409를 반환합니다.
   기존 위반의 수정 완료·웨이버·재오픈은 가능하며 원래 분석 근거는 그대로 보존합니다.
 - `SIGNED_OFF`라도 lint/design/synthesize/simulate 필수 단계가 모두 명시적으로 pass가

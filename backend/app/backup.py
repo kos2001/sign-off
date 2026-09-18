@@ -65,6 +65,7 @@ def inspect_database(path):
             ('run_agent_reviews', 'run_id', 'signoff_runs'),
             ('run_agent_reviews', 'requester_user_id', 'users'),
             ('violation_events', 'violation_id', 'violations'), ('run_evidence', 'run_id', 'signoff_runs'),
+            ('run_artifacts', 'run_id', 'signoff_runs'),
         ] if table in tables]
         for child, column, parent in references:
             optional = f'c.{quote_identifier(column)} IS NOT NULL AND ' if (child, column) == ('run_agent_reviews', 'requester_user_id') else ''

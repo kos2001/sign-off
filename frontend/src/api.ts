@@ -31,7 +31,11 @@ export interface RunEvidence {
   source_text: string | null;
   source_sha256: string | null;
   design_revision: string | null;
-  result: Partial<RtlSignoffResult> & Partial<ReportPreview> & Partial<KLayoutPreview> & { metadata?: { filename: string; tool_version: string; scenario: string }; submitted_by?: { user_id: number; username: string } | null };
+  result: Partial<RtlSignoffResult> & Partial<ReportPreview> & Partial<KLayoutPreview> & {
+    metadata?: { filename: string; tool_version: string; scenario: string };
+    submitted_by?: { user_id: number; username: string } | null;
+    input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc', { sha256: string; byte_length: number }>>;
+  };
   created_at: string;
 }
 
@@ -449,6 +453,7 @@ export const api = {
   runStructure: (runId: number) => request<DesignStructure>(`/runs/${runId}/evidence/structure`),
   runNetlist: (runId: number) => request<Blob>(`/runs/${runId}/evidence/netlist`, undefined, 'blob'),
   runSource: (runId: number) => request<Blob>(`/runs/${runId}/evidence/source`, undefined, 'blob'),
+  runArtifact: (runId: number, kind: 'netlist' | 'liberty' | 'sdc') => request<Blob>(`/runs/${runId}/evidence/artifacts/${kind}`, undefined, 'blob'),
   runEvidence: (runId: number) => request<RunEvidence>(`/runs/${runId}/evidence`),
   compareRuns: (projectId: number, baseline: number, candidate: number, kind: string, offset: number) =>
     request<RunComparison>(`/projects/${projectId}/run-comparison?${new URLSearchParams({

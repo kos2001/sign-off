@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..db import SessionLocal, get_db
 from ..auth import require_project
-from ..models import Domain, Project, RunEvidence, Severity, SignoffRun, Stage, Violation
+from ..models import Domain, Project, RunArtifact, RunEvidence, Severity, SignoffRun, Stage, Violation
 from ..schemas import (
     GlitchPowerRequest,
     IrDropRequest,
@@ -190,13 +190,14 @@ def sta_signoff(payload: StaSignoffRequest, db: Session = Depends(get_db)):
                           'scenario': payload.scenario, 'top_module': payload.top_module}
     result['execution'] = {'backend': 'container', 'image_id': image_id, 'opensta_commit': worker['opensta_commit'],
                            'agent_involved': False, 'log': worker['log'], 'inputs': worker['inputs']}
-    result['input_artifacts'] = {key: {'text': getattr(payload, key), **worker['inputs'][key]}
-                                 for key in ('netlist', 'liberty', 'sdc')}
+    result['input_artifacts'] = worker['inputs']
     result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
     run = SignoffRun(project_id=payload.project_id, domain=Domain.sta, stage=payload.stage, tool='OpenSTA',
                      status=result['status'], metrics=result['metrics'])
     run.evidence = RunEvidence(source='opensta_execution', source_text=worker['report'],
                                source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
+    run.artifacts = [RunArtifact(kind=key, content_text=getattr(payload, key), **worker['inputs'][key])
+                     for key in ('netlist', 'liberty', 'sdc')]
     for path in result['paths']:
         if path['slack_ps'] is None or path['slack_ps'] < 0:
             run.violations.append(Violation(

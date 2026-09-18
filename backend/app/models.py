@@ -81,6 +81,9 @@ class SignoffRun(Base):
     evidence: Mapped["RunEvidence | None"] = relationship(
         back_populates="run", cascade="all, delete-orphan", uselist=False
     )
+    artifacts: Mapped[list["RunArtifact"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
 
     @property
     def evidence_source(self) -> str:
@@ -105,6 +108,20 @@ class RunEvidence(Base):
     result: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     run: Mapped[SignoffRun] = relationship(back_populates="evidence")
+
+
+class RunArtifact(Base):
+    __tablename__ = 'run_artifacts'
+    __table_args__ = (UniqueConstraint('run_id', 'kind'),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey('signoff_runs.id'), index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    content_text: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_length: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    run: Mapped[SignoffRun] = relationship(back_populates='artifacts')
 
 
 class ReportImport(Base):

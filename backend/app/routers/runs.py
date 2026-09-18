@@ -1,6 +1,8 @@
+import copy
 import hashlib
 import json
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
@@ -8,7 +10,7 @@ from sqlalchemy import select, update, func, or_
 from sqlalchemy.orm import Session, selectinload, joinedload
 
 from ..db import get_db
-from ..models import Domain, RunEvidence, Severity, SignoffRun, Stage, Violation, ViolationStatus, Waiver, ViolationEvent
+from ..models import Domain, RunArtifact, RunEvidence, Severity, SignoffRun, Stage, Violation, ViolationStatus, Waiver, ViolationEvent
 from ..schemas import (
     RunCreate,
     RunOut,
@@ -83,7 +85,44 @@ def run_evidence(run_id: int, db: Session = Depends(get_db)):
     run = get_run_or_404(run_id, db)
     if run.evidence is None:
         raise HTTPException(status_code=404, detail="no captured evidence for this legacy run")
-    return run.evidence
+    evidence = run.evidence
+    if evidence.source != 'opensta_execution':
+        return evidence
+    # Older records may have embedded input bodies. Routine metadata never
+    # returns them; exact content is available through the artifact endpoint.
+    result = copy.deepcopy(evidence.result)
+    artifacts = result.get('input_artifacts')
+    if isinstance(artifacts, dict):
+        for value in artifacts.values():
+            if isinstance(value, dict):
+                value.pop('text', None)
+    return RunEvidenceOut(run_id=evidence.run_id, source=evidence.source, source_text=evidence.source_text,
+                          source_sha256=evidence.source_sha256, design_revision=evidence.design_revision,
+                          result=result, created_at=evidence.created_at)
+
+
+@router.get('/runs/{run_id}/evidence/artifacts/{kind}')
+def export_run_artifact(run_id: int, kind: Literal['netlist', 'liberty', 'sdc'], db: Session = Depends(get_db)):
+    run = get_run_or_404(run_id, db)
+    if run.evidence_source != 'opensta_execution':
+        raise HTTPException(409, '이 런에는 OpenSTA 실행 입력 아티팩트가 없습니다.')
+    artifact = db.scalar(select(RunArtifact).where(RunArtifact.run_id == run.id, RunArtifact.kind == kind))
+    if artifact is None:
+        # Compatibility for runs created before input artifacts were split out.
+        value = (run.evidence.result.get('input_artifacts', {}).get(kind, {}) if run.evidence else {})
+        if not isinstance(value, dict) or not isinstance(value.get('text'), str):
+            raise HTTPException(404, '입력 아티팩트를 찾을 수 없습니다.')
+        content, digest, byte_length = value['text'], value.get('sha256'), value.get('byte_length')
+    else:
+        content, digest, byte_length = artifact.content_text, artifact.sha256, artifact.byte_length
+    encoded = content.encode('utf-8')
+    if hashlib.sha256(encoded).hexdigest() != digest or len(encoded) != byte_length:
+        raise HTTPException(409, '저장된 입력 아티팩트의 무결성을 확인할 수 없습니다.')
+    extension = {'netlist': 'v', 'liberty': 'lib', 'sdc': 'sdc'}[kind]
+    return Response(encoded, media_type='application/octet-stream', headers={
+        'Content-Disposition': f'attachment; filename="run-{run_id}-{kind}.{extension}"',
+        'X-Artifact-SHA256': digest, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+    })
 
 
 @router.get('/runs/{run_id}/evidence/structure')
