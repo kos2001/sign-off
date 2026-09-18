@@ -53,7 +53,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
             reason = ('Executed path sample does not establish full STA coverage' if latest.evidence_source == 'opensta_execution'
                       else 'Imported path report does not establish full STA coverage')
             ready = False
-        elif latest.evidence_source == 'klayout_report':
+        elif latest.evidence_source in {'klayout_report', 'commercial_drc_report'}:
             reason = 'Imported marker report does not establish full DRC coverage'
             ready = False
         elif latest.domain == Domain.rtl and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:

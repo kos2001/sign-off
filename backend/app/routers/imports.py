@@ -12,6 +12,7 @@ from ..db import get_db
 from ..models import ReportImport, RunEvidence, SignoffRun, Stage, Violation
 from ..schemas import RunOut
 from ..services.report_import import parse_commercial_sta, parse_opensta
+from ..services.commercial_drc import parse_commercial_drc
 from ..services.klayout_report import parse_klayout
 
 router = APIRouter(tags=['report-imports'])
@@ -136,6 +137,10 @@ def import_klayout(project_id: int, payload: ReportImportPayload, db: Session = 
     get_project_or_404(project_id, db)
     result = parse(payload, parse_klayout)
     digest = hashlib.sha256(json.dumps({'format': 'klayout', 'payload': payload.model_dump(mode='json')}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return store_drc_report(project_id, payload, result, digest, 'KLayout DRC', 'klayout_report', 'klayout', db)
+
+
+def store_drc_report(project_id, payload, result, digest, tool, evidence_source, check_prefix, db):
     def existing():
         receipt = db.scalar(select(ReportImport).where(ReportImport.project_id == project_id, ReportImport.import_key == str(payload.import_id)))
         if receipt:
@@ -147,10 +152,11 @@ def import_klayout(project_id: int, payload: ReportImportPayload, db: Session = 
     user = db.info.get('user')
     result['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
     result['submitted_by'] = {'user_id': user.id, 'username': user.username} if user else None
-    run = SignoffRun(project_id=project_id, domain='pv', stage=payload.stage, tool='KLayout DRC', status=result['status'], metrics=result['metrics'])
-    run.evidence = RunEvidence(source='klayout_report', source_text=payload.source_text, source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
+    result['metadata']['report_format'] = result['parser']
+    run = SignoffRun(project_id=project_id, domain='pv', stage=payload.stage, tool=tool, status=result['status'], metrics=result['metrics'])
+    run.evidence = RunEvidence(source=evidence_source, source_text=payload.source_text, source_sha256=result['source_sha256'], design_revision=payload.design_revision, result=result)
     for item in result['items']:
-        run.violations.append(Violation(check_name=f"klayout/{item['fingerprint'][:32]}", severity='error', location=item['cell'] or None,
+        run.violations.append(Violation(check_name=f"{check_prefix}/{item['fingerprint'][:32]}", severity=item.get('severity', 'error'), location=item['cell'] or None,
             description=f"Category: {item['category']}\nReported multiplicity: {item['multiplicity']}\n" + '\n'.join(item['values']) + f"\nSource tags (not approvals): {item['tags']}\nComment: {item['comment']}"))
     db.add(run)
     try:
@@ -163,3 +169,26 @@ def import_klayout(project_id: int, payload: ReportImportPayload, db: Session = 
             return run
         raise
     return run
+
+
+@router.post('/projects/{project_id}/imports/commercial-drc/preview')
+def preview_commercial_drc(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = parse(payload, parse_commercial_drc)
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    return result
+
+
+@router.post('/projects/{project_id}/imports/commercial-drc', response_model=RunOut, status_code=201)
+def import_commercial_drc(project_id: int, payload: ReportImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    result = parse(payload, parse_commercial_drc)
+    if result['tool_version'] != payload.tool_version.strip():
+        raise HTTPException(422, 'tool_version must match the version captured in the report')
+    digest = hashlib.sha256(json.dumps({'format': 'commercial-drc',
+        'payload': payload.model_dump(mode='json')}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return store_drc_report(project_id, payload, result, digest, result['tool'],
+                            'commercial_drc_report', result['violation_prefix'], db)
