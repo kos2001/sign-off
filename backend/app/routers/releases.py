@@ -6,17 +6,18 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, defer
 
 from ..auth import require_project
 from ..db import get_db
-from ..models import SignoffReleaseDecision, Stage
+from ..models import Project, SignoffReleaseDecision, Stage
 from ..schemas import (
     SignoffReleaseDecisionCreate,
     SignoffReleaseDecisionOut,
     SignoffReleaseDecisionPage,
     SignoffReleaseReviewOut,
+    SignoffReleaseAuditOut,
 )
 from .runs import export_gate, export_signoff_package
 
@@ -64,6 +65,9 @@ def decision_digest(record: SignoffReleaseDecision) -> str:
         payload['gate_snapshot_sha256'] = record.gate_snapshot_sha256
     if record.evidence_snapshot_sha256 is not None:
         payload['evidence_snapshot_sha256'] = record.evidence_snapshot_sha256
+    if record.chain_version is not None:
+        payload['chain_version'] = record.chain_version
+        payload['previous_decision_sha256'] = record.previous_decision_sha256
     canonical = json.dumps(payload, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(',', ':')).encode()
     return hashlib.sha256(canonical).hexdigest()
 
@@ -89,6 +93,8 @@ def release_out(record: SignoffReleaseDecision, *, current_evidence_sha256: str,
         decided_by_user_id=record.decided_by_user_id,
         manifest_sha256=record.manifest_sha256,
         package_sha256=record.package_sha256, decision_sha256=record.decision_sha256,
+        chain_version=record.chain_version,
+        previous_decision_sha256=record.previous_decision_sha256,
         gate_snapshot_sha256=record.gate_snapshot_sha256,
         evidence_snapshot_sha256=record.evidence_snapshot_sha256, lifecycle_status=lifecycle,
         byte_length=record.byte_length,
@@ -108,6 +114,17 @@ def create_release_decision(
     db: Session = Depends(get_db),
 ):
     require_project(db, project_id, 'approver')
+    project = db.scalar(select(Project).where(Project.id == project_id).with_for_update())
+    previous = db.scalar(select(SignoffReleaseDecision).where(
+        SignoffReleaseDecision.project_id == project_id,
+    ).order_by(SignoffReleaseDecision.id.desc()).limit(1))
+    if project.release_decision_chain_head_sha256 is not None:
+        if previous is None or previous.decision_sha256 != project.release_decision_chain_head_sha256:
+            raise HTTPException(409, '사인오프 결정 해시 체인의 현재 헤드가 일치하지 않습니다.')
+    elif previous is not None and previous.chain_version is not None:
+        raise HTTPException(409, '사인오프 결정 해시 체인 헤드가 누락되었습니다.')
+    if previous is not None and (not previous.decision_sha256 or decision_digest(previous) != previous.decision_sha256):
+        raise HTTPException(409, '이전 사인오프 결정 무결성 검증에 실패했습니다.')
     package = export_signoff_package(project_id, payload.stage, db)
     content = bytes(package.body)
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
@@ -141,9 +158,20 @@ def create_release_decision(
         manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
         package_sha256=hashlib.sha256(content).hexdigest(),
         package_bytes=content, byte_length=len(content), created_at=datetime.now(timezone.utc),
+        chain_version=1,
+        previous_decision_sha256=previous.decision_sha256 if previous else None,
     )
     record.decision_sha256 = decision_digest(record)
     db.add(record)
+    expected_head = project.release_decision_chain_head_sha256
+    head_condition = (Project.release_decision_chain_head_sha256.is_(None) if expected_head is None
+                      else Project.release_decision_chain_head_sha256 == expected_head)
+    claimed = db.execute(update(Project).where(
+        Project.id == project_id, head_condition,
+    ).values(release_decision_chain_head_sha256=record.decision_sha256))
+    if claimed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(409, '다른 결정이 먼저 기록되었습니다. 현재 결정 체인을 다시 확인하세요.')
     db.commit()
     db.refresh(record)
     return release_out(record, current_evidence_sha256=record.evidence_snapshot_sha256,
@@ -187,6 +215,41 @@ def review_release_evidence(project_id: int, stage: Stage, db: Session = Depends
         evidence_snapshot_sha256=evidence_digest(bundle),
         captured_at=datetime.now(timezone.utc),
         gate=bundle['gate'],
+    )
+
+
+@router.get('/audit', response_model=SignoffReleaseAuditOut)
+def audit_release_decisions(project_id: int, db: Session = Depends(get_db)):
+    require_project(db, project_id)
+    project = db.get(Project, project_id)
+    rows = list(db.scalars(select(SignoffReleaseDecision).where(
+        SignoffReleaseDecision.project_id == project_id,
+    ).options(defer(SignoffReleaseDecision.package_bytes), defer(SignoffReleaseDecision.manifest))
+        .order_by(SignoffReleaseDecision.id)))
+    legacy_count = 0
+    chain_count = 0
+    previous = None
+    chain_started = False
+    for row in rows:
+        if not row.decision_sha256 or decision_digest(row) != row.decision_sha256:
+            raise HTTPException(409, f'사인오프 결정 #{row.id} 무결성 검증에 실패했습니다.')
+        if row.chain_version is None:
+            if chain_started:
+                raise HTTPException(409, f'사인오프 결정 #{row.id}의 체인 버전이 누락되었습니다.')
+            legacy_count += 1
+        else:
+            if row.chain_version != 1 or row.previous_decision_sha256 != previous:
+                raise HTTPException(409, f'사인오프 결정 #{row.id}의 이전 결정 연결이 일치하지 않습니다.')
+            chain_started = True
+            chain_count += 1
+        previous = row.decision_sha256
+    expected_head = previous if chain_started else None
+    if project.release_decision_chain_head_sha256 != expected_head:
+        raise HTTPException(409, '사인오프 결정 해시 체인의 저장된 헤드가 일치하지 않습니다.')
+    return SignoffReleaseAuditOut(
+        status='verified', decision_count=len(rows), legacy_decision_count=legacy_count,
+        chained_decision_count=chain_count, chain_head_sha256=expected_head,
+        verified_at=datetime.now(timezone.utc),
     )
 
 

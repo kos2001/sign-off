@@ -45,11 +45,18 @@ def test_release_decision_requires_approver_and_preserves_exact_package(accounts
     assert item['decided_by_user_id'] == users['approver'].id
     assert item['gate']['ready'] is False
     assert item['design_revision'] is None
+    assert item['chain_version'] == 1
+    assert item['previous_decision_sha256'] is None
 
     viewer = login('viewer')
     page = viewer.get(url).json()
     assert page['items'] == [item] and page['next_before_id'] is None
     assert viewer.get(f"{url}/{item['id']}").json() == item
+    audit = viewer.get(f'{url}/audit')
+    assert audit.status_code == 200
+    assert audit.json()['decision_count'] == 1
+    assert audit.json()['chained_decision_count'] == 1
+    assert audit.json()['chain_head_sha256'] == item['decision_sha256']
     package = viewer.get(f"{url}/{item['id']}/package")
     assert package.status_code == 200
     assert hashlib.sha256(package.content).hexdigest() == item['package_sha256']
@@ -251,3 +258,38 @@ def test_evidence_snapshot_tampering_is_rejected(accounts):
     response = login('viewer').get(f"{url}/{item['id']}")
     assert response.status_code == 409
     assert '근거 스냅샷 무결성' in response.json()['detail']
+
+
+def test_release_audit_detects_deleted_middle_decision(accounts):
+    _, ids, login = accounts
+    attach_source(ids['run'])
+    url = f"/projects/{ids['project']}/signoff-releases"
+    approver = login('approver')
+    first = approver.post(url, json={
+        'stage': 'final', 'decision': 'rejected', 'reason': 'first review',
+    }).json()
+    second = approver.post(url, json={
+        'stage': 'final', 'decision': 'rejected', 'reason': 'second review',
+    }).json()
+    assert second['previous_decision_sha256'] == first['decision_sha256']
+    with SessionLocal() as db:
+        db.delete(db.get(SignoffReleaseDecision, first['id']))
+        db.commit()
+    response = login('viewer').get(f'{url}/audit')
+    assert response.status_code == 409
+    assert '이전 결정 연결' in response.json()['detail']
+
+
+def test_release_audit_detects_deleted_chain_tail(accounts):
+    _, ids, login = accounts
+    attach_source(ids['run'])
+    url = f"/projects/{ids['project']}/signoff-releases"
+    item = login('approver').post(url, json={
+        'stage': 'final', 'decision': 'rejected', 'reason': 'record chain head',
+    }).json()
+    with SessionLocal() as db:
+        db.delete(db.get(SignoffReleaseDecision, item['id']))
+        db.commit()
+    response = login('viewer').get(f'{url}/audit')
+    assert response.status_code == 409
+    assert '저장된 헤드' in response.json()['detail']

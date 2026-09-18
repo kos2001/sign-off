@@ -96,7 +96,8 @@ def test_existing_project_table_is_upgraded_without_changing_rows(tmp_path):
         connection.execute(text("INSERT INTO projects VALUES (7, 'legacy', '5nm', 'QA', '2026-01-01')"))
     initialize_schema(engine)
     columns = {column['name'] for column in inspect(engine).get_columns('projects')}
-    assert {'lifecycle_version', 'archived_at', 'archived_by', 'archived_by_user_id'} <= columns
+    assert {'lifecycle_version', 'archived_at', 'archived_by', 'archived_by_user_id',
+            'release_decision_chain_head_sha256'} <= columns
     with engine.connect() as connection:
         row = connection.execute(text(
             'SELECT name, lifecycle_version, archived_at FROM projects WHERE id = 7')).one()
