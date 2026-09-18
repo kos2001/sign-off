@@ -75,6 +75,7 @@ def list_runs(
 
 @router.get('/projects/{project_id}/runs/page', response_model=RunPageOut)
 def run_page(project_id: int, domain: Domain | None = None, stage: Stage | None = None,
+             status: RunStatus | None = None, q: str | None = Query(None, min_length=1, max_length=80),
              before_id: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100),
              db: Session = Depends(get_db)):
     get_project_or_404(project_id, db)
@@ -83,6 +84,13 @@ def run_page(project_id: int, domain: Domain | None = None, stage: Stage | None 
         filters.append(SignoffRun.domain == domain)
     if stage is not None:
         filters.append(SignoffRun.stage == stage)
+    if status is not None:
+        filters.append(SignoffRun.status == status)
+    if q is not None:
+        query = q.strip()
+        if not query:
+            raise HTTPException(422, 'q must not be blank')
+        filters.append(func.lower(SignoffRun.tool).contains(query.casefold(), autoescape=True))
     page_filters = [*filters]
     if before_id is not None:
         page_filters.append(SignoffRun.id < before_id)

@@ -36,6 +36,15 @@ def test_run_history_uses_stable_descending_cursor_and_global_counts(client):
 
     filtered = client.get(f'/projects/{project_id}/runs/page?domain=pv&stage=routing').json()
     assert filtered['total'] == 1 and [item['id'] for item in filtered['items']] == [runs[4]['id']]
+    filtered = client.get(f'/projects/{project_id}/runs/page?status=passed&q=TOOL-1').json()
+    assert filtered['total'] == 1 and filtered['items'][0]['id'] == runs[1]['id']
+    assert filtered['status_counts'] == {
+        'running': 0, 'incomplete': 0, 'passed': 1, 'failed': 0,
+    }
+    assert client.get(f'/projects/{project_id}/runs/page', params={'q': '   '}).status_code == 422
+    literal = create_run(client, project_id, '%_literal')
+    literal_search = client.get(f'/projects/{project_id}/runs/page', params={'q': '%_'}).json()
+    assert literal_search['total'] == 1 and literal_search['items'][0]['id'] == literal['id']
 
 
 def test_legacy_run_list_fails_explicitly_above_safety_limit(client, monkeypatch):
