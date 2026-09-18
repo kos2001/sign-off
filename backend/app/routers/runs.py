@@ -167,9 +167,12 @@ def revision_coverage(project_id: int,
     ).group_by(SignoffRun.stage, SignoffRun.domain)).all()
     latest_ids = [latest_id for _, _, _, latest_id in grouped]
     latest_runs = {
-        run.id: run for run in db.scalars(select(SignoffRun).where(SignoffRun.id.in_(latest_ids))
-                                          .options(selectinload(SignoffRun.evidence)
-                                                   .defer(RunEvidence.source_text))).all()
+        run.id: run for run in db.execute(select(SignoffRun).where(SignoffRun.id.in_(latest_ids))
+                                          .options(joinedload(SignoffRun.violations)
+                                                   .joinedload(Violation.waiver),
+                                                   joinedload(SignoffRun.evidence)
+                                                   .defer(RunEvidence.source_text, raiseload=True))
+                                          .execution_options(populate_existing=True)).unique().scalars().all()
     } if latest_ids else {}
     observed = {(stage, domain): (count, latest_runs[latest_id])
                 for stage, domain, count, latest_id in grouped}
@@ -179,6 +182,10 @@ def revision_coverage(project_id: int,
         plan = resolve_signoff_plan(db, project_id, stage)
         required_list = [Domain(value) for value in plan['required_domains']]
         required = set(required_list)
+        stage_runs = [run for (run_stage, _), (_, run) in observed.items() if run_stage == stage]
+        gate = evaluate_gate(stage_runs, stage, plan,
+                             resolve_sta_scenario_plan(db, project_id, stage)['version'])
+        gate_domains = {Domain(item['domain']): item for item in gate['domains']}
         required_cells += len(required)
         cells = []
         displayed_domains = [*required_list, *(domain for domain in Domain
@@ -189,12 +196,16 @@ def revision_coverage(project_id: int,
                 covered_required_cells += 1
             cells.append({'domain': domain, 'required': domain in required,
                           'run_count': entry[0] if entry else 0,
-                          'latest_run': entry[1] if entry else None})
+                          'latest_run': entry[1] if entry else None,
+                          'gate_ready': gate_domains.get(domain, {}).get('ready', False),
+                          'gate_reason': gate_domains.get(domain, {}).get('reason')})
         stages.append({'stage': stage, 'plan_version': plan['version'],
                        'plan_source': plan['source'],
                        'required_domains': required_list,
                        'covered_required_domains': sum(
                            domain in required and (stage, domain) in observed for domain in required),
+                       'ready': gate['ready'],
+                       'revision_status': gate['revision_check']['status'],
                        'cells': cells})
     return {'project_id': project_id, 'design_revision': selected_revision,
             'total_runs': sum(count for _, _, count, _ in grouped),
