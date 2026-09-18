@@ -24,7 +24,20 @@ REQUIRED_DRC_CLAIMS = {
     'checks_complete',
     'findings_complete',
 }
-REQUIRED_CLAIMS = {'sta': REQUIRED_STA_CLAIMS, 'pv': REQUIRED_DRC_CLAIMS}
+REQUIRED_EMIR_CLAIMS = {
+    'tool_run_completed',
+    'rail_coverage_complete',
+    'modes_corners_complete',
+    'activity_vectors_complete',
+    'extraction_complete',
+    'checks_complete',
+    'findings_complete',
+}
+REQUIRED_CLAIMS = {
+    'sta': REQUIRED_STA_CLAIMS,
+    'pv': REQUIRED_DRC_CLAIMS,
+    'emir': REQUIRED_EMIR_CLAIMS,
+}
 
 
 class AttestationConfigurationError(RuntimeError):
@@ -36,7 +49,7 @@ def validate_optional_configuration():
         configured_keys()
 
 
-def configured_keys() -> dict[str, bytes]:
+def configured_keys() -> dict[str, tuple[bytes, frozenset[str]]]:
     raw = os.environ.get('SIGNOFF_COVERAGE_HMAC_KEYS', '')
     def unique_object(pairs):
         value = {}
@@ -52,11 +65,18 @@ def configured_keys() -> dict[str, bytes]:
     if not isinstance(document, dict) or not document or len(document) > 16:
         raise AttestationConfigurationError('coverage attestation keys are not configured')
     keys = {}
-    for key_id, secret in document.items():
+    for key_id, config in document.items():
         if (not isinstance(key_id, str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,64}', key_id)
-                or not isinstance(secret, str) or not 32 <= len(secret.encode()) <= 512):
+                or not isinstance(config, dict) or set(config) != {'secret', 'domains'}):
             raise AttestationConfigurationError('coverage attestation key configuration is invalid')
-        keys[key_id] = secret.encode()
+        secret, domains = config['secret'], config['domains']
+        if (not isinstance(secret, str) or not 32 <= len(secret.encode()) <= 512
+                or not isinstance(domains, list) or not domains
+                or any(not isinstance(domain, str) for domain in domains)
+                or len(domains) != len(set(domains))
+                or not set(domains) <= set(REQUIRED_CLAIMS)):
+            raise AttestationConfigurationError('coverage attestation key configuration is invalid')
+        keys[key_id] = (secret.encode(), frozenset(domains))
     return keys
 
 
@@ -104,9 +124,9 @@ def verify_attestation(attestation, *, domain, project_id, payload, result, now=
         raise ValueError('coverage attestation is not currently valid')
 
     key = configured_keys().get(attestation.key_id)
-    if key is None:
-        raise ValueError('coverage attestation key_id is not trusted')
-    expected = hmac.new(key, canonical_payload(attestation), hashlib.sha256).hexdigest()
+    if key is None or domain not in key[1]:
+        raise ValueError('coverage attestation key_id is not trusted for this domain')
+    expected = hmac.new(key[0], canonical_payload(attestation), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, attestation.signature):
         raise ValueError('coverage attestation signature is invalid')
     preserved = attestation.model_dump(mode='json')
@@ -120,3 +140,7 @@ def verify_sta_attestation(attestation, **context):
 
 def verify_drc_attestation(attestation, **context):
     return verify_attestation(attestation, domain='pv', **context)
+
+
+def verify_emir_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='emir', **context)

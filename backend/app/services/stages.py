@@ -49,6 +49,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
         attested_source = {
             Domain.sta: 'commercial_sta_report',
             Domain.pv: 'commercial_drc_report',
+            Domain.emir: 'commercial_emir_report',
         }.get(latest.domain)
         attested_coverage = bool(
             attested_source
@@ -67,7 +68,7 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage) -> dict:
         elif latest.evidence_source in {'klayout_report', 'commercial_drc_report'} and not attested_coverage:
             reason = 'Imported marker report does not establish full DRC coverage'
             ready = False
-        elif latest.evidence_source == 'commercial_emir_report':
+        elif latest.evidence_source == 'commercial_emir_report' and not attested_coverage:
             reason = 'Imported power-integrity findings do not establish full EM/IR coverage'
             ready = False
         elif latest.evidence_source == 'commercial_power_report':

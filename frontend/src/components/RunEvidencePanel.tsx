@@ -68,7 +68,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
           <p>설계 리비전: {evidence.data.design_revision} · 툴 버전: {evidence.data.result.metadata?.tool_version}</p>
           <p>모드 / 코너 / 전원 조건: {evidence.data.result.metadata?.scenario}</p>
           <p>보고된 결과 {evidence.data.result.metrics?.reported_findings}개 · 제한 초과 {evidence.data.result.metrics?.violated_findings}개</p>
-          <p>제출된 결과만 보존하며 전체 EM/IR 검증 범위와 상용 툴 실행 진위는 확인되지 않았습니다. 조회와 위반 생성에는 AI가 개입하지 않습니다.</p>
+          {evidence.data.result.coverage_attestation?.verified ? <div className="rounded-lg border border-[var(--status-good)] p-2 space-y-1"><p className="font-semibold">신뢰된 수집기 전체 EM/IR 범위 증명</p><p>키 ID: {evidence.data.result.coverage_attestation.key_id} · 유효 기간: {new Date(evidence.data.result.coverage_attestation.issued_at).toLocaleString()} – {new Date(evidence.data.result.coverage_attestation.expires_at).toLocaleString()}</p><p className="break-all">증명 ID: {evidence.data.result.coverage_attestation.attestation_id}</p><p>서버가 rail·모드·벡터·추출·검사 범위와 서명을 검증했습니다. 등록 수집기의 선언이며 벤더 서명이나 호스트 무결성 증명은 아닙니다. AI는 판정에 개입하지 않습니다.</p></div> : <p>제출된 결과만 보존하며 전체 EM/IR 검증 범위와 상용 툴 실행 진위는 확인되지 않았습니다. 조회와 위반 생성에는 AI가 개입하지 않습니다.</p>}
           <p className="break-all">원본 SHA-256: {evidence.data.source_sha256}</p><button className="btn btn-ghost" onClick={download}>근거 JSON 다운로드</button>
           <details><summary className="cursor-pointer">원본 EM/IR 보고서</summary><pre className="max-h-80 overflow-auto" tabIndex={0}>{evidence.data.source_text}</pre></details>
         </> : (run.evidence_source === "klayout_report" || run.evidence_source === "commercial_drc_report") ? <>
