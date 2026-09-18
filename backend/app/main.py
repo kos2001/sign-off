@@ -19,7 +19,7 @@ from .services.rtl.admission import capacity
 from .services.sta_admission import capacity as sta_capacity
 from .services.coverage_attestation import validate_optional_configuration
 from .review_capacity import capacity as review_capacity
-from .routers import lec, lvs, markers, power_integrity, regressions, releases, run_reviews, auth, agents, analysis, comparison, imports, projects, runs, sta_batches, sta_matrix, timing_paths, violations
+from .routers import cdc, lec, lvs, markers, power_integrity, regressions, releases, run_reviews, auth, agents, analysis, comparison, imports, projects, runs, sta_batches, sta_matrix, timing_paths, violations
 
 logger = logging.getLogger('uvicorn.error.signoff')
 
@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description=(
             "Backend for managing chip-design sign-off: per-domain signoff runs "
-            "(RTL / STA / EM-IR / DRC / LVS / LEC / glitch power / thermal), violation and waiver "
+            "(RTL / STA / EM-IR / DRC / LVS / LEC / CDC-RDC / glitch power / thermal), violation and waiver "
             "tracking, shift-left stage gates, and fast pre-signoff analysis "
             "endpoints (IR-drop screening, vectorless glitch power, MMMC timing "
             "summary)."
@@ -58,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(regressions.router, dependencies=[Depends(authorize)])
     app.include_router(lvs.router, dependencies=[Depends(authorize)])
     app.include_router(lec.router, dependencies=[Depends(authorize)])
+    app.include_router(cdc.router, dependencies=[Depends(authorize)])
     app.include_router(analysis.router, dependencies=[Depends(authorize)])
     app.include_router(run_reviews.router, dependencies=[Depends(authorize)])
     app.include_router(agents.router, dependencies=[Depends(authorize)])

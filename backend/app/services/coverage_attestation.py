@@ -76,6 +76,11 @@ REQUIRED_LEC_CLAIMS = {
     'implementation_inputs_complete', 'libraries_complete', 'constraints_complete',
     'compare_points_complete', 'comparison_complete', 'findings_complete',
 }
+REQUIRED_CDC_CLAIMS = {
+    'tool_run_completed', 'clocks_resets_complete', 'constraints_complete',
+    'hierarchy_complete', 'structural_analysis_complete', 'functional_analysis_complete',
+    'cdc_analysis_complete', 'rdc_analysis_complete', 'findings_complete',
+}
 REQUIRED_CLAIMS = {
     'sta': REQUIRED_STA_CLAIMS,
     'pv': REQUIRED_DRC_CLAIMS,
@@ -85,6 +90,7 @@ REQUIRED_CLAIMS = {
     'rtl': REQUIRED_RTL_CLAIMS,
     'lvs': REQUIRED_LVS_CLAIMS,
     'lec': REQUIRED_LEC_CLAIMS,
+    'cdc': REQUIRED_CDC_CLAIMS,
 }
 
 
@@ -212,3 +218,7 @@ def verify_lvs_attestation(attestation, **context):
 
 def verify_lec_attestation(attestation, **context):
     return verify_attestation(attestation, domain='lec', **context)
+
+
+def verify_cdc_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='cdc', **context)

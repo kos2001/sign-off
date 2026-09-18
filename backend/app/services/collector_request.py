@@ -13,6 +13,7 @@ from .commercial_rtl import parse_commercial_rtl
 from .commercial_thermal import parse_commercial_thermal
 from .commercial_lvs import parse_commercial_lvs
 from .commercial_lec import parse_commercial_lec
+from .commercial_cdc import parse_commercial_cdc
 from .coverage_attestation import REQUIRED_CLAIMS, canonical_payload
 from .report_import import parse_commercial_sta
 
@@ -26,6 +27,7 @@ PARSERS = {
     'rtl': parse_commercial_rtl,
     'lvs': parse_commercial_lvs,
     'lec': parse_commercial_lec,
+    'cdc': parse_commercial_cdc,
 }
 
 

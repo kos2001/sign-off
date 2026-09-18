@@ -124,7 +124,7 @@ DB 백업에는 계정 해시, 권한, 세션 테이블도 포함됩니다. **�
 사용할 수 있다. 운영자 CLI `python -m app.collectors`로 발급·목록·폐기하며 평문 토큰은 발급할
 때 한 번만 반환한다. 서버는 SHA-256만 저장하고 만료 시각과 폐기 시각을 검사한다.
 
-허용 범위는 해당 프로젝트의 `commercial-sta`, `commercial-drc`, `commercial-lvs`, `commercial-lec`, `commercial-emir`,
+허용 범위는 해당 프로젝트의 `commercial-sta`, `commercial-cdc`, `commercial-drc`, `commercial-lvs`, `commercial-lec`, `commercial-emir`,
 `commercial-power`, `commercial-thermal`, `commercial-rtl` 저장 POST로 고정된다. 미리보기와 모든
 조회·검토·승인 API에는 사용할 수 없다. 쿠키와 Bearer 헤더를 함께 보내면 모호한 신원을 허용하지
 않고 401로 거부한다. 머신 제출에는 유효한 coverage attestation을 반드시 포함해야 한다. 저장된

@@ -12,7 +12,7 @@ SIGNOFF_COVERAGE_HMAC_KEYS='{"sta-collector-2026q3":{"secret":"32-bytes-minimum-
 ```
 
 JSON 객체의 키는 `key_id`이며 각 값은 `secret`과 `domains`를 정확히 포함한다. `secret`은 최소
-32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `lvs`, `lec`, `emir`, `glitch_power`, `thermal`, `rtl` 중 이 키가
+32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `lvs`, `lec`, `cdc`, `emir`, `glitch_power`, `thermal`, `rtl` 중 이 키가
 서명할 수 있는 범위다. 빈 범위,
 중복 또는 알 수 없는 도메인은 거부한다. 최대 16개 키를 동시에 등록해 교체 기간을 운영할 수 있다.
 실제 키는 저장소나 보고서에 넣지 말고 비밀 관리 시스템에서
@@ -134,6 +134,14 @@ Celsius/Icepak/Calibre 3DSTACK 증명은 `domain: "thermal"`과 다음 키를 �
 `boundary_conditions_complete`, `power_map_complete`, `package_stack_complete`,
 `analysis_scope_complete`, `mesh_convergence_complete`, `findings_complete`. 제한을 넘은 온도
 finding이 하나라도 있으면 유효한 증명이 있어도 `failed`다.
+
+### CDC/RDC claim 집합
+
+VC SpyGlass/Jasper CDC 증명은 `domain: "cdc"`와 다음 키를 정확히 사용하며 모두 `true`여야 한다:
+`tool_run_completed`, `clocks_resets_complete`, `constraints_complete`, `hierarchy_complete`,
+`structural_analysis_complete`, `functional_analysis_complete`, `cdc_analysis_complete`,
+`rdc_analysis_complete`, `findings_complete`. clean 판정이고 error/critical finding이 없을 때만
+`passed`가 된다.
 
 ### RTL 회귀 claim 집합
 
