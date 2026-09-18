@@ -1,0 +1,145 @@
+import hashlib
+import json
+import threading
+import time
+import uuid
+
+from app.db import SessionLocal
+from app.models import StaBatchExecution, StaBatchExecutionItem, StaBatchInputArtifact, Stage
+from app.services.report_import import parse_opensta
+from app.services.sta_worker_client import StaWorkerError
+
+
+def project(client):
+    return client.post('/projects', json={'name': f'detached-{uuid.uuid4()}',
+        'process_node': '5nm', 'foundry': 'QA'}).json()['id']
+
+
+def worker_result():
+    report = json.dumps({'checks': [{'type': 'check', 'path_type': 'max', 'path_group': 'clk',
+        'startpoint': 'u1/Q', 'endpoint': 'u2/D', 'source_path': [{'pin': 'u1/Q'}, {'pin': 'u2/D'}],
+        'slack': 2e-11}]})
+    values = {'netlist': 'module top; endmodule', 'liberty': 'library(x) {}', 'sdc': 'create_clock -period 1 clk'}
+    inputs = {name: {'sha256': hashlib.sha256(value.encode()).hexdigest(),
+                     'byte_length': len(value.encode())} for name, value in values.items()}
+    return {'protocol': 'signoff/sta-worker/v1', 'report': report, 'log': 'OpenSTA complete',
+            'opensta_commit': 'd97587f669b4f169be7132346df70e7d634500c3',
+            'inputs': inputs}, parse_opensta(report), 'sha256:' + 'a' * 64
+
+
+def payload(pid, scenarios=2):
+    return {'project_id': pid, 'stage': 'routing', 'top_module': 'top',
+            'design_revision': 'detached-rev', 'netlist': 'module top; endmodule',
+            'scenarios': [{'scenario': f'corner-{index}', 'liberty': 'library(x) {}',
+                           'sdc': 'create_clock -period 1 clk'} for index in range(scenarios)]}
+
+
+def wait_terminal(client, pid, batch_id, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        row = client.get(f'/projects/{pid}/sta-batches/{batch_id}').json()
+        if row['status'] not in {'queued', 'running'}:
+            return row
+        time.sleep(0.02)
+    raise AssertionError('detached batch did not reach a terminal state')
+
+
+def test_detached_batch_survives_request_and_records_artifacts(client, monkeypatch):
+    pid = project(client)
+    monkeypatch.setattr('app.services.sta_batch_queue.run_sta', lambda *args, **kwargs: worker_result())
+    response = client.post('/analysis/sta-signoff/batch', json=payload(pid))
+    assert response.status_code == 202, response.text
+    receipt = response.json()
+    assert receipt['status'] in {'queued', 'running', 'completed'}
+    assert 'netlist' not in response.text and 'library(x)' not in response.text
+    result = wait_terminal(client, pid, receipt['id'])
+    assert result['status'] == 'completed' and result['started_at'] and result['finished_at']
+    assert all(item['status'] == 'completed' and item['run_id'] for item in result['items'])
+    with SessionLocal() as db:
+        artifacts = db.query(StaBatchInputArtifact).filter_by(batch_id=receipt['id']).all()
+        assert len(artifacts) == 5
+        assert all(item.sha256 == hashlib.sha256(item.content_text.encode()).hexdigest() for item in artifacts)
+
+
+def test_running_detached_batch_can_be_cancelled(client, monkeypatch):
+    pid = project(client)
+    started = threading.Event()
+
+    def blocked(*args, cancel, **kwargs):
+        started.set()
+        if not cancel.wait(3):
+            raise AssertionError('cancel signal was not delivered')
+        raise StaWorkerError('STA worker cancelled.')
+
+    monkeypatch.setattr('app.services.sta_batch_queue.run_sta', blocked)
+    receipt = client.post('/analysis/sta-signoff/batch', json=payload(pid, 1)).json()
+    assert started.wait(3)
+    cancel = client.post(f"/projects/{pid}/sta-batches/{receipt['id']}/cancel")
+    assert cancel.status_code == 200, cancel.text
+    assert cancel.json()['cancel_requested'] is True
+    result = wait_terminal(client, pid, receipt['id'])
+    assert result['status'] == 'cancelled'
+    assert result['items'][0]['status'] == 'cancelled' and result['items'][0]['run_id'] is None
+    assert client.post(f"/projects/{pid}/sta-batches/{receipt['id']}/cancel").status_code == 409
+
+
+def test_queued_detached_batch_can_be_cancelled(client):
+    pid = project(client)
+    with SessionLocal() as db:
+        batch = StaBatchExecution(project_id=pid, stage=Stage.routing, top_module='top',
+            design_revision='queued', submitted_by='local', status='queued',
+            items=[StaBatchExecutionItem(position=0, scenario='waiting', status='pending')])
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+    response = client.post(f'/projects/{pid}/sta-batches/{batch_id}/cancel')
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['status'] == 'cancelled' and result['cancel_requested'] is True
+    assert result['items'][0]['status'] == 'cancelled' and result['finished_at']
+
+
+def test_detached_batch_rejects_tampered_stored_input(client, monkeypatch):
+    from app.services.sta_batch_queue import execute_claimed
+    pid = project(client)
+    with SessionLocal() as db:
+        batch = StaBatchExecution(project_id=pid, stage=Stage.routing, top_module='top',
+            design_revision='tampered', submitted_by='local', status='running',
+            items=[StaBatchExecutionItem(position=0, scenario='slow', status='pending')])
+        db.add(batch)
+        db.flush()
+        db.add_all([
+            StaBatchInputArtifact(batch_id=batch.id, position=-1, kind='netlist',
+                content_text='module top; endmodule', sha256='0' * 64, byte_length=21),
+            StaBatchInputArtifact(batch_id=batch.id, position=0, kind='liberty',
+                content_text='lib', sha256=hashlib.sha256(b'lib').hexdigest(), byte_length=3),
+            StaBatchInputArtifact(batch_id=batch.id, position=0, kind='sdc',
+                content_text='sdc', sha256=hashlib.sha256(b'sdc').hexdigest(), byte_length=3),
+        ])
+        db.commit()
+        batch_id = batch.id
+    monkeypatch.setattr('app.services.sta_batch_queue.run_sta', lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    execute_claimed(batch_id, threading.Event())
+    result = client.get(f'/projects/{pid}/sta-batches/{batch_id}').json()
+    assert result['status'] == 'failed' and result['items'][0]['status'] == 'failed'
+
+
+def test_stale_worker_lease_is_finalized_without_reexecution(client, monkeypatch):
+    from app.services.sta_batch_queue import reconcile_stale_batches
+    pid = project(client)
+    with SessionLocal() as db:
+        batch = StaBatchExecution(project_id=pid, stage=Stage.routing, top_module='top',
+            design_revision='stale', submitted_by='local', status='running', worker_token='a' * 32,
+            lease_expires_at=10, items=[
+                StaBatchExecutionItem(position=0, scenario='done', status='completed'),
+                StaBatchExecutionItem(position=1, scenario='lost', status='running'),
+            ])
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+    monkeypatch.setattr('app.services.sta_batch_queue.run_sta', lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    reconcile_stale_batches(now=11)
+    result = client.get(f'/projects/{pid}/sta-batches/{batch_id}').json()
+    assert result['status'] == 'partial' and result['finished_at']
+    assert result['items'][1]['status'] == 'failed'
+    assert result['items'][1]['detail'] == 'Batch execution was interrupted.'

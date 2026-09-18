@@ -152,7 +152,7 @@ def test_batch_rejects_duplicate_scenarios_before_worker(client, monkeypatch):
 def test_batch_cancellation_marks_unfinished_items_terminal(client):
     from app.db import SessionLocal
     from app.models import StaBatchExecution, StaBatchExecutionItem, Stage
-    from app.routers.analysis import _finish_sta_batch
+    from app.services.sta_execution import finish_sta_batch
     pid = project(client)
     with SessionLocal() as db:
         batch = StaBatchExecution(project_id=pid, stage=Stage.routing, top_module='top',
@@ -164,7 +164,7 @@ def test_batch_cancellation_marks_unfinished_items_terminal(client):
         db.add(batch)
         db.commit()
         batch_id = batch.id
-    _finish_sta_batch(batch_id, 'cancelled')
+    finish_sta_batch(batch_id, 'cancelled')
     result = client.get(f'/projects/{pid}/sta-batches/{batch_id}').json()
     assert result['status'] == 'cancelled' and result['finished_at']
     assert [item['status'] for item in result['items']] == ['completed', 'cancelled', 'cancelled']
