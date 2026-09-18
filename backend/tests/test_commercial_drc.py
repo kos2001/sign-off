@@ -127,7 +127,7 @@ def test_preview_import_evidence_markers_violation_and_retry(accounts):
 
 def test_trusted_drc_attestation_can_establish_pv_gate_coverage(accounts, monkeypatch):
     secret = 'drc-collector-secret-with-at-least-32-bytes'
-    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-drc-collector': secret}))
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-drc-collector': {'secret': secret, 'domains': ['pv']}}))
     _, ids, login = accounts
     body = payload({**report(), 'markers': []})
     body['coverage_attestation'] = attest(body, ids['project'], secret)
@@ -157,7 +157,7 @@ def test_trusted_drc_attestation_can_establish_pv_gate_coverage(accounts, monkey
 
 def test_invalid_or_failing_drc_attestation_never_opens_gate(accounts, monkeypatch):
     secret = 'drc-collector-secret-with-at-least-32-bytes'
-    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-drc-collector': secret}))
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-drc-collector': {'secret': secret, 'domains': ['pv']}}))
     _, ids, login = accounts
     path = f"/projects/{ids['project']}/imports/commercial-drc"
     editor = login('editor')

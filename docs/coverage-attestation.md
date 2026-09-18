@@ -1,6 +1,6 @@
 # 신뢰된 수집기 커버리지 증명
 
-경로나 마커 목록만으로는 STA 또는 DRC 툴이 모든 필수 입력과 검사를 끝까지 실행했는지
+경로·마커·EM/IR finding 목록만으로는 툴이 모든 필수 입력과 검사를 끝까지 실행했는지
 알 수 없다. `signoff/coverage-attestation/v1`은 운영자가 등록한 수집기가 실행 범위를 확인하고
 특정 가져오기 요청에 HMAC-SHA256으로 묶는 계약이다. 사용자가 직접 입력한 체크박스나 툴 이름은
 전체 범위 근거로 인정하지 않는다.
@@ -8,11 +8,13 @@
 ## 서버 키 설정
 
 ```sh
-SIGNOFF_COVERAGE_HMAC_KEYS='{"sta-collector-2026q3":"32-bytes-minimum-random-secret-value"}'
+SIGNOFF_COVERAGE_HMAC_KEYS='{"sta-collector-2026q3":{"secret":"32-bytes-minimum-random-secret-value","domains":["sta"]}}'
 ```
 
-JSON 객체의 키는 `key_id`, 값은 최소 32 UTF-8 바이트의 공유 비밀이다. 최대 16개 키를 동시에
-등록해 교체 기간을 운영할 수 있다. 실제 키는 저장소나 보고서에 넣지 말고 비밀 관리 시스템에서
+JSON 객체의 키는 `key_id`이며 각 값은 `secret`과 `domains`를 정확히 포함한다. `secret`은 최소
+32 UTF-8 바이트이고 `domains`는 `sta`, `pv`, `emir` 중 이 키가 서명할 수 있는 범위다. 빈 범위,
+중복 또는 알 수 없는 도메인은 거부한다. 최대 16개 키를 동시에 등록해 교체 기간을 운영할 수 있다.
+실제 키는 저장소나 보고서에 넣지 말고 비밀 관리 시스템에서
 API 서버와 수집기에 주입한다. 설정이 존재하지만 JSON 또는 키가 잘못되면 API 서버 시작을
 거부한다. 증명 기능을 사용하지 않으면 변수를 설정하지 않아도 된다.
 
@@ -91,3 +93,11 @@ Calibre/Pegasus 증명은 `domain: "pv"`와 다음 여섯 키를 정확히 사�
 
 DRC 보고서에 error/critical 마커가 있으면 증명이 유효해도 런은 `failed`다. warning/info만
 있거나 마커가 없으면 `passed`가 될 수 있다. 증명은 웨이버를 만들거나 마커 상태를 바꾸지 않는다.
+
+### EM/IR claim 집합
+
+RedHawk-SC/Voltus/Totem 증명은 `domain: "emir"`와 다음 키를 정확히 사용하며 모두
+`true`여야 한다: `tool_run_completed`, `rail_coverage_complete`,
+`modes_corners_complete`, `activity_vectors_complete`, `extraction_complete`,
+`checks_complete`, `findings_complete`. 제출된 값과 제한은 서버가 다시 비교한다. 제한 초과
+finding이 하나라도 있으면 범위 증명이 유효해도 `failed`이며 웨이버로 자동 변환하지 않는다.
