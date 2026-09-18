@@ -1,8 +1,8 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 
-import type { Domain, Severity, SignoffRun, Stage } from "../api";
+import type { Domain, RunStatus, Severity, SignoffRun, Stage } from "../api";
 import { api, DOMAIN_LABELS, STAGE_LABELS, STAGES } from "../api";
 import { useAuth } from "../components/AuthProvider";
 import { RunEvidencePanel } from "../components/RunEvidencePanel";
@@ -74,6 +74,13 @@ export default function ProjectDetail() {
   const [stage, setStage] = useState<Stage>("placement");
   const [olderRuns, setOlderRuns] = useState<SignoffRun[]>([]);
   const [olderCursor, setOlderCursor] = useState<number | null | undefined>(undefined);
+  const [runFilters, setRunFilters] = useState<{ domain?: Domain; stage?: Stage; status?: RunStatus }>({});
+  const [toolQuery, setToolQuery] = useState('');
+  const [appliedToolQuery, setAppliedToolQuery] = useState('');
+  const runFilterKey = JSON.stringify({ ...runFilters, q: appliedToolQuery });
+  const runFilterKeyRef = useRef(runFilterKey);
+  runFilterKeyRef.current = runFilterKey;
+  useEffect(() => { setOlderRuns([]); setOlderCursor(undefined); }, [runFilterKey]);
   const [releaseReason, setReleaseReason] = useState("");
   const gateExport = useMutation({
     mutationFn: (input: { projectId: number; stage: Stage }) => api.exportGate(input.projectId, input.stage),
@@ -129,13 +136,16 @@ export default function ProjectDetail() {
   });
   // 5s polling keeps runs and gate status live while ladders execute elsewhere
   const runs = useQuery({
-    queryKey: ["runs-page", projectId],
-    queryFn: () => api.runPage(projectId),
+    queryKey: ["runs-page", projectId, runFilters, appliedToolQuery],
+    queryFn: () => api.runPage(projectId, { ...runFilters, q: appliedToolQuery || undefined }),
     refetchInterval: 5000,
   });
   const loadOlderRuns = useMutation({
-    mutationFn: (beforeId: number) => api.runPage(projectId, beforeId),
-    onSuccess: page => {
+    mutationFn: ({ beforeId }: { beforeId: number; filterKey: string }) => api.runPage(projectId, {
+      ...runFilters, q: appliedToolQuery || undefined, beforeId,
+    }),
+    onSuccess: (page, variables) => {
+      if (variables.filterKey !== runFilterKeyRef.current) return;
       setOlderRuns(current => {
         const items = new Map(current.map(item => [item.id, item]));
         for (const item of page.items) items.set(item.id, item);
@@ -325,13 +335,23 @@ export default function ProjectDetail() {
         )}
       </Card>
 
+      <Card title="런 이력 필터" subtitle="도메인·단계·상태와 툴 이름으로 서버에서 런 이력을 좁힙니다.">
+        <form className="flex flex-wrap items-end gap-3" onSubmit={event => { event.preventDefault(); setAppliedToolQuery(toolQuery.trim()); }}>
+          <Field label="도메인"><select className="input" value={runFilters.domain ?? ''} onChange={event => setRunFilters(current => ({ ...current, domain: event.target.value ? event.target.value as Domain : undefined }))}><option value="">전체</option>{Object.entries(DOMAIN_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+          <Field label="스테이지"><select className="input" value={runFilters.stage ?? ''} onChange={event => setRunFilters(current => ({ ...current, stage: event.target.value ? event.target.value as Stage : undefined }))}><option value="">전체</option>{STAGES.map(value => <option key={value} value={value}>{STAGE_LABELS[value]}</option>)}</select></Field>
+          <Field label="상태"><select className="input" value={runFilters.status ?? ''} onChange={event => setRunFilters(current => ({ ...current, status: event.target.value ? event.target.value as RunStatus : undefined }))}><option value="">전체</option><option value="passed">통과</option><option value="failed">실패</option><option value="running">실행 중</option><option value="incomplete">검증 미완료</option></select></Field>
+          <Field label="툴 이름"><input className="input" maxLength={80} value={toolQuery} onChange={event => setToolQuery(event.target.value)} placeholder="예: PrimeTime" /></Field>
+          <button className="btn btn-primary">검색</button>
+          <button type="button" className="btn btn-ghost" onClick={() => { setRunFilters({}); setToolQuery(''); setAppliedToolQuery(''); }}>초기화</button>
+        </form>
+      </Card>
       <RunsCard projectId={projectId}
         runs={mergeRuns(runs.data?.items ?? [], olderRuns)}
         total={runs.data?.total ?? 0} statusCounts={runs.data?.status_counts}
         loading={runs.isPending} error={runs.error?.message}
         hasMore={(olderCursor === undefined ? runs.data?.next_before_id : olderCursor) != null}
         loadingMore={loadOlderRuns.isPending} loadError={loadOlderRuns.error?.message}
-        onLoadMore={() => { const cursor = olderCursor === undefined ? runs.data?.next_before_id : olderCursor; if (cursor) loadOlderRuns.mutate(cursor); }}
+        onLoadMore={() => { const cursor = olderCursor === undefined ? runs.data?.next_before_id : olderCursor; if (cursor) loadOlderRuns.mutate({ beforeId: cursor, filterKey: runFilterKey }); }}
         onChange={invalidate} />
     </div>
   );
