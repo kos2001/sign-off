@@ -71,6 +71,11 @@ REQUIRED_LVS_CLAIMS = {
     'comparison_complete',
     'findings_complete',
 }
+REQUIRED_LEC_CLAIMS = {
+    'tool_run_completed', 'setup_complete', 'reference_inputs_complete',
+    'implementation_inputs_complete', 'libraries_complete', 'constraints_complete',
+    'compare_points_complete', 'comparison_complete', 'findings_complete',
+}
 REQUIRED_CLAIMS = {
     'sta': REQUIRED_STA_CLAIMS,
     'pv': REQUIRED_DRC_CLAIMS,
@@ -79,6 +84,7 @@ REQUIRED_CLAIMS = {
     'thermal': REQUIRED_THERMAL_CLAIMS,
     'rtl': REQUIRED_RTL_CLAIMS,
     'lvs': REQUIRED_LVS_CLAIMS,
+    'lec': REQUIRED_LEC_CLAIMS,
 }
 
 
@@ -202,3 +208,7 @@ def verify_rtl_attestation(attestation, **context):
 
 def verify_lvs_attestation(attestation, **context):
     return verify_attestation(attestation, domain='lvs', **context)
+
+
+def verify_lec_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='lec', **context)

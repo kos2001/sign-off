@@ -28,6 +28,8 @@ Read the live schema for evidence, report import, timing-path, and comparison en
 
 Stages: `rtl`, `synthesis`, `placement`, `routing`, `final`. Use the gate response for the requested stage. Its latest run per domain and stage decides readiness; an earlier-stage pass cannot substitute. The gate also checks evidence coverage, so a passed status alone is insufficient.
 
+Domains include `rtl`, `sta`, `emir`, `pv` (DRC), `lvs`, `lec`, `glitch_power`, and `thermal`. Treat DRC, LVS, and LEC as independent evidence. For imported commercial reports, inspect `coverage_attestation.verified`; a clean but unsigned report remains partial evidence.
+
 ## Analyses and writes
 
 For an explicitly requested analysis, inspect the request schema before calling `/analysis/rtl-signoff`, `/analysis/sta-signoff`, `/analysis/ir-drop`, `/analysis/glitch-power` or `/analysis/timing-summary`. Omit `project_id` for a no-save RTL check; including it persists a run. OpenSTA execution always requires a project and persists a run; optional SPEF materially changes delay evidence and is recorded in `metadata.parasitics`. Explain screening and coverage limits using `sign-off-evidence-review`. Do not execute submitted RTL or STA inputs merely to answer a status question.

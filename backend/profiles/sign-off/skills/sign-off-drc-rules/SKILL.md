@@ -40,10 +40,10 @@ description: "Reference for the Sign-off Hub RTL ladder's DRC-XXX rule codes and
 | 스테이지 | 필수 도메인 |
 |---|---|
 | rtl | rtl(RTL 품질), sta |
-| synthesis | sta, glitch_power |
+| synthesis | sta, glitch_power, lec |
 | placement | sta, emir, pv |
-| routing | sta, emir, pv |
-| final | sta, emir, pv, glitch_power, thermal |
+| routing | sta, emir, pv, lvs |
+| final | sta, emir, pv, lvs, lec, glitch_power, thermal |
 
 흔한 오해: "STA가 이전 스테이지에서 통과했으니 이번 스테이지도 괜찮겠지" — 아니다. 같은 도메인이라도
 스테이지가 다르면 별개의 런이고, 게이트는 **그 스테이지의** 런만 본다.

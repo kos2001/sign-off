@@ -1,4 +1,4 @@
-export type Domain = "rtl" | "sta" | "emir" | "pv" | "lvs" | "glitch_power" | "thermal";
+export type Domain = "rtl" | "sta" | "emir" | "pv" | "lvs" | "lec" | "glitch_power" | "thermal";
 export type Stage = "rtl" | "synthesis" | "placement" | "routing" | "final";
 export type RunStatus = "running" | "passed" | "failed" | "incomplete";
 export type Severity = "info" | "warning" | "error" | "critical";
@@ -21,7 +21,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report";
   result_locked: boolean;
 }
 
@@ -31,7 +31,7 @@ export interface RunEvidence {
   source_text: string | null;
   source_sha256: string | null;
   design_revision: string | null;
-  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & {
+  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & Partial<LecPreview> & {
     metadata?: { filename: string; tool_version: string; scenario: string; parasitics?: 'spef' | 'none' };
     submitted_by?: { user_id: number; username: string } | { collector_id: number; name: string } | null;
     input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc' | 'spef', { sha256: string; byte_length: number }>>;
@@ -146,6 +146,10 @@ export type LvsKind='open'|'short'|'missing_device'|'extra_device'|'device_misma
 export interface LvsMismatch{index:number;kind:LvsKind;name:string;severity:'error'|'critical';layout_object:string|null;schematic_object:string|null;message:string;fingerprint:string}
 export interface LvsPreview{parser:string;tool:string;tool_version:string;status:'passed'|'failed'|'incomplete';source_sha256:string;coverage_attestation?:CoverageAttestation;lvs_status:'matched'|'mismatched'|'error';layout_top:string;schematic_top:string;error_message:string|null;summary:{layout_devices:number;schematic_devices:number;layout_nets:number;schematic_nets:number};metrics:Record<string,number>;items:LvsMismatch[]}
 export interface LvsPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;lvs_status:LvsPreview['lvs_status'];layout_top:string;schematic_top:string;error_message:string|null;summary:LvsPreview['summary'];reported_total:number;total:number;offset:number;limit:number;items:LvsMismatch[]}
+export type LecKind='non_equivalent'|'unmapped'|'aborted'|'black_box'|'setup';
+export interface LecFailure{index:number;kind:LecKind;name:string;severity:'error'|'critical';reference_object:string|null;implementation_object:string|null;message:string;fingerprint:string}
+export interface LecPreview{parser:string;tool:string;tool_version:string;status:'passed'|'failed'|'incomplete';source_sha256:string;coverage_attestation?:CoverageAttestation;lec_status:'equivalent'|'non_equivalent'|'error';reference_top:string;implementation_top:string;error_message:string|null;summary:{reference_compare_points:number;implementation_compare_points:number;matched_points:number;failing_points:number;aborted_points:number;unreachable_points:number};metrics:Record<string,number>;items:LecFailure[]}
+export interface LecPage{run:SignoffRun;metadata:{filename?:string;tool_version?:string;scenario?:string};source_sha256:string;design_revision:string|null;lec_status:LecPreview['lec_status'];reference_top:string;implementation_top:string;error_message:string|null;summary:LecPreview['summary'];reported_total:number;total:number;offset:number;limit:number;items:LecFailure[]}
 
 export type TimingPath = ReportPreview['paths'][number] & { status: 'violated' | 'met' | 'unconstrained' };
 export interface TimingPathSummary {
@@ -556,6 +560,9 @@ export const api = {
   previewCommercialLvs:(projectId:number,body:ReportImportInput)=>request<LvsPreview>(`/projects/${projectId}/imports/commercial-lvs/preview`,{method:'POST',body:JSON.stringify(body)}),
   importCommercialLvs:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-lvs`,{method:'POST',body:JSON.stringify(body)}),
   lvsMismatches:(runId:number,filters:Record<string,string>)=>request<LvsPage>(`/runs/${runId}/lvs-mismatches?${new URLSearchParams(filters)}`),
+  previewCommercialLec:(projectId:number,body:ReportImportInput)=>request<LecPreview>(`/projects/${projectId}/imports/commercial-lec/preview`,{method:'POST',body:JSON.stringify(body)}),
+  importCommercialLec:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-lec`,{method:'POST',body:JSON.stringify(body)}),
+  lecFailures:(runId:number,filters:Record<string,string>)=>request<LecPage>(`/runs/${runId}/lec-failures?${new URLSearchParams(filters)}`),
   previewKLayout: (projectId: number, body: ReportImportInput) => request<KLayoutPreview>(`/projects/${projectId}/imports/klayout/preview`, { method: 'POST', body: JSON.stringify(body) }),
   importKLayout: (projectId: number, body: ReportImportInput) => request<SignoffRun>(`/projects/${projectId}/imports/klayout`, { method: 'POST', body: JSON.stringify(body) }),
   markers: (runId: number, filters: Record<string, string>) => request<MarkerPage>(`/runs/${runId}/markers?${new URLSearchParams(filters)}`),
@@ -886,6 +893,7 @@ export const DOMAIN_LABELS: Record<Domain, string> = {
   emir: "EM/IR",
   pv: "PV",
   lvs: "LVS",
+  lec: "LEC",
   glitch_power: "Glitch Power",
   thermal: "Thermal",
 };
