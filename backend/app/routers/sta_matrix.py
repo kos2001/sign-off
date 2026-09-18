@@ -1,16 +1,43 @@
 import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Domain, RunEvidence, RunStatus, SignoffRun, Stage
-from ..schemas import StaMatrixOut
+from ..models import Domain, RunEvidence, RunStatus, SignoffRun, StaScenarioDefinition, Stage
+from ..schemas import StaMatrixOut, StaScenarioDefinitionOut, StaScenarioSetIn
 from .projects import get_project_or_404
 
 router = APIRouter(tags=["sta-matrix"])
 MAX_MATCHING_RUNS = 1000
+
+
+@router.get("/projects/{project_id}/sta-scenarios/{stage}", response_model=list[StaScenarioDefinitionOut])
+def list_sta_scenarios(project_id: int, stage: Stage, db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    return db.scalars(select(StaScenarioDefinition).where(
+        StaScenarioDefinition.project_id == project_id,
+        StaScenarioDefinition.stage == stage,
+    ).order_by(StaScenarioDefinition.name)).all()
+
+
+@router.put("/projects/{project_id}/sta-scenarios/{stage}", response_model=list[StaScenarioDefinitionOut])
+def replace_sta_scenarios(
+    project_id: int, stage: Stage, payload: StaScenarioSetIn, db: Session = Depends(get_db),
+):
+    get_project_or_404(project_id, db)
+    db.execute(delete(StaScenarioDefinition).where(
+        StaScenarioDefinition.project_id == project_id,
+        StaScenarioDefinition.stage == stage,
+    ))
+    rows = [StaScenarioDefinition(project_id=project_id, stage=stage,
+        name=item.name, require_spef=item.require_spef) for item in payload.scenarios]
+    db.add_all(rows)
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return sorted(rows, key=lambda row: row.name.casefold())
 
 
 def _nonnegative_integer(metrics: dict, name: str) -> int:
@@ -69,15 +96,42 @@ def sta_matrix(
                 source_sha256=row.source_sha256, metrics=row.metrics or {}, created_at=row.created_at,
             )
 
-    scenarios = sorted(latest.values(), key=lambda item: item["scenario"].casefold())
+    definitions = db.scalars(select(StaScenarioDefinition).where(
+        StaScenarioDefinition.project_id == project_id,
+        StaScenarioDefinition.stage == stage,
+    )).all()
+    expected = {row.name: row for row in definitions}
+    scenarios = []
+    for name in expected.keys() | latest.keys():
+        definition = expected.get(name)
+        item = latest.get(name)
+        if item is None:
+            scenarios.append(dict(scenario=name, expected=True,
+                require_spef=definition.require_spef, coverage_state="missing",
+                run_id=None, run_count=0, status=None, tool=None, tool_version=None,
+                parasitics=None, source_sha256=None, metrics={}, created_at=None))
+            continue
+        item["expected"] = definition is not None
+        item["require_spef"] = definition.require_spef if definition else False
+        item["coverage_state"] = ("parasitics_missing" if definition and definition.require_spef
+                                  and item["parasitics"] != "spef" else
+                                  "recorded" if definition else "unplanned")
+        scenarios.append(item)
+    scenarios.sort(key=lambda item: item["scenario"].casefold())
     for item in scenarios:
-        item["run_count"] = counts[item["scenario"]]
+        item["run_count"] = counts.get(item["scenario"], 0)
     slacks = [_finite_number(item["metrics"], "worst_reported_slack_ps") for item in scenarios]
     slacks = [value for value in slacks if value is not None]
     return {
         "project_id": project_id, "stage": stage, "design_revision": revision,
         "summary": {
             "scenario_count": len(scenarios),
+            "expected_scenario_count": len(expected),
+            "recorded_expected_scenarios": sum(item["expected"] and item["run_id"] is not None for item in scenarios),
+            "missing_scenarios": sum(item["coverage_state"] == "missing" for item in scenarios),
+            "unexpected_scenarios": sum(item["coverage_state"] == "unplanned" for item in scenarios),
+            "parasitic_requirement_gaps": sum(item["coverage_state"] == "parasitics_missing" for item in scenarios),
+            "scenario_coverage_complete": bool(expected) and all(item["coverage_state"] == "recorded" for item in scenarios if item["expected"]),
             "failed_scenarios": sum(item["status"] == RunStatus.failed for item in scenarios),
             "incomplete_scenarios": sum(item["status"] in {RunStatus.running, RunStatus.incomplete} for item in scenarios),
             "spef_scenarios": sum(item["parasitics"] == "spef" for item in scenarios),
@@ -86,5 +140,5 @@ def sta_matrix(
         },
         "scenarios": scenarios,
         "coverage": "reported_paths_only",
-        "coverage_note": "Latest captured OpenSTA execution per recorded scenario. Counts and worst slack cover reported path samples only; this does not establish the expected scenario set or full sign-off coverage.",
+        "coverage_note": "Scenario coverage compares the configured expected set with the latest captured OpenSTA execution. Counts and worst slack cover reported path samples only and do not establish full timing sign-off coverage.",
     }
