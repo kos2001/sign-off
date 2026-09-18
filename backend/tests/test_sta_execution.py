@@ -110,6 +110,7 @@ def test_batch_stream_records_independent_runs_and_continues_after_failure(clien
     assert events[4] == {'event': 'scenario_error', 'index': 1,
                         'scenario': 'broken', 'detail': 'constraint failure'}
     final = events[-1]
+    assert isinstance(events[0]['batch_id'], int) and final['batch_id'] == events[0]['batch_id']
     assert [item['scenario'] for item in final['completed']] == ['slow-rc', 'fast']
     assert final['failed'] == [{'scenario': 'broken', 'detail': 'constraint failure'}]
     assert calls == [('lib-slow', 'slow-sdc', '*SPEF'), ('lib-broken', 'fail', None),
@@ -119,6 +120,22 @@ def test_batch_stream_records_independent_runs_and_continues_after_failure(clien
     evidence = [client.get(f"/runs/{run['id']}/evidence").json() for run in runs]
     assert {row['result']['metadata']['scenario'] for row in evidence} == {'slow-rc', 'fast'}
     assert {row['design_revision'] for row in evidence} == {'batch-rev'}
+    history = client.get(f'/projects/{pid}/sta-batches').json()
+    assert history['next_before_id'] is None and len(history['items']) == 1
+    batch = history['items'][0]
+    assert batch['id'] == events[0]['batch_id'] and batch['status'] == 'partial'
+    assert batch['submitted_by'] == 'local' and batch['finished_at']
+    assert [(item['scenario'], item['status'], item['run_id']) for item in batch['items']] == [
+        ('slow-rc', 'completed', final['completed'][0]['run_id']),
+        ('broken', 'failed', None),
+        ('fast', 'completed', final['completed'][1]['run_id']),
+    ]
+    detail = client.get(f"/projects/{pid}/sta-batches/{batch['id']}")
+    assert detail.status_code == 200 and detail.json() == batch
+
+    other = project(client)
+    assert client.get(f"/projects/{other}/sta-batches/{batch['id']}").status_code == 404
+    assert client.get(f'/projects/{pid}/sta-batches/not-a-number').status_code == 422
 
 
 def test_batch_rejects_duplicate_scenarios_before_worker(client, monkeypatch):
@@ -130,6 +147,28 @@ def test_batch_rejects_duplicate_scenarios_before_worker(client, monkeypatch):
                 {'scenario': ' slow ', 'liberty': 'lib', 'sdc': 'sdc'},
             ]}
     assert client.post('/analysis/sta-signoff/batch/stream', json=body).status_code == 422
+
+
+def test_batch_cancellation_marks_unfinished_items_terminal(client):
+    from app.db import SessionLocal
+    from app.models import StaBatchExecution, StaBatchExecutionItem, Stage
+    from app.routers.analysis import _finish_sta_batch
+    pid = project(client)
+    with SessionLocal() as db:
+        batch = StaBatchExecution(project_id=pid, stage=Stage.routing, top_module='top',
+            design_revision='cancelled', submitted_by='local', status='running', items=[
+                StaBatchExecutionItem(position=0, scenario='done', status='completed'),
+                StaBatchExecutionItem(position=1, scenario='active', status='running'),
+                StaBatchExecutionItem(position=2, scenario='waiting', status='pending'),
+            ])
+        db.add(batch)
+        db.commit()
+        batch_id = batch.id
+    _finish_sta_batch(batch_id, 'cancelled')
+    result = client.get(f'/projects/{pid}/sta-batches/{batch_id}').json()
+    assert result['status'] == 'cancelled' and result['finished_at']
+    assert [item['status'] for item in result['items']] == ['completed', 'cancelled', 'cancelled']
+    assert result['items'][1]['detail'] == 'Batch request was cancelled.'
 
 
 def test_spef_is_recorded_as_verified_optional_artifact(client, monkeypatch):

@@ -274,3 +274,37 @@ class RunAgentReview(Base):
     model_alias: Mapped[str] = mapped_column(String(200))
     outcome: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class StaBatchExecution(Base):
+    __tablename__ = 'sta_batch_executions'
+    __table_args__ = (Index('ix_sta_batch_executions_project_id_id', 'project_id', 'id'),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('projects.id'))
+    stage: Mapped[Stage] = mapped_column(Enum(Stage))
+    top_module: Mapped[str] = mapped_column(String(120))
+    design_revision: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(20), default='running')
+    submitted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    submitted_by: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    items: Mapped[list['StaBatchExecutionItem']] = relationship(
+        back_populates='batch', cascade='all, delete-orphan', order_by='StaBatchExecutionItem.position'
+    )
+
+
+class StaBatchExecutionItem(Base):
+    __tablename__ = 'sta_batch_execution_items'
+    __table_args__ = (UniqueConstraint('batch_id', 'position'),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey('sta_batch_executions.id'), index=True)
+    position: Mapped[int]
+    scenario: Mapped[str] = mapped_column(String(160))
+    require_spef: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[str] = mapped_column(String(20), default='pending')
+    run_id: Mapped[int | None] = mapped_column(ForeignKey('signoff_runs.id'), nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    batch: Mapped[StaBatchExecution] = relationship(back_populates='items')
