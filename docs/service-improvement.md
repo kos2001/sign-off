@@ -999,8 +999,15 @@ STA/PV/EMIR/전력/열/RTL 보고서를 서버와 같은 파서로 검증하고,
 
 인증 필수 배포의 자동 수집기가 브라우저 쿠키·CSRF 없이 상용 보고서를 저장하도록 만료형 Bearer
 자격증명을 추가했다. 평문은 발급 시 한 번만 반환하고 DB에는 SHA-256만 저장한다. 지정 프로젝트의
-아홉 상용 저장 POST만 허용하며 미리보기·조회·검토·승인, 타 프로젝트, 만료·폐기 토큰과 쿠키
+열 개 상용 저장 POST만 허용하며 미리보기·조회·검토·승인, 타 프로젝트, 만료·폐기 토큰과 쿠키
 혼합을 거부한다. evidence에는 토큰 대신 자격증명 ID와 이름을 보존한다.
+
+### 2026-09-19 · TestMAX / Tessent / Modus DFT 사인오프
+
+scan chain과 DFT rule 집계, fault model별 검출·untestable·aborted fault, ATPG coverage와 pattern 수를
+검증하는 `signoff/commercial-dft/v1` 계약을 추가했다. 원본·위반·finding 탐색·수집기 인증에 연결하고
+DFT를 synthesis/final의 독립 필수 도메인으로 지정했다. 전체 DFT insertion·scan·rule·fault model·ATPG·
+fault simulation·coverage·pattern 범위를 서명한 깨끗한 결과만 게이트를 열며 AI는 판정에 개입하지 않는다.
 
 ### 2026-09-19 · Formality / Conformal 논리 등가성 사인오프
 

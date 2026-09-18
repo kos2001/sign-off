@@ -10,14 +10,15 @@
 - 외부 툴 이름을 입력하거나 위반을 웨이버 처리해도 검증 범위가 증명되지는 않는다.
 - RTL은 보관된 ladder 필수 단계 통과 또는 등록 수집기가 증명한 VCS/Xcelium 전체 회귀 범위를 확인한다.
 - OpenSTA 및 서명 없는 상용 경로 보고서는 전체 STA 범위를 증명하지 않으므로 게이트를 열지 않는다.
-- 서버에 등록된 수집기의 유효한 HMAC 증명이 프로젝트·스테이지·리비전·원본과 전체 STA/CDC·RDC/DRC/LVS/LEC/EM·IR/전력/열
+- 서버에 등록된 수집기의 유효한 HMAC 증명이 프로젝트·스테이지·리비전·원본과 전체 STA/CDC·RDC/DRC/LVS/LEC/DFT/EM·IR/전력/열
   실행 범위를 결합하고 결과가 통과했을 때만 해당 상용 런을 준비 완료로 인정한다.
-- 서명 없는 STA/CDC·RDC/DRC/LVS/LEC/EM·IR/전력/열/RTL 회귀의 상용 보고서 가져오기는 보고서에 담긴
+- 서명 없는 STA/CDC·RDC/DRC/LVS/LEC/DFT/EM·IR/전력/열/RTL 회귀의 상용 보고서 가져오기는 보고서에 담긴
   범위만 보존한다. 완전한 툴 실행 범위를 증명하지 않으므로 단독으로 게이트를 열지 않는다.
 - routing은 STA·DRC·LVS·EM/IR을, final은 여기에 전력·열을 더해 요구한다. LVS는 DRC와 별도
   도메인이므로 한 결과가 다른 검증을 대신하지 않는다.
 - synthesis와 final은 Formality/Conformal LEC를 독립적으로 요구해 합성 또는 ECO 이후 논리
-  등가성을 확인한다.
+  등가성을 확인한다. synthesis와 final은 scan chain·DFT rule·ATPG fault coverage를 검증한
+  TestMAX/Tessent/Modus DFT 근거도 독립적으로 요구한다.
 - RTL 게이트는 회귀와 STA 외에 VC SpyGlass/Jasper의 독립 CDC·RDC 근거를 요구한다. 내장 RTL
   휴리스틱의 결과가 상용 전체 crossing 분석 범위를 대신하지 않는다.
 
