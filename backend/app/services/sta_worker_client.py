@@ -121,9 +121,12 @@ def bounded_worker(command, payload, name, cancel=None):
         remove_container(name)
 
 
-def run_sta(netlist, liberty, sdc, top_module, *, cancel=None):
+def run_sta(netlist, liberty, sdc, top_module, spef=None, *, cancel=None):
     cancel = cancel if cancel is not None else threading.Event()
-    request = {'protocol': PROTOCOL, 'request': {'netlist': netlist, 'liberty': liberty, 'sdc': sdc, 'top_module': top_module}}
+    body = {'netlist': netlist, 'liberty': liberty, 'sdc': sdc, 'top_module': top_module}
+    if spef is not None:
+        body['spef'] = spef
+    request = {'protocol': PROTOCOL, 'request': body}
     payload = json.dumps(request, ensure_ascii=False).encode()
     if len(payload) > MAX_INPUT_BYTES:
         raise StaWorkerError('STA worker input limit exceeded.')

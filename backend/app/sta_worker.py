@@ -8,13 +8,29 @@ import sys
 import tempfile
 
 PROTOCOL = 'signoff/sta-worker/v1'
-MAX_INPUT_BYTES = 8 * 1024 * 1024
+MAX_INPUT_BYTES = 16 * 1024 * 1024
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 OPENSTA_COMMIT = 'd97587f669b4f169be7132346df70e7d634500c3'
 
 
 def digest(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def sta_commands(paths, top, report):
+    commands = [
+        'foreach cmd {exec socket load} { if {[llength [info commands $cmd]]} { rename $cmd {} } }',
+        f'read_liberty {{{paths["liberty"]}}}',
+        f'read_verilog {{{paths["netlist"]}}}',
+        f'link_design {{{top}}}',
+    ]
+    if 'spef' in paths:
+        commands.append(f'read_spef {{{paths["spef"]}}}')
+    commands += [
+        f'read_sdc {{{paths["sdc"]}}}',
+        f'report_checks -unconstrained -group_path_count 100 -endpoint_path_count 10 -format json > {{{report}}}',
+    ]
+    return commands
 
 
 def main():
@@ -26,12 +42,15 @@ def main():
         if set(envelope) != {'protocol', 'request'} or envelope['protocol'] != PROTOCOL:
             raise ValueError()
         request = envelope['request']
-        if set(request) != {'netlist', 'liberty', 'sdc', 'top_module'}:
+        if set(request) not in ({'netlist', 'liberty', 'sdc', 'top_module'},
+                                {'netlist', 'liberty', 'sdc', 'spef', 'top_module'}):
             raise ValueError()
         top = request['top_module']
         if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_$]*', top):
             raise ValueError()
         limits = {'netlist': 1_000_000, 'liberty': 5_000_000, 'sdc': 500_000}
+        if 'spef' in request:
+            limits['spef'] = 8_000_000
         if any(not isinstance(request[key], str) or not request[key].strip() or
                len(request[key].encode()) > limits[key] for key in limits):
             raise ValueError()
@@ -40,7 +59,8 @@ def main():
         return 2
 
     with tempfile.TemporaryDirectory() as directory:
-        paths = {key: os.path.join(directory, {'netlist': 'design.v', 'liberty': 'library.lib', 'sdc': 'constraints.sdc'}[key]) for key in limits}
+        filenames = {'netlist': 'design.v', 'liberty': 'library.lib', 'sdc': 'constraints.sdc', 'spef': 'parasitics.spef'}
+        paths = {key: os.path.join(directory, filenames[key]) for key in limits}
         for key, path in paths.items():
             with open(path, 'w', encoding='utf-8') as stream:
                 stream.write(request[key])
@@ -48,14 +68,7 @@ def main():
         script = os.path.join(directory, 'run.tcl')
         # Disable general-purpose Tcl access before the user-supplied SDC is read.
         # OpenSTA's own read_* commands continue to use fixed worker paths.
-        commands = [
-            'foreach cmd {exec socket load} { if {[llength [info commands $cmd]]} { rename $cmd {} } }',
-            f'read_liberty {{{paths["liberty"]}}}',
-            f'read_verilog {{{paths["netlist"]}}}',
-            f'link_design {{{top}}}',
-            f'read_sdc {{{paths["sdc"]}}}',
-            f'report_checks -unconstrained -group_path_count 100 -endpoint_path_count 10 -format json > {{{report}}}',
-        ]
+        commands = sta_commands(paths, top, report)
         with open(script, 'w', encoding='utf-8') as stream:
             stream.write('\n'.join(commands) + '\n')
         try:

@@ -32,9 +32,9 @@ export interface RunEvidence {
   source_sha256: string | null;
   design_revision: string | null;
   result: Partial<RtlSignoffResult> & Partial<ReportPreview> & Partial<KLayoutPreview> & {
-    metadata?: { filename: string; tool_version: string; scenario: string };
+    metadata?: { filename: string; tool_version: string; scenario: string; parasitics?: 'spef' | 'none' };
     submitted_by?: { user_id: number; username: string } | null;
-    input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc', { sha256: string; byte_length: number }>>;
+    input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc' | 'spef', { sha256: string; byte_length: number }>>;
   };
   created_at: string;
 }
@@ -458,7 +458,7 @@ export const api = {
   runStructure: (runId: number) => request<DesignStructure>(`/runs/${runId}/evidence/structure`),
   runNetlist: (runId: number) => request<Blob>(`/runs/${runId}/evidence/netlist`, undefined, 'blob'),
   runSource: (runId: number) => request<Blob>(`/runs/${runId}/evidence/source`, undefined, 'blob'),
-  runArtifact: (runId: number, kind: 'netlist' | 'liberty' | 'sdc') => request<Blob>(`/runs/${runId}/evidence/artifacts/${kind}`, undefined, 'blob'),
+  runArtifact: (runId: number, kind: 'netlist' | 'liberty' | 'sdc' | 'spef') => request<Blob>(`/runs/${runId}/evidence/artifacts/${kind}`, undefined, 'blob'),
   runEvidence: (runId: number) => request<RunEvidence>(`/runs/${runId}/evidence`),
   compareRuns: (projectId: number, baseline: number, candidate: number, kind: string, offset: number) =>
     request<RunComparison>(`/projects/${projectId}/run-comparison?${new URLSearchParams({
@@ -624,12 +624,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   staSignoff: (payload: { project_id: number; stage: Stage; top_module: string; design_revision: string;
-    scenario: string; netlist: string; liberty: string; sdc: string }) =>
+    scenario: string; netlist: string; liberty: string; sdc: string; spef?: string }) =>
     request<StaExecutionResult>("/analysis/sta-signoff", {
       method: "POST", body: JSON.stringify(payload),
     }),
   staSignoffStream: async (payload: { project_id: number; stage: Stage; top_module: string; design_revision: string;
-    scenario: string; netlist: string; liberty: string; sdc: string }, onEvent: (event: StaStreamEvent) => void) => {
+    scenario: string; netlist: string; liberty: string; sdc: string; spef?: string }, onEvent: (event: StaStreamEvent) => void) => {
     const res = await fetch('/api/analysis/sta-signoff/stream', { method: 'POST', headers: requestHeaders(), body: JSON.stringify(payload) });
     if (res.status === 401) sessionExpired();
     if (!res.ok || !res.body) {

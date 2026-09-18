@@ -34,6 +34,7 @@ REVIEW_GUIDANCE = """Sign-off Hub 검토 규약:
 입력에 없는 수치·엔드포인트·근본 원인은 만들지 않는다. 원인 가설은 추정으로 표시하고
 확인할 데이터나 재검증 방법을 제시한다. 미실행·누락·실패·위반을 구별한다.
 스크리닝 통과, reported_paths_only, 수동 등록 결과는 전체 사인오프 증명이 아니다.
+OpenSTA metadata.parasitics=none이면 SPEF 미제공이며 post-route RC 타이밍으로 표현하지 않는다.
 CONDITIONAL은 통과가 아니며 waived는 fixed가 아니다. 게이트의 stage, ready, reason과
 evidence_source를 존중한다. 과거/다른 스테이지 결과로 현재 차단을 해제하지 않는다.
 revision_check의 누락·불일치는 차단 근거다. 리비전 이름이 같아도 실제 입력의 동일성이나 전체 검증 범위가 증명된 것은 아니다.

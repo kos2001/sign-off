@@ -30,7 +30,7 @@ Stages: `rtl`, `synthesis`, `placement`, `routing`, `final`. Use the gate respon
 
 ## Analyses and writes
 
-For an explicitly requested analysis, inspect the request schema before calling `/analysis/rtl-signoff`, `/analysis/ir-drop`, `/analysis/glitch-power` or `/analysis/timing-summary`. Omit `project_id` for a no-save RTL check; including it persists a run. Explain screening limits using `sign-off-evidence-review`. Do not execute submitted RTL merely to answer a status question.
+For an explicitly requested analysis, inspect the request schema before calling `/analysis/rtl-signoff`, `/analysis/sta-signoff`, `/analysis/ir-drop`, `/analysis/glitch-power` or `/analysis/timing-summary`. Omit `project_id` for a no-save RTL check; including it persists a run. OpenSTA execution always requires a project and persists a run; optional SPEF materially changes delay evidence and is recorded in `metadata.parasitics`. Explain screening and coverage limits using `sign-off-evidence-review`. Do not execute submitted RTL or STA inputs merely to answer a status question.
 
 For an authorized violation update, read the current `status` and `version`, then send `expected_status`, `expected_version`, target `status`, `actor`, and `reason` to `PATCH /violations/{id}`. A waiver can also use `POST /violations/{id}/waiver` with `expected_version`, `approved_by`, and `reason`. Actual roles and attribution are enforced by the server. On 409, show the changed record and reassess; do not blindly retry against a newer version.
 
