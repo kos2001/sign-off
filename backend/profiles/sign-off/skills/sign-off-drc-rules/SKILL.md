@@ -39,7 +39,7 @@ description: "Reference for the Sign-off Hub RTL ladder's DRC-XXX rule codes and
 
 | 스테이지 | 필수 도메인 |
 |---|---|
-| rtl | rtl(RTL 품질), sta |
+| rtl | rtl(RTL 품질), cdc(CDC/RDC), sta |
 | synthesis | sta, glitch_power, lec |
 | placement | sta, emir, pv |
 | routing | sta, emir, pv, lvs |

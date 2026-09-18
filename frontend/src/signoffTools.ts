@@ -15,6 +15,10 @@ export const SIGNOFF_TOOLS: Record<Domain, readonly SignoffToolOption[]> = {
     { value: 'Synopsys VCS', label: 'Synopsys VCS', description: '상용 RTL 시뮬레이션 결과의 출처를 기록합니다.', workflow: '검증된 상용 RTL 회귀 JSON 가져오기를 지원합니다.' },
     { value: 'Cadence Xcelium', label: 'Cadence Xcelium', description: '상용 RTL 시뮬레이션 결과의 출처를 기록합니다.', workflow: '검증된 상용 RTL 회귀 JSON 가져오기를 지원합니다.' },
   ],
+  cdc: [
+    { value: 'Synopsys VC SpyGlass CDC/RDC', label: 'Synopsys VC SpyGlass CDC/RDC · 추천', description: 'Clock/reset domain crossing의 구조·기능·제약 문제를 정적 검증합니다.', workflow: '검증된 상용 CDC/RDC 결과 JSON 가져오기를 지원합니다.' },
+    { value: 'Cadence Jasper CDC', label: 'Cadence Jasper CDC', description: 'CDC와 RDC crossing 및 protocol 문제를 검증합니다.', workflow: '검증된 상용 CDC/RDC 결과 JSON 가져오기를 지원합니다.' },
+  ],
   sta: [
     { value: 'OpenSTA', label: 'OpenSTA · 추천', description: '정적 타이밍 경로와 슬랙을 검토할 때 적합합니다.', workflow: 'OpenSTA JSON 보고서 가져오기를 지원합니다.' },
     { value: 'Synopsys PrimeTime', label: 'Synopsys PrimeTime', description: '상용 정적 타이밍 분석 결과의 출처를 기록합니다.', workflow: '검증된 상용 STA 경로 JSON 가져오기를 지원합니다.' },
