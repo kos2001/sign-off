@@ -32,6 +32,15 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   });
+  const artifactDownload = useMutation({
+    mutationFn: (target: { runId: number; kind: 'netlist' | 'liberty' | 'sdc'; extension: string }) => api.runArtifact(target.runId, target.kind),
+    onSuccess: (blob, target) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = `run-${target.runId}-${target.kind}.${target.extension}`; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  });
   function download() {
     if (!evidence.data) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify(evidence.data, null, 2)], { type: "application/json" }));
@@ -70,6 +79,7 @@ export function RunEvidencePanel({ run }: { run: SignoffRun }) {
           <p>업로드: {evidence.data.result.submitted_by?.username ?? "로컬 모드 · 인증 없음"}</p>
           <p>보고된 경로 {evidence.data.result.metrics?.reported_paths}개 · 위반 {evidence.data.result.metrics?.violating_paths}개 · 제약 없는 경로 {evidence.data.result.metrics?.unconstrained_paths}개</p>
           {run.evidence_source === 'opensta_execution' ? <><p className="break-all">서버 실행: 격리 컨테이너 · 이미지 {evidence.data.result.execution?.image_id} · OpenSTA {evidence.data.result.execution?.opensta_commit}</p><p>이 런 생성에는 AI가 개입하지 않았습니다. 저장된 입력으로 서버가 OpenSTA를 실행했습니다. 경로 표본만 생성하므로 이 결과만으로 전체 STA 게이트를 통과하지 않습니다.</p></> : <p>외부에서 제출된 경로 보고서입니다. 전체 STA 검증 범위와 툴 실행의 진위는 확인되지 않았습니다. 위반 처리 후에도 이 보고서만으로 게이트를 통과하지 않습니다.</p>}
+          {run.evidence_source === 'opensta_execution' && <section className="space-y-2" aria-label="OpenSTA 입력 아티팩트"><h4 className="font-semibold">실행 입력 아티팩트</h4><p>대형 입력 원문은 근거 메타데이터와 분리해 저장하며, 다운로드할 때 SHA-256과 바이트 길이를 다시 확인합니다.</p><ul className="space-y-2">{(['netlist', 'liberty', 'sdc'] as const).map(kind => { const item = evidence.data.result.input_artifacts?.[kind]; const label = { netlist: '게이트 넷리스트', liberty: 'Liberty 라이브러리', sdc: 'SDC 제약' }[kind]; const extension = { netlist: 'v', liberty: 'lib', sdc: 'sdc' }[kind]; return <li key={kind} className="rounded-lg bg-[var(--surface-2)] p-2"><p><strong>{label}</strong> · {item?.byte_length?.toLocaleString() ?? '알 수 없음'} bytes</p><p className="break-all">SHA-256: {item?.sha256 ?? '이전 실행 · 메타데이터 없음'}</p><button className="btn btn-ghost mt-1" disabled={artifactDownload.isPending} onClick={() => artifactDownload.mutate({ runId: run.id, kind, extension })}>{artifactDownload.isPending && artifactDownload.variables?.kind === kind ? '확인 중…' : '원본 다운로드'}</button></li>; })}</ul>{artifactDownload.isError && <p role="alert">{artifactDownload.error.message}</p>}</section>}
           <p className="break-all">원본 SHA-256: {evidence.data.source_sha256}</p>
           <button className="btn btn-ghost" onClick={download}>근거 JSON 다운로드</button>
           <details><summary className="cursor-pointer font-semibold">원본 보고서</summary><pre tabIndex={0} aria-label="OpenSTA 원본 보고서" className="mt-2 max-h-80 overflow-auto rounded-lg bg-[var(--surface-2)] p-3">{evidence.data.source_text}</pre></details>
