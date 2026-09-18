@@ -76,6 +76,7 @@ export default function RunWorkspace() {
         {(item.evidence_source === 'klayout_report' || item.evidence_source === 'commercial_drc_report') && <Link className="btn btn-primary" to={`/runs/${item.id}/markers`}>DRC 마커 탐색</Link>}
         {item.evidence_source === 'commercial_emir_report' && <Link className="btn btn-primary" to={`/runs/${item.id}/power-integrity`}>EM/IR 핫스폿 탐색</Link>}
         {item.evidence_source === 'commercial_power_report' && <Link className="btn btn-primary" to={`/runs/${item.id}/power-breakdown`}>전력 계층 탐색</Link>}
+        {item.evidence_source === 'commercial_thermal_report' && <Link className="btn btn-primary" to={`/runs/${item.id}/thermal-hotspots`}>열 핫스폿 탐색</Link>}
         {item.evidence_source === 'rtl_ladder' && <Link className="btn btn-primary" to={`/runs/${item.id}/structure`}>합성 구조 탐색</Link>}
         <Link className="btn btn-ghost" to={`/projects/${item.project_id}/compare?candidate=${item.id}`}>다른 런과 비교</Link>
       </div>
