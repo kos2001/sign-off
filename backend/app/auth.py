@@ -111,6 +111,33 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
     if not required:
         for key in {'project_id', 'run_id', 'violation_id', 'review_id', 'release_id', 'batch_id', 'user_id'} & request.path_params.keys():
             database_id(request.path_params[key], key)
+        project_id = request.path_params.get('project_id')
+        if 'run_id' in request.path_params:
+            run = db.get(SignoffRun, int(request.path_params['run_id']))
+            if not run:
+                raise HTTPException(404, 'run not found')
+            project_id = run.project_id
+        if 'violation_id' in request.path_params:
+            violation = db.get(Violation, int(request.path_params['violation_id']))
+            if not violation:
+                raise HTTPException(404, 'violation not found')
+            project_id = violation.run.project_id
+        if project_id is not None:
+            project = db.get(Project, int(project_id))
+            if project is None:
+                raise HTTPException(404, 'project not found')
+            path = request.scope['route'].path
+            if project.archived_at is not None and request.method not in {'GET', 'HEAD', 'OPTIONS'} \
+                    and path != '/projects/{project_id}/lifecycle':
+                raise HTTPException(409, 'archived projects are read-only')
+        elif request.method not in {'GET', 'HEAD', 'OPTIONS'} and request.scope['route'].path.startswith('/analysis/'):
+            body = await object_body(request)
+            if body.get('project_id') is not None:
+                project = db.get(Project, database_id(body['project_id'], 'project_id', allow_text=False))
+                if project is None:
+                    raise HTTPException(404, 'project not found')
+                if project.archived_at is not None:
+                    raise HTTPException(409, 'archived projects are read-only')
         return
     authorization = request.headers.get('Authorization')
     if authorization is not None:
@@ -145,6 +172,11 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
         project_id = database_id(request.path_params.get('project_id'), 'project_id')
         if credential is None or credential.project_id != project_id:
             raise HTTPException(401, 'invalid collector credential')
+        project = db.get(Project, project_id)
+        if project is None:
+            raise HTTPException(404, 'project not found')
+        if project.archived_at is not None and request.method == 'POST':
+            raise HTTPException(409, 'archived projects are read-only')
         if request.method == 'POST':
             body = await object_body(request)
             if not isinstance(body.get('coverage_attestation'), dict):
@@ -181,8 +213,15 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
             require_project(db, project_id, 'approver' if approval else 'editor')
             return
     if project_id is not None:
+        project = db.get(Project, int(project_id))
+        if project is None:
+            raise HTTPException(404, 'project not found')
+        if project.archived_at is not None and request.method not in {'GET', 'HEAD', 'OPTIONS'} \
+                and path != '/projects/{project_id}/lifecycle':
+            raise HTTPException(409, 'archived projects are read-only')
         administration = '/members' in path or '/collectors' in path
-        require_project(db, int(project_id), 'owner' if administration else 'viewer' if request.method == 'GET' else 'editor')
+        lifecycle = '/lifecycle' in path
+        require_project(db, int(project_id), 'owner' if administration or lifecycle else 'viewer' if request.method == 'GET' else 'editor')
         return
     if path in {'/projects', '/projects/summary', '/projects/summary/page'}:
         return  # Listings are filtered, and the creator becomes owner.
@@ -190,6 +229,11 @@ async def authorize(request: Request, db: Session = Depends(get_db)):
         body = await object_body(request)
         if isinstance(body, dict) and body.get('project_id') is not None:
             pid = database_id(body['project_id'], 'project_id', allow_text=False)
+            project = db.get(Project, pid)
+            if project is None:
+                raise HTTPException(404, 'project not found')
+            if project.archived_at is not None and request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+                raise HTTPException(409, 'archived projects are read-only')
             require_project(db, pid, 'editor')
         return
     if path.startswith('/agents/'):

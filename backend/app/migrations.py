@@ -42,6 +42,15 @@ def initialize_schema(engine):
                 if column not in columns:
                     connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER REFERENCES users(id)"))
             timestamp_type = "TIMESTAMP WITH TIME ZONE" if engine.dialect.name == "postgresql" else "DATETIME"
+            project_columns = {item['name'] for item in inspect(connection).get_columns('projects')}
+            for column, definition in {
+                'lifecycle_version': 'INTEGER NOT NULL DEFAULT 1',
+                'archived_at': timestamp_type,
+                'archived_by': 'VARCHAR(80)',
+                'archived_by_user_id': 'INTEGER REFERENCES users(id)',
+            }.items():
+                if column not in project_columns:
+                    connection.execute(text(f'ALTER TABLE projects ADD COLUMN {column} {definition}'))
             for table, columns in {
                 "waivers": {"design_revision": "VARCHAR(160)", "expires_at": timestamp_type},
                 "violation_events": {"waiver_design_revision": "VARCHAR(160)", "waiver_expires_at": timestamp_type},

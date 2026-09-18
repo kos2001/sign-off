@@ -37,6 +37,8 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `POST/GET /projects` — 프로젝트(칩) 등록: 이름, 공정 노드, 파운드리
 - `GET /projects/summary` — 접근 가능한 프로젝트와 전체 런 상태 집계를 한 번에 조회하는 대시보드 전용 요약
 - `GET /projects/summary/page` — 프로젝트 검색·정렬·페이지와 필터 범위의 전체 프로젝트·파운드리·런 상태 집계
+- `PUT /projects/{id}/lifecycle` — 소유자 전용 프로젝트 보관·복원. 실행 중 작업과 버전 경합을 거부하고 사유·처리자를 이력에 기록
+- `GET /projects/{id}/lifecycle/history` — 소유자 전용 보관·복원 감사 이력
 - `POST /projects/{id}/runs` — 사인오프 런 생성 (`domain`, `stage`, `tool`, `metrics`)
 - `GET /projects/{id}/runs/page` — 필터 범위의 상태별 전체 집계와 최신순 커서 페이지 (`before_id`, `limit`, `domain`, `stage`, `status`, `q` 툴 이름); 운영 UI 기본 경로
 - `PATCH /runs/{id}` — 런 상태 갱신 (`running`/`passed`/`failed`/`incomplete`)

@@ -61,10 +61,28 @@ class Project(Base):
     process_node: Mapped[str] = mapped_column(String(40))
     foundry: Mapped[str] = mapped_column(String(60))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    lifecycle_version: Mapped[int] = mapped_column(default=1)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    archived_by_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
 
     runs: Mapped[list["SignoffRun"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
+
+
+class ProjectLifecycleEvent(Base):
+    __tablename__ = 'project_lifecycle_events'
+    __table_args__ = (Index('ix_project_lifecycle_events_project_id_id', 'project_id', 'id'),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey('projects.id'))
+    version: Mapped[int]
+    before_state: Mapped[str] = mapped_column(String(16))
+    after_state: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(Text)
+    actor: Mapped[str] = mapped_column(String(80))
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ProjectSignoffPlanRevision(Base):
