@@ -151,7 +151,7 @@ def test_commercial_sta_preview_import_paths_and_evidence(client):
 
 def test_trusted_sta_attestation_can_establish_gate_coverage(client, monkeypatch):
     secret = 'collector-secret-that-is-at-least-32-bytes'
-    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': secret}))
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': {'secret': secret, 'domains': ['sta']}}))
     pid = project(client)
     body = commercial_payload({**commercial_report(slack=0.1), 'paths': []})
     body['coverage_attestation'] = attest_sta(body, pid, secret)
@@ -184,7 +184,7 @@ def test_trusted_sta_attestation_can_establish_gate_coverage(client, monkeypatch
 @pytest.mark.parametrize('mutation', ['signature', 'source_sha256', 'claims', 'claim_type', 'expired', 'unknown_key'])
 def test_invalid_sta_attestation_never_promotes_coverage(client, monkeypatch, mutation):
     secret = 'collector-secret-that-is-at-least-32-bytes'
-    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': secret}))
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': {'secret': secret, 'domains': ['sta']}}))
     pid = project(client)
     body = commercial_payload({**commercial_report(slack=0.1), 'paths': []})
     attestation = attest_sta(body, pid, secret)
@@ -217,7 +217,7 @@ def test_attestation_requires_server_key_configuration(client):
 
 def test_attested_sta_findings_still_fail(client, monkeypatch):
     secret = 'collector-secret-that-is-at-least-32-bytes'
-    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': secret}))
+    monkeypatch.setenv('SIGNOFF_COVERAGE_HMAC_KEYS', json.dumps({'qa-collector-1': {'secret': secret, 'domains': ['sta']}}))
     pid = project(client)
     body = commercial_payload(commercial_report(slack=-0.025))
     body['coverage_attestation'] = attest_sta(body, pid, secret)

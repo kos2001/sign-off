@@ -116,7 +116,8 @@ export interface PowerIntegrityFinding {
 }
 export interface PowerIntegrityPreview {
   parser: string; tool: string; tool_version: string; coverage: string; coverage_note: string;
-  status: 'failed' | 'incomplete'; source_sha256: string;
+  status: 'passed' | 'failed' | 'incomplete'; source_sha256: string;
+  coverage_attestation?: CoverageAttestation;
   metrics: { reported_findings: number; violated_findings: number; static_ir_findings: number; dynamic_ir_findings: number; em_findings: number };
   items: PowerIntegrityFinding[];
 }

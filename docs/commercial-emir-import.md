@@ -66,7 +66,7 @@ EM/IR 핫스폿 화면은 분석 종류·측정 항목·제한 초과 여부로 
 표시합니다. 원본 값·제한·좌표·인스턴스·넷·레이어와 연결된 위반을 상세에서 확인합니다.
 위치 그림은 레이아웃 배경, 라우팅 형상, 전원망 또는 계층 변환을 포함하지 않습니다.
 
-이 계약은 제출된 결과만 증명합니다. 전체 rail·모드·벡터, 전원망 추출, 패키지 모델, 온도,
+커버리지 증명이 없는 이 계약은 제출된 결과만 증명합니다. 전체 rail·모드·벡터, 전원망 추출, 패키지 모델, 온도,
 활동도, EM 수명 모델, 분산 실행 완료나 라이선스 상태를 증명하지 않습니다. 결과가 없어도 런은
 `incomplete`이며 이 근거만으로 EM/IR 게이트를 통과하지 않습니다. 가져오기, 제한 비교,
 위반 생성과 탐색에는 AI가 개입하지 않습니다.
@@ -74,3 +74,14 @@ EM/IR 핫스폿 화면은 분석 종류·측정 항목·제한 초과 여부로 
 API는 `POST /projects/{id}/imports/commercial-emir/preview`,
 `POST /projects/{id}/imports/commercial-emir`, `GET /runs/{id}/power-integrity-findings`입니다.
 요청 본문과 UUID 기반 재시도 규약은 [OpenSTA 보고서 가져오기](report-import.md#api와-재시도)와 같습니다.
+
+## 신뢰된 수집기의 전체 범위 증명
+
+선택 필드 `coverage_attestation`에 서버 등록 키로 서명한 증명을 첨부할 수 있습니다. 증명은
+`domain: "emir"`와 `tool_run_completed`, `rail_coverage_complete`,
+`modes_corners_complete`, `activity_vectors_complete`, `extraction_complete`,
+`checks_complete`, `findings_complete`를 정확히 포함하고 모두 `true`여야 합니다.
+
+유효한 증명과 함께 제한 초과 finding이 0건인 경우에만 `passed`로 저장하고 EM/IR 게이트
+근거로 인정합니다. 제한 안의 finding은 원본 그대로 보존합니다. 공통 키·만료·정규화·서명
+규칙은 [수집기 커버리지 증명](coverage-attestation.md)을 참고하세요.
