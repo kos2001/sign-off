@@ -81,6 +81,57 @@ def test_stream_worker_failure_does_not_record_run(client, monkeypatch):
     assert client.get(f'/projects/{pid}/runs').json() == []
 
 
+def test_batch_stream_records_independent_runs_and_continues_after_failure(client, monkeypatch):
+    from app.services.sta_worker_client import StaWorkerError
+    pid = project(client)
+    calls = []
+
+    def execute(netlist, liberty, sdc, top_module, spef=None, **kwargs):
+        calls.append((liberty, sdc, spef))
+        if sdc == 'fail':
+            raise StaWorkerError('constraint failure')
+        return worker_result()
+
+    monkeypatch.setattr('app.routers.analysis.run_sta', execute)
+    body = {'project_id': pid, 'stage': 'routing', 'top_module': 'top',
+            'design_revision': 'batch-rev', 'netlist': 'module top; endmodule',
+            'scenarios': [
+                {'scenario': 'slow-rc', 'liberty': 'lib-slow', 'sdc': 'slow-sdc', 'spef': '*SPEF'},
+                {'scenario': 'broken', 'liberty': 'lib-broken', 'sdc': 'fail'},
+                {'scenario': 'fast', 'liberty': 'lib-fast', 'sdc': 'fast-sdc'},
+            ]}
+    response = client.post('/analysis/sta-signoff/batch/stream', json=body)
+    assert response.status_code == 200, response.text
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert [event['event'] for event in events] == [
+        'batch_start', 'scenario_start', 'scenario_done', 'scenario_start',
+        'scenario_error', 'scenario_start', 'scenario_done', 'batch_done',
+    ]
+    assert events[4] == {'event': 'scenario_error', 'index': 1,
+                        'scenario': 'broken', 'detail': 'constraint failure'}
+    final = events[-1]
+    assert [item['scenario'] for item in final['completed']] == ['slow-rc', 'fast']
+    assert final['failed'] == [{'scenario': 'broken', 'detail': 'constraint failure'}]
+    assert calls == [('lib-slow', 'slow-sdc', '*SPEF'), ('lib-broken', 'fail', None),
+                     ('lib-fast', 'fast-sdc', None)]
+    runs = client.get(f'/projects/{pid}/runs').json()
+    assert len(runs) == 2
+    evidence = [client.get(f"/runs/{run['id']}/evidence").json() for run in runs]
+    assert {row['result']['metadata']['scenario'] for row in evidence} == {'slow-rc', 'fast'}
+    assert {row['design_revision'] for row in evidence} == {'batch-rev'}
+
+
+def test_batch_rejects_duplicate_scenarios_before_worker(client, monkeypatch):
+    monkeypatch.setattr('app.routers.analysis.run_sta', lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    body = {'project_id': project(client), 'stage': 'routing', 'top_module': 'top',
+            'design_revision': 'batch-rev', 'netlist': 'module top; endmodule',
+            'scenarios': [
+                {'scenario': 'Slow', 'liberty': 'lib', 'sdc': 'sdc'},
+                {'scenario': ' slow ', 'liberty': 'lib', 'sdc': 'sdc'},
+            ]}
+    assert client.post('/analysis/sta-signoff/batch/stream', json=body).status_code == 422
+
+
 def test_spef_is_recorded_as_verified_optional_artifact(client, monkeypatch):
     pid = project(client)
     worker, parsed, image = worker_result()

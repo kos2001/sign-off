@@ -324,6 +324,53 @@ class StaSignoffRequest(BaseModel):
         return self
 
 
+class StaBatchScenario(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=False)
+
+    scenario: str = Field(min_length=1, max_length=160)
+    liberty: str = Field(min_length=1, max_length=5_000_000)
+    sdc: str = Field(min_length=1, max_length=500_000)
+    spef: str | None = Field(default=None, min_length=1, max_length=8_000_000)
+
+    @model_validator(mode='after')
+    def nonblank_scenario(self):
+        if not self.scenario.strip():
+            raise ValueError('scenario must not be blank')
+        if self.spef is not None and not self.spef.strip():
+            raise ValueError('spef must not be blank when supplied')
+        return self
+
+
+class StaBatchRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=False)
+
+    project_id: int = Field(strict=True, ge=1, le=2**63 - 1)
+    stage: Stage
+    top_module: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z_][A-Za-z0-9_$]*$")
+    design_revision: str = Field(min_length=1, max_length=160)
+    netlist: str = Field(min_length=1, max_length=1_000_000)
+    scenarios: list[StaBatchScenario] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode='after')
+    def valid_batch(self):
+        if not self.design_revision.strip():
+            raise ValueError('design_revision must not be blank')
+        names = [item.scenario.strip().casefold() for item in self.scenarios]
+        if len(names) != len(set(names)):
+            raise ValueError('scenario names must be unique ignoring case')
+        texts = [self.netlist]
+        for item in self.scenarios:
+            scenario_texts = [self.netlist, item.liberty, item.sdc]
+            if item.spef is not None:
+                scenario_texts.append(item.spef)
+            if sum(len(value.encode('utf-8')) for value in scenario_texts) > 15 * 1024 * 1024:
+                raise ValueError(f"scenario '{item.scenario.strip()}' input exceeds 15 MiB")
+            texts.extend(scenario_texts[1:])
+        if sum(len(value.encode('utf-8')) for value in texts) > 32 * 1024 * 1024:
+            raise ValueError('batch input exceeds 32 MiB')
+        return self
+
+
 class TimingCorner(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=160, examples=["ss_0p675v_125c"])
