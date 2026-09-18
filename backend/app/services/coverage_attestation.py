@@ -87,6 +87,12 @@ REQUIRED_DFT_CLAIMS = {
     'fault_simulation_complete', 'coverage_complete', 'pattern_validation_complete',
     'findings_complete',
 }
+REQUIRED_LOW_POWER_CLAIMS = {
+    'tool_run_completed', 'power_intent_complete', 'design_inputs_complete',
+    'libraries_complete', 'power_domains_complete', 'power_states_complete',
+    'structural_checks_complete', 'functional_checks_complete',
+    'pg_checks_complete', 'findings_complete',
+}
 REQUIRED_CLAIMS = {
     'sta': REQUIRED_STA_CLAIMS,
     'pv': REQUIRED_DRC_CLAIMS,
@@ -98,6 +104,7 @@ REQUIRED_CLAIMS = {
     'lec': REQUIRED_LEC_CLAIMS,
     'cdc': REQUIRED_CDC_CLAIMS,
     'dft': REQUIRED_DFT_CLAIMS,
+    'low_power': REQUIRED_LOW_POWER_CLAIMS,
 }
 
 
@@ -233,3 +240,7 @@ def verify_cdc_attestation(attestation, **context):
 
 def verify_dft_attestation(attestation, **context):
     return verify_attestation(attestation, domain='dft', **context)
+
+
+def verify_low_power_attestation(attestation, **context):
+    return verify_attestation(attestation, domain='low_power', **context)

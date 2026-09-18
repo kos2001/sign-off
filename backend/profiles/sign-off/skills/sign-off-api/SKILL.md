@@ -28,7 +28,7 @@ Read the live schema for evidence, report import, timing-path, and comparison en
 
 Stages: `rtl`, `synthesis`, `placement`, `routing`, `final`. Use the gate response for the requested stage. Its latest run per domain and stage decides readiness; an earlier-stage pass cannot substitute. The gate also checks evidence coverage, so a passed status alone is insufficient.
 
-Domains include `rtl`, `cdc` (CDC/RDC), `sta`, `emir`, `pv` (DRC), `lvs`, `lec`, `dft`, `glitch_power`, and `thermal`. Treat CDC/RDC, DRC, LVS, LEC, and DFT as independent evidence. For imported commercial reports, inspect `coverage_attestation.verified`; a clean but unsigned report remains partial evidence.
+Domains include `rtl`, `cdc` (CDC/RDC), `sta`, `emir`, `pv` (DRC), `lvs`, `lec`, `dft`, `low_power`, `glitch_power`, and `thermal`. Treat CDC/RDC, DRC, LVS, LEC, DFT, and low-power verification as independent evidence. For imported commercial reports, inspect `coverage_attestation.verified`; a clean but unsigned report remains partial evidence.
 
 ## Analyses and writes
 

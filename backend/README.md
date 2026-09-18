@@ -12,7 +12,7 @@
 | STA 시나리오 커버리지 | 단계별 기대 코너·모드와 SPEF 요구 세트를 저장하고 실제 OpenSTA 실행과 비교 (`GET/PUT /projects/{id}/sta-scenarios/{stage}`, `GET /projects/{id}/sta-matrix`) |
 | §4 IR-drop ML 스크리닝 | `app/services/irdrop.py` — arXiv:2601.22707의 물리 기반 공식(density×activity/strength)으로 IR-drop 맵·핫스팟 사전 스크리닝 (`POST /analysis/ir-drop`) |
 | §5 벡터리스 글리치 파워 | `app/services/glitch.py` — 토글률 초과분 기반 글리치 파워 추정, transport/inertial 디레이팅 (`POST /analysis/glitch-power`) |
-| §9 사인오프 런 관리 실무 | 프로젝트/런/위반/웨이버 CRUD — 도메인(rtl·cdc·sta·emir·pv·lvs·lec·dft·glitch_power·thermal), 툴, 스테이지, 심각도 추적 |
+| §9 사인오프 런 관리 실무 | 프로젝트/런/위반/웨이버 CRUD — 도메인(rtl·cdc·sta·emir·pv·lvs·lec·dft·low_power·glitch_power·thermal), 툴, 스테이지, 심각도 추적 |
 | RTL 사인오프 래더 (ai_driven_rtl 이식) | `app/services/rtl/` — verilator lint → 설계 룰(SV 타입·non-blocking·리셋 분류·CDC·FSM 도달성, DRC-XXX 코드) → yosys 합성 → SIGNED_OFF/CONDITIONAL/REJECTED 판정 + QoR 점수 (`POST /analysis/rtl-signoff`, 실시간 NDJSON 스트리밍은 `POST /analysis/rtl-signoff/stream`). `project_id` 지정 시 런/위반 자동 기록 → RTL 스테이지 게이트 구동. 툴 부재 시 skip으로 우아하게 강등 |
 
 분석 엔드포인트는 골든 사인오프 툴(PrimeTime/RedHawk-SC/Calibre)의 **대체가 아닌 사전 스크리닝 계층**입니다 — 리포트의 핵심 결론과 동일한 포지셔닝.
@@ -63,6 +63,8 @@ uv pip install --python .venv/bin/python --require-hashes -r requirements.txt
 - `GET /runs/{id}/cdc-findings` — 보존된 crossing finding 탐색
 - `POST /projects/{id}/imports/commercial-dft/preview` · `POST /projects/{id}/imports/commercial-dft` — TestMAX/Tessent/Modus DFT 결과 검증·저장
 - `GET /runs/{id}/dft-findings` — 보존된 scan·rule·coverage·pattern finding 탐색
+- `POST /projects/{id}/imports/commercial-low-power/preview` · `POST /projects/{id}/imports/commercial-low-power` — VC LP/Conformal Low Power 결과 검증·저장
+- `GET /runs/{id}/low-power-findings` — 보존된 전력 의도·구조·기능·PG finding 탐색
 - `POST /analysis/ir-drop` · `POST /analysis/glitch-power` · `POST /analysis/timing-summary`
 
 DB는 기본 `sqlite:///./signoff.db` (`SIGNOFF_DATABASE_URL`로 교체 가능).
@@ -160,7 +162,7 @@ Linux의 실제 툴 통합 검사는 `Dockerfile.rtl-check`로 재실행할 수 
 - 기록된 분석에는 `run_evidence` 행이 생성됩니다. `GET /runs/{id}/evidence`로 실행한
   단일 `design.sv` 소스(코드 펜스 제거·양끝 공백 정리·마지막 줄바꿈), 소스 SHA-256,
   원래 판정·규칙·단계별 결과와 시간을 조회합니다. SHA-256은 소스 식별용이며 전자서명이 아닙니다.
-- 런 응답의 `evidence_source`는 서버 실행(`rtl_ladder`, `opensta_execution`), 보고서 가져오기(`commercial_rtl_report`, `commercial_cdc_report`, `opensta_report`, `commercial_sta_report`, `klayout_report`, `commercial_drc_report`, `commercial_lvs_report`, `commercial_lec_report`, `commercial_dft_report`, `commercial_emir_report`, `commercial_power_report`, `commercial_thermal_report`), `manual`, `legacy`를 구분합니다.
+- 런 응답의 `evidence_source`는 서버 실행(`rtl_ladder`, `opensta_execution`), 보고서 가져오기(`commercial_rtl_report`, `commercial_cdc_report`, `opensta_report`, `commercial_sta_report`, `klayout_report`, `commercial_drc_report`, `commercial_lvs_report`, `commercial_lec_report`, `commercial_dft_report`, `commercial_low_power_report`, `commercial_emir_report`, `commercial_power_report`, `commercial_thermal_report`), `manual`, `legacy`를 구분합니다.
 
 ### OpenSTA 실행 워커
 
