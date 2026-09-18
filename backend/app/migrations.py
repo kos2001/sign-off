@@ -33,9 +33,15 @@ def initialize_schema(engine):
                 "worker_token": "VARCHAR(32)",
                 "started_at": "DATETIME",
                 "lease_expires_at": "INTEGER",
+                "retry_of_batch_id": "INTEGER REFERENCES sta_batch_executions(id)",
+                "retry_request_key": "VARCHAR(36)",
+                "attempt": "INTEGER NOT NULL DEFAULT 1",
             }.items():
                 if column not in batch_columns:
                     connection.execute(text(f"ALTER TABLE sta_batch_executions ADD COLUMN {column} {definition}"))
+            for index in Base.metadata.tables['sta_batch_executions'].indexes:
+                if index.name == 'ux_sta_batch_executions_retry_request_key':
+                    index.create(connection, checkfirst=True)
             connection.commit()
         except Exception:
             connection.rollback()

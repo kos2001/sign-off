@@ -63,6 +63,7 @@ export type StaBatchEvent =
       failed: { scenario: string; detail: string }[] };
 export interface StaBatchExecution {
   id: number; project_id: number; stage: Stage; top_module: string; design_revision: string;
+  retry_of_batch_id: number | null; attempt: number;
   status: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'; cancel_requested: boolean;
   submitted_by_user_id: number | null; submitted_by: string; created_at: string; started_at: string | null; finished_at: string | null;
   items: { position: number; scenario: string; require_spef: boolean;
@@ -520,6 +521,10 @@ export const api = {
     request<StaBatchExecution>('/analysis/sta-signoff/batch', { method: 'POST', body: JSON.stringify(payload) }),
   cancelStaBatch: (projectId: number, batchId: number) =>
     request<StaBatchExecution>(`/projects/${projectId}/sta-batches/${batchId}/cancel`, { method: 'POST' }),
+  retryStaBatch: (projectId: number, batchId: number, requestKey: string) =>
+    request<StaBatchExecution>(`/projects/${projectId}/sta-batches/${batchId}/retry`, {
+      method: 'POST', body: JSON.stringify({ request_key: requestKey }),
+    }),
   replaceStaScenarios: (projectId: number, stage: Stage, scenarios: { name: string; require_spef: boolean }[]) =>
     request<StaScenarioDefinition[]>(`/projects/${projectId}/sta-scenarios/${stage}`, {
       method: 'PUT', body: JSON.stringify({ scenarios }),
