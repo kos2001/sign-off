@@ -81,6 +81,9 @@ class SignoffReleaseDecisionOut(BaseModel):
     manifest_sha256: str
     package_sha256: str
     decision_sha256: str
+    gate_snapshot_sha256: str | None
+    evidence_snapshot_sha256: str | None
+    lifecycle_status: Literal['current', 'evidence_changed', 'superseded_by_decision', 'legacy_unbound']
     byte_length: int
     created_at: datetime
     gate: dict

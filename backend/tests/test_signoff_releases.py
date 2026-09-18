@@ -32,6 +32,9 @@ def test_release_decision_requires_approver_and_preserves_exact_package(accounts
     assert response.status_code == 201, response.text
     item = response.json()
     assert item['decision'] == 'rejected'
+    assert item['lifecycle_status'] == 'current'
+    assert len(item['gate_snapshot_sha256']) == 64
+    assert len(item['evidence_snapshot_sha256']) == 64
     assert item['decided_by'] == users['approver'].username
     assert item['decided_by_user_id'] == users['approver'].id
     assert item['gate']['ready'] is False
@@ -68,7 +71,7 @@ def test_ready_gate_approval_records_server_identity(accounts, monkeypatch):
     users, ids, login = accounts
     manifest = {'format': 'signoff/evidence-package/v1', 'gate': {
         'ready': True, 'revision_check': {'common_revision': 'release-ready'}, 'domains': [], 'stage': 'final',
-    }}
+    }, 'runs': []}
     manifest_bytes = json.dumps(manifest, separators=(',', ':')).encode()
     output = io.BytesIO()
     with zipfile.ZipFile(output, 'w') as archive:
@@ -117,3 +120,63 @@ def test_archived_decision_tampering_is_rejected(accounts):
     response = login('viewer').get(f"{url}/{item['id']}")
     assert response.status_code == 409
     assert '결정 무결성' in response.json()['detail']
+
+
+def test_release_lifecycle_tracks_evidence_changes_and_newer_decisions(accounts):
+    _, ids, login = accounts
+    attach_source(ids['run'])
+    url = f"/projects/{ids['project']}/signoff-releases"
+    approver = login('approver')
+    first = approver.post(url, json={
+        'stage': 'final', 'decision': 'rejected', 'reason': 'initial review',
+    }).json()
+    assert first['lifecycle_status'] == 'current'
+
+    with SessionLocal() as db:
+        run = db.get(SignoffRun, ids['run'])
+        run.metrics = {'changed_after_decision': True}
+        db.commit()
+    changed = approver.get(f"{url}/{first['id']}").json()
+    assert changed['lifecycle_status'] == 'evidence_changed'
+
+    second = approver.post(url, json={
+        'stage': 'final', 'decision': 'rejected', 'reason': 'reviewed changed evidence',
+    }).json()
+    assert second['lifecycle_status'] == 'current'
+    page = approver.get(url).json()['items']
+    assert [item['lifecycle_status'] for item in page] == ['current', 'superseded_by_decision']
+
+
+def test_gate_snapshot_tampering_is_rejected(accounts):
+    _, ids, login = accounts
+    attach_source(ids['run'])
+    url = f"/projects/{ids['project']}/signoff-releases"
+    item = login('approver').post(
+        url, json={'stage': 'final', 'decision': 'rejected', 'reason': 'original snapshot'},
+    ).json()
+    with SessionLocal() as db:
+        record = db.get(SignoffReleaseDecision, item['id'])
+        record.gate_snapshot = {**record.gate_snapshot, 'ready': True}
+        db.commit()
+    response = login('viewer').get(f"{url}/{item['id']}")
+    assert response.status_code == 409
+    assert '게이트 스냅샷 무결성' in response.json()['detail']
+    assert login('viewer').get(f"{url}/{item['id']}/package").status_code == 409
+
+
+def test_evidence_snapshot_tampering_is_rejected(accounts):
+    _, ids, login = accounts
+    attach_source(ids['run'])
+    url = f"/projects/{ids['project']}/signoff-releases"
+    item = login('approver').post(
+        url, json={'stage': 'final', 'decision': 'rejected', 'reason': 'frozen evidence'},
+    ).json()
+    with SessionLocal() as db:
+        record = db.get(SignoffReleaseDecision, item['id'])
+        manifest = dict(record.manifest)
+        manifest['runs'] = [{**run, 'metrics': {'tampered': True}} for run in manifest['runs']]
+        record.manifest = manifest
+        db.commit()
+    response = login('viewer').get(f"{url}/{item['id']}")
+    assert response.status_code == 409
+    assert '근거 스냅샷 무결성' in response.json()['detail']
