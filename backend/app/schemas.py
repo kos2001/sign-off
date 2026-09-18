@@ -20,6 +20,38 @@ class ProjectOut(ProjectCreate):
     created_at: datetime
 
 
+class SignoffReleaseDecisionCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+
+    stage: Stage
+    decision: Literal['approved', 'rejected']
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+class SignoffReleaseDecisionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    stage: Stage
+    decision: Literal['approved', 'rejected']
+    reason: str
+    design_revision: str | None
+    decided_by: str
+    decided_by_user_id: int | None
+    manifest_sha256: str
+    package_sha256: str
+    decision_sha256: str
+    byte_length: int
+    created_at: datetime
+    gate: dict
+
+
+class SignoffReleaseDecisionPage(BaseModel):
+    items: list[SignoffReleaseDecisionOut]
+    next_before_id: int | None
+
+
 class RunCreate(BaseModel):
     domain: Domain
     stage: Stage

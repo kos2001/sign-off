@@ -51,7 +51,7 @@ def test_all_business_routes_require_login(client, accounts):
     for route in client.app.routes:
         if not getattr(route, 'path', '').startswith(('/projects', '/runs', '/violations', '/analysis', '/agents')):
             continue
-        path = route.path.replace('{project_id}', '1').replace('{run_id}', '1').replace('{violation_id}', '1').replace('{user_id}', '1')
+        path = route.path.replace('{project_id}', '1').replace('{run_id}', '1').replace('{violation_id}', '1').replace('{release_id}', '1').replace('{user_id}', '1')
         for method in route.methods:
             response = client.request(method, path, json={})
             assert response.status_code == 401, (method, path, response.text)
