@@ -36,7 +36,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1052개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1055개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -159,6 +159,7 @@ crossing과 정적 finding을 검증하고 RTL 게이트의 독립 CDC/RDC 근�
 스테이지 게이트는 수동 통과 상태만으로 열리지 않으며 도메인별 최신 런의 설계 리비전도 검사합니다.
 검증 범위와 현재 지원 한계는 [게이트 근거 정책](docs/gate-provenance.md)을 참고하세요.
 [사인오프 결정과 근거 동결](docs/signoff-release-decisions.md)은 approver의 승인·차단 사유와
-그 시점의 검증된 ZIP 패키지를 SHA-256에 묶어 불변 보관합니다.
+그 시점의 검증된 ZIP 패키지를 SHA-256에 묶어 불변 보관합니다. 현재 런·웨이버·계획이 바뀌면
+과거 결정을 `근거 변경 · 재결정 필요`로 표시합니다.
 
 [KLayout DRC 마커 보고서 가져오기](docs/klayout-import.md)를 지원합니다. PV 런·위반·원본 근거로 보존하며 전체 DRC 통과와 구분합니다.

@@ -53,6 +53,10 @@ def initialize_schema(engine):
             release_columns = {item['name'] for item in inspect(connection).get_columns('signoff_release_decisions')}
             if 'gate_snapshot' not in release_columns:
                 connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN gate_snapshot JSON'))
+            if 'gate_snapshot_sha256' not in release_columns:
+                connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN gate_snapshot_sha256 VARCHAR(64)'))
+            if 'evidence_snapshot_sha256' not in release_columns:
+                connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN evidence_snapshot_sha256 VARCHAR(64)'))
             if 'decision_sha256' not in release_columns:
                 connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN decision_sha256 VARCHAR(64)'))
             batch_columns = {item["name"] for item in inspect(connection).get_columns("sta_batch_executions")}
