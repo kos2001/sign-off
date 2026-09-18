@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -15,7 +15,7 @@ from ..db import SessionLocal
 from ..models import (StaBatchExecution, StaBatchExecutionEvent, StaBatchExecutionItem,
                       StaBatchInputArtifact)
 from ..schemas import StaSignoffRequest
-from .rtl.admission import acquire_slot
+from .sta_admission import acquire_slot
 from .sta_execution import finish_sta_batch, record_sta_run, update_batch_item
 from .sta_worker_client import StaWorkerError, run_sta
 
@@ -108,26 +108,52 @@ def retry_batch(db, source, user, request_key):
     return batch
 
 
+def _claim_candidates(db):
+    candidates = list(db.execute(select(
+        StaBatchExecution.project_id, func.min(StaBatchExecution.id),
+    ).where(StaBatchExecution.status == 'queued',
+            StaBatchExecution.cancel_requested.is_(False))
+      .group_by(StaBatchExecution.project_id)))
+    if not candidates:
+        return []
+    running = set(db.scalars(select(StaBatchExecution.project_id).where(
+        StaBatchExecution.status == 'running')))
+    last_started = dict(db.execute(select(
+        StaBatchExecution.project_id, func.max(StaBatchExecution.started_at),
+    ).where(StaBatchExecution.started_at.is_not(None))
+      .group_by(StaBatchExecution.project_id)).all())
+
+    def timestamp(project_id):
+        value = last_started.get(project_id)
+        if value is None:
+            return float('-inf')
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.timestamp()
+
+    return [batch_id for project_id, batch_id in sorted(
+        candidates, key=lambda row: (row[0] in running, timestamp(row[0]), row[1]))]
+
+
 def claim_next(worker_token):
     for _ in range(10):
         with SessionLocal() as db:
-            batch_id = db.scalar(select(StaBatchExecution.id).where(
-                StaBatchExecution.status == 'queued', StaBatchExecution.cancel_requested.is_(False),
-            ).order_by(StaBatchExecution.id).limit(1))
-            if batch_id is None:
+            candidates = _claim_candidates(db)
+            if not candidates:
                 return None
-            changed = db.execute(update(StaBatchExecution).where(
-                StaBatchExecution.id == batch_id, StaBatchExecution.status == 'queued',
-                StaBatchExecution.cancel_requested.is_(False),
-            ).values(status='running', worker_token=worker_token,
-                     started_at=datetime.now(timezone.utc), lease_expires_at=int(time.time()) + LEASE_SECONDS)
-                .execution_options(synchronize_session=False))
-            if changed.rowcount == 1:
-                db.add(StaBatchExecutionEvent(batch_id=batch_id, kind='started', status='running',
-                                              actor='system'))
-                db.commit()
-                return batch_id
-            db.rollback()
+            for batch_id in candidates:
+                changed = db.execute(update(StaBatchExecution).where(
+                    StaBatchExecution.id == batch_id, StaBatchExecution.status == 'queued',
+                    StaBatchExecution.cancel_requested.is_(False),
+                ).values(status='running', worker_token=worker_token,
+                         started_at=datetime.now(timezone.utc), lease_expires_at=int(time.time()) + LEASE_SECONDS)
+                    .execution_options(synchronize_session=False))
+                if changed.rowcount == 1:
+                    db.add(StaBatchExecutionEvent(batch_id=batch_id, kind='started', status='running',
+                        actor='system', detail='Selected by project-fair scheduler.'))
+                    db.commit()
+                    return batch_id
+                db.rollback()
     return None
 
 
@@ -221,8 +247,13 @@ def execute_claimed(batch_id, stop):
 def dispatcher_loop(stop):
     token = uuid.uuid4().hex
     while not stop.is_set():
-        reconcile_stale_batches()
-        batch_id = claim_next(token)
+        try:
+            reconcile_stale_batches()
+            batch_id = claim_next(token)
+        except Exception as error:
+            logger.error('sta_batch_dispatch_poll_failed failure=%s', type(error).__name__)
+            stop.wait(1)
+            continue
         if batch_id is None:
             _wake.wait(1)
             _wake.clear()

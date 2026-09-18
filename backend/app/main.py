@@ -16,6 +16,7 @@ from .worker_maintenance import worker_lifespan
 from .worker_readiness import WorkerReadiness
 from .services.rtl.worker_client import WorkerError
 from .services.rtl.admission import capacity
+from .services.sta_admission import capacity as sta_capacity
 from .review_capacity import capacity as review_capacity
 from .routers import markers, run_reviews, auth, agents, analysis, comparison, imports, projects, runs, sta_batches, sta_matrix, timing_paths, violations
 
@@ -25,6 +26,7 @@ logger = logging.getLogger('uvicorn.error.signoff')
 def create_app() -> FastAPI:
     auth_required()  # Reject misspelled auth modes instead of silently disabling protection.
     capacity()
+    sta_capacity()
     review_capacity()
     initialize_schema(engine)
     app = FastAPI(

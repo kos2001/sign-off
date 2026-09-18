@@ -29,6 +29,7 @@ from ..services.irdrop import screen_ir_drop
 from ..services.rtl.signoff import run_signoff, stream_signoff
 from ..services.rtl.tools import strip_fences
 from ..services.rtl.admission import acquire_slot, AdmittedStreamingResponse
+from ..services.sta_admission import acquire_slot as acquire_sta_slot
 from ..services.rtl.worker_client import container_mode, stream_worker, WorkerError
 from ..services.sta_worker_client import run_sta, StaWorkerError
 from ..services.sta_execution import finish_sta_batch, record_sta_run, update_batch_item
@@ -188,7 +189,7 @@ def sta_signoff(payload: StaSignoffRequest, db: Session = Depends(get_db)):
     if db.get(Project, payload.project_id) is None:
         raise HTTPException(404, 'project not found')
     require_project(db, payload.project_id, 'editor')
-    with acquire_slot():
+    with acquire_sta_slot():
         try:
             worker, result, image_id = run_sta(payload.netlist, payload.liberty, payload.sdc, payload.top_module, payload.spef)
         except StaWorkerError as error:
@@ -234,7 +235,7 @@ def sta_signoff_stream(payload: StaSignoffRequest, db: Session = Depends(get_db)
             if not cancel.is_set():
                 yield json.dumps({'event': 'error', 'detail': 'STA result could not be recorded.'}) + '\n'
 
-    return AdmittedStreamingResponse(gen(), acquire_slot(), on_close=cancel.set)
+    return AdmittedStreamingResponse(gen(), acquire_sta_slot(), on_close=cancel.set)
 
 
 @router.post('/sta-signoff/batch/stream')
@@ -246,7 +247,7 @@ def sta_signoff_batch_stream(payload: StaBatchRequest, db: Session = Depends(get
     user = db.info.get('user')
     submitted_by = {'user_id': user.id, 'username': user.username} if user else None
     cancel = threading.Event()
-    slot = acquire_slot()
+    slot = acquire_sta_slot()
     try:
         expected = {row.name: row.require_spef for row in db.scalars(select(StaScenarioDefinition).where(
             StaScenarioDefinition.project_id == payload.project_id,
