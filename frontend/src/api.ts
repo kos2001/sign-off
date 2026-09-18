@@ -47,6 +47,13 @@ export interface RunRevisionPage {
   items: { design_revision: string; run_count: number; latest_run_id: number }[];
   total: number; offset: number; limit: number; unlabeled_runs: number;
 }
+export interface RevisionCoverage {
+  project_id: number; design_revision: string; total_runs: number;
+  required_cells: number; covered_required_cells: number;
+  stages: { stage: Stage; plan_version: number; plan_source: 'default' | 'custom';
+    required_domains: Domain[]; covered_required_domains: number;
+    cells: { domain: Domain; required: boolean; run_count: number; latest_run: SignoffRun | null }[] }[];
+}
 
 export interface RunEvidence {
   run_id: number;
@@ -688,6 +695,7 @@ export const api = {
       ...(options.revisionScope && options.revisionScope !== 'all' ? { revision_scope: options.revisionScope } : {}),
     })}`),
   runRevisions: (projectId: number, q?: string) => request<RunRevisionPage>(`/projects/${projectId}/run-revisions?${new URLSearchParams({ limit: '100', ...(q ? { q } : {}) })}`),
+  revisionCoverage: (projectId: number, revision: string) => request<RevisionCoverage>(`/projects/${projectId}/revision-coverage?${new URLSearchParams({ revision })}`),
   getRun: (runId: number) => request<SignoffRun>(`/runs/${runId}`),
   runStructure: (runId: number) => request<DesignStructure>(`/runs/${runId}/evidence/structure`),
   runNetlist: (runId: number) => request<Blob>(`/runs/${runId}/evidence/netlist`, undefined, 'blob'),

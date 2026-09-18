@@ -91,3 +91,37 @@ def test_run_history_filters_and_lists_exact_design_revisions(client):
     filtered = client.get(f'/projects/{project_id}/run-revisions', params={'q': '%_'}).json()
     assert [item['design_revision'] for item in filtered['items']] == ['%_literal']
     assert client.get(f'/projects/{project_id}/run-revisions', params={'q': '   '}).status_code == 422
+
+
+def test_revision_coverage_matrix_uses_plan_and_latest_domain_run(client):
+    project_id = project(client)
+    specs = [('sta', 'routing'), ('pv', 'routing'), ('sta', 'routing'), ('rtl', 'routing')]
+    runs = []
+    for index, (domain, stage) in enumerate(specs):
+        response = client.post(f'/projects/{project_id}/runs', json={
+            'domain': domain, 'stage': stage, 'tool': f'matrix-{index}',
+        })
+        assert response.status_code == 201
+        runs.append(response.json())
+    with SessionLocal.begin() as db:
+        db.execute(update(RunEvidence).where(
+            RunEvidence.run_id.in_([run['id'] for run in runs])).values(design_revision='rev-matrix'))
+
+    response = client.get(f'/projects/{project_id}/revision-coverage',
+                          params={'revision': 'rev-matrix'})
+    assert response.status_code == 200, response.text
+    matrix = response.json()
+    assert matrix['total_runs'] == 4
+    assert matrix['required_cells'] == 22
+    assert matrix['covered_required_cells'] == 2
+    routing = next(item for item in matrix['stages'] if item['stage'] == 'routing')
+    assert routing['plan_version'] == 0 and routing['plan_source'] == 'default'
+    assert routing['covered_required_domains'] == 2
+    cells = {item['domain']: item for item in routing['cells']}
+    assert cells['sta']['run_count'] == 2
+    assert cells['sta']['latest_run']['id'] == runs[2]['id']
+    assert cells['pv']['run_count'] == 1
+    assert cells['rtl']['required'] is False and cells['rtl']['run_count'] == 1
+    assert cells['emir']['latest_run'] is None and cells['lvs']['latest_run'] is None
+    assert client.get(f'/projects/{project_id}/revision-coverage',
+                      params={'revision': '   '}).status_code == 422

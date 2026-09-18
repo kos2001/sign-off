@@ -18,6 +18,7 @@ from ..schemas import (
     RunOut,
     RunPageOut,
     RunRevisionPage,
+    RevisionCoverageOut,
     RunEvidenceOut,
     RunUpdate,
     ViolationCreate,
@@ -149,6 +150,56 @@ def run_revisions(project_id: int, q: str | None = Query(None, min_length=1, max
             (RunEvidence.design_revision.is_(None)) | (RunEvidence.design_revision == ''))) or 0
     return {'items': [dict(row._mapping) for row in rows], 'total': total, 'offset': offset,
             'limit': limit, 'unlabeled_runs': unlabeled}
+
+
+@router.get('/projects/{project_id}/revision-coverage', response_model=RevisionCoverageOut)
+def revision_coverage(project_id: int,
+                      revision: str = Query(..., min_length=1, max_length=160),
+                      db: Session = Depends(get_db)):
+    get_project_or_404(project_id, db)
+    selected_revision = revision.strip()
+    if not selected_revision:
+        raise HTTPException(422, 'revision must not be blank')
+    grouped = db.execute(select(
+        SignoffRun.stage, SignoffRun.domain, func.count(SignoffRun.id), func.max(SignoffRun.id),
+    ).join(RunEvidence, RunEvidence.run_id == SignoffRun.id).where(
+        SignoffRun.project_id == project_id, RunEvidence.design_revision == selected_revision,
+    ).group_by(SignoffRun.stage, SignoffRun.domain)).all()
+    latest_ids = [latest_id for _, _, _, latest_id in grouped]
+    latest_runs = {
+        run.id: run for run in db.scalars(select(SignoffRun).where(SignoffRun.id.in_(latest_ids))
+                                          .options(selectinload(SignoffRun.evidence)
+                                                   .defer(RunEvidence.source_text))).all()
+    } if latest_ids else {}
+    observed = {(stage, domain): (count, latest_runs[latest_id])
+                for stage, domain, count, latest_id in grouped}
+    stages = []
+    required_cells = covered_required_cells = 0
+    for stage in Stage:
+        plan = resolve_signoff_plan(db, project_id, stage)
+        required_list = [Domain(value) for value in plan['required_domains']]
+        required = set(required_list)
+        required_cells += len(required)
+        cells = []
+        displayed_domains = [*required_list, *(domain for domain in Domain
+                                                if domain not in required and (stage, domain) in observed)]
+        for domain in displayed_domains:
+            entry = observed.get((stage, domain))
+            if domain in required and entry is not None:
+                covered_required_cells += 1
+            cells.append({'domain': domain, 'required': domain in required,
+                          'run_count': entry[0] if entry else 0,
+                          'latest_run': entry[1] if entry else None})
+        stages.append({'stage': stage, 'plan_version': plan['version'],
+                       'plan_source': plan['source'],
+                       'required_domains': required_list,
+                       'covered_required_domains': sum(
+                           domain in required and (stage, domain) in observed for domain in required),
+                       'cells': cells})
+    return {'project_id': project_id, 'design_revision': selected_revision,
+            'total_runs': sum(count for _, _, count, _ in grouped),
+            'required_cells': required_cells, 'covered_required_cells': covered_required_cells,
+            'stages': stages}
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)
