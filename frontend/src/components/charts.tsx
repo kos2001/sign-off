@@ -1,3 +1,4 @@
+import { useLanguage } from "./LanguageProvider";
 import { useCallback, useState } from "react";
 
 /* ---------- shared hover tooltip layer ---------- */
@@ -202,18 +203,14 @@ const RUN_STATUS_COLOR: Record<"passed" | "failed" | "running" | "incomplete", s
   running: "var(--status-warning)",
   incomplete: "var(--text-muted)",
 };
-const RUN_STATUS_LABEL: Record<"passed" | "failed" | "running" | "incomplete", string> = {
-  passed: "통과",
-  failed: "실패",
-  running: "진행 중",
-  incomplete: "검증 미완료",
-};
 
 export function RunStatusBar({
   counts,
 }: {
   counts: Record<"passed" | "failed" | "running" | "incomplete", number>;
 }) {
+  const { t } = useLanguage();
+  const labels = { passed: t('통과', 'Passed'), failed: t('실패', 'Failed'), running: t('진행 중', 'Running'), incomplete: t('검증 미완료', 'Incomplete') };
   const { show, hide, node } = useTooltip();
   const total = counts.passed + counts.failed + counts.running + counts.incomplete;
   const order: ("passed" | "failed" | "running" | "incomplete")[] = ["passed", "failed", "running", "incomplete"];
@@ -221,7 +218,7 @@ export function RunStatusBar({
   if (total === 0) {
     return (
       <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        아직 런이 없습니다.
+        {t('아직 런이 없습니다.', 'No runs yet.')}
       </p>
     );
   }
@@ -232,7 +229,7 @@ export function RunStatusBar({
         className="flex h-3 w-full overflow-hidden rounded-full"
         style={{ background: "var(--seq-100)" }}
         role="img"
-        aria-label={`런 상태: 통과 ${counts.passed}, 실패 ${counts.failed}, 진행 중 ${counts.running}, 검증 미완료 ${counts.incomplete}`}
+        aria-label={`${t('런 상태', 'Run status')}: ${order.map(key => `${labels[key]} ${counts[key]}`).join(', ')}`}
       >
         {order.map(
           (k) =>
@@ -241,7 +238,7 @@ export function RunStatusBar({
                 key={k}
                 style={{ width: `${(counts[k] / total) * 100}%`, background: RUN_STATUS_COLOR[k] }}
                 onMouseMove={(e) =>
-                  show(e, `${RUN_STATUS_LABEL[k]} ${counts[k]}건 · ${((counts[k] / total) * 100).toFixed(0)}%`)
+                  show(e, `${labels[k]} ${counts[k]} · ${((counts[k] / total) * 100).toFixed(0)}%`)
                 }
                 onMouseLeave={hide}
               />
@@ -254,7 +251,7 @@ export function RunStatusBar({
             counts[k] > 0 && (
               <span key={k} className="inline-flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-sm" style={{ background: RUN_STATUS_COLOR[k] }} />
-                {RUN_STATUS_LABEL[k]} {counts[k]}
+                {labels[k]} {counts[k]}
               </span>
             ),
         )}

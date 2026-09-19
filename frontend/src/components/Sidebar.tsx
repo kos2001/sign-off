@@ -1,3 +1,4 @@
+import { useLanguage } from './LanguageProvider';
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router";
@@ -21,7 +22,7 @@ function SidebarSection({ title, items }: { title: string; items: NavItem[] }) {
           const [itemPath, itemHash] = item.to.split("#");
           const isActive = itemHash
             ? pathname === itemPath && hash === `#${itemHash}`
-            : pathname === item.to || pathname.startsWith(`${item.to}/`);
+            : pathname === item.to || (item.to !== "/analysis" && pathname.startsWith(`${item.to}/`));
           return (
             <li key={item.to}>
               <NavLink to={item.to} className={`sidebar-link ${isActive ? "sidebar-link-active" : ""}`}>
@@ -36,6 +37,7 @@ function SidebarSection({ title, items }: { title: string; items: NavItem[] }) {
 }
 
 export function Sidebar() {
+  const { t } = useLanguage();
   const auth = useAuth();
   const [logoutError, setLogoutError] = useState("");
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.listProjects });
@@ -56,19 +58,18 @@ export function Sidebar() {
         <div>
           <h1 className="text-base font-bold leading-tight">Sign-off Hub</h1>
           <p className="text-xs leading-tight" style={{ color: "var(--text-muted)" }}>
-            칩 설계 사인오프 관리 · 분석
-          </p>
+            {t("칩 설계 사인오프 관리 · 분석", "Chip sign-off management & analysis")} </p>
         </div>
-        <button className="btn btn-ghost ml-auto md:hidden" aria-expanded={mobileOpen} aria-controls="main-navigation" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? "메뉴 닫기" : "메뉴"}</button>
+        <button className="btn btn-ghost ml-auto md:hidden" aria-expanded={mobileOpen} aria-controls="main-navigation" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? t("메뉴 닫기", "Close menu") : t("메뉴", "Menu")}</button>
       </div>
 
-      <nav id="main-navigation" aria-label="주 메뉴" className={mobileOpen ? "mt-5 md:mt-0" : "hidden md:block"}>
-        <div className="mb-5 text-xs space-y-2">{auth.state.user ? <><p>로그인: {auth.state.user.username}{auth.state.user.is_admin ? " · 관리자" : ""}</p><button className="btn btn-ghost" onClick={() => auth.logout().catch(error => setLogoutError(error.message))}>로그아웃</button><NavLink className="btn btn-ghost" to="/account">계정 설정</NavLink>{logoutError && <p role="alert">{logoutError}</p>}</> : <p>로컬 모드 · 계정 인증 없음</p>}</div>
-        <SidebarSection title="개요" items={[{ to: "/", label: "대시보드" }, { to: "/agents", label: "에이전트 개입 안내" }]} />
-        {auth.state.user?.is_admin && <SidebarSection title="운영 관리" items={[{ to: '/admin/security-events', label: '보안 이력 관리' }]} />}
+      <nav id="main-navigation" aria-label={t("주 메뉴", "Main navigation")} className={mobileOpen ? "mt-5 md:mt-0" : "hidden md:block"}>
+        <div className="mb-5 text-xs space-y-2">{auth.state.user ? <><p>{t("로그인:", "Signed in:")} {auth.state.user.username}{auth.state.user.is_admin ? " · 관리자" : ""}</p><button className="btn btn-ghost" onClick={() => auth.logout().catch(error => setLogoutError(error.message))}>{t("로그아웃", "Sign out")}</button><NavLink className="btn btn-ghost" to="/account">{t("계정 설정", "Account settings")}</NavLink>{logoutError && <p role="alert">{logoutError}</p>}</> : <p>{t("로컬 모드 · 계정 인증 없음", "Local mode · no account authentication")}</p>}</div>
+        <SidebarSection title={t("개요", "Overview")} items={[{ to: "/", label: t("대시보드", "Dashboard") }, { to: "/guide", label: t("서비스 소개", "Service guide") }, { to: "/agents", label: t("에이전트 개입 안내", "Agent responsibilities") }]} />
+        {auth.state.user?.is_admin && <SidebarSection title={t("운영 관리", "Administration")} items={[{ to: '/admin/security-events', label: t("보안 이력 관리", "Security events") }]} />}
 
         <SidebarSection
-          title="프로젝트"
+          title={t("프로젝트", "Projects")}
           items={(projects.data ?? []).map((p) => ({
             to: `/projects/${p.id}`,
             label: p.name,
@@ -76,13 +77,14 @@ export function Sidebar() {
         />
 
         <SidebarSection
-          title="분석 도구"
+          title={t("분석 도구", "Analysis tools")}
           items={[
-            { to: "/analysis#rtl-signoff", label: "RTL 사인오프 래더" },
-            { to: "/analysis#sta-signoff", label: "OpenSTA 타이밍 실행" },
-            { to: "/analysis#ir-drop", label: "IR-drop 스크리닝" },
-            { to: "/analysis#timing", label: "MMMC 타이밍" },
-            { to: "/analysis#glitch-power", label: "글리치 파워" },
+            { to: "/analysis", label: t("분석 도구 선택", "Choose an analysis tool") },
+            { to: "/analysis/rtl", label: t("RTL 사인오프 래더", "RTL sign-off ladder") },
+            { to: "/analysis/sta", label: t("OpenSTA 타이밍 실행", "OpenSTA timing execution") },
+            { to: "/analysis/ir-drop", label: t("IR-drop 스크리닝", "IR-drop screening") },
+            { to: "/analysis/timing", label: t("MMMC 타이밍", "MMMC timing") },
+            { to: "/analysis/glitch-power", label: t("글리치 파워", "Glitch power") },
           ]}
         />
       </nav>

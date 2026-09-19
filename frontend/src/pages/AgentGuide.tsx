@@ -30,7 +30,7 @@ export default function AgentGuide() {
           <div><dt className="text-xs text-[var(--text-muted)]">무엇을 제공하나요?</dt><dd className="mt-1 text-[var(--text-secondary)]">{role.output}</dd></div>
         </dl>
         <Link className="btn btn-ghost mt-4" to={role.to}>{role.to === '/' ? '대시보드에서 프로젝트 선택' : '분석 화면 열기'}</Link>
-        {id === 'a3_power_ir' && <Link className="btn btn-ghost mt-4 ml-2" to="/analysis#glitch-power">글리치 분석 열기</Link>}
+        {id === 'a3_power_ir' && <Link className="btn btn-ghost mt-4 ml-2" to="/analysis/glitch-power">글리치 분석 열기</Link>}
       </Card>)}
       <Card title="A4 · 웨이버 심사관" subtitle="역할 정의만 제공"><StatusBadge status="neutral" label="자동 연결 안 됨" /><p className="mt-3 text-sm text-[var(--text-secondary)]">현재 웨이버 승인 과정에는 에이전트가 자동 개입하지 않습니다. 승인 권한을 가진 사람이 사유와 잔여 위험을 검토하고 결정합니다.</p></Card>
     </div>

@@ -75,3 +75,20 @@ node scripts/browser_simulation_check.mjs /absolute/path/to/node_modules/playwri
 게이트 차단, 과거 성공 결과 보존, 로그 표시, JSON 다운로드·SHA-256과 모바일 레이아웃을
 확인합니다. 기본 산출물 경로는 `/private/tmp/signoff-simulation-check`입니다.
 기존 `browser_review_check.mjs`는 테스트벤치 없는 실행이 계속 incomplete인지 검증합니다.
+
+## 한/영 서비스 소개와 도구별 페이지
+
+`browser_service_guide_check.mjs`는 프로젝트 데이터를 변경하지 않습니다. 로컬 모드 서버에서
+아래 명령으로 실행합니다. 인증 화면 검사는 세션 응답만 브라우저에서 대체합니다.
+
+```bash
+SIGNOFF_PLAYWRIGHT_MODULE=/tmp/signoff-browser-tools/node_modules/playwright/index.mjs \
+SIGNOFF_TEST_UI=http://127.0.0.1:15173 \
+node scripts/browser_service_guide_check.mjs
+```
+
+다섯 소개 페이지의 한/영 버전, API 차단 시 공개 접근, 번역 누락, 1440·390·320px 레이아웃,
+공통 언어 전환(주소 유지)·새로고침·선택 유지·뒤로 가기, 소개/작업 공간/로그인 간 언어 유지,
+언어 변경 시 대시보드와 로그인 입력값 보존, 로그인 화면의 소개 링크, 이전 언어별 주소와 해시 주소 호환,
+도구별 단독 표시와 도구 선택 화면 복귀를 확인합니다. 스크린샷은
+`/tmp/signoff-service-guide-check`에 저장합니다.
