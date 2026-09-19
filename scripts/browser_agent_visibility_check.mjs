@@ -37,11 +37,11 @@ try {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `guide overflow at ${width}`);
     if (width !== 320) await page.screenshot({ path: `${output}/guide-${width}.png`, fullPage: true });
   }
-  await page.goto(`${base}/analysis#timing`);
-  for (const name of ['RTL 리뷰어', '타이밍 분석가', '파워/IR 무결성 분석가']) {
-    await page.getByRole('region', { name: `${name} 검토 의견`, exact: true }).first().waitFor();
+  for (const [tool, name, count] of [['rtl', 'RTL 리뷰어', 1], ['timing', '타이밍 분석가', 1], ['ir-drop', '파워/IR 무결성 분석가', 1]]) {
+    await page.goto(`${base}/analysis/${tool}`);
+    await page.getByRole('region', { name: `${name} 검토 의견`, exact: true }).waitFor();
+    assert.equal(await badge('실행 전').count(), count);
   }
-  assert.equal(await badge('실행 전').count(), 4);
   mode = 'pending';
   await page.goto(`${base}/projects/${fixture.project}`);
   await badge('검토 결과 대기').first().waitFor();

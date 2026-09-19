@@ -1,4 +1,6 @@
+import { useLanguage } from './LanguageProvider';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, setCsrfToken, type AuthState, type ProjectRole } from "../api";
 
@@ -8,6 +10,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function useAuth() { const value = useContext(AuthContext); if (!value) throw new Error("AuthProvider required"); return value; }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { t } = useLanguage();
   const qc = useQueryClient();
   const [state, setState] = useState<AuthState | null>(null);
   const current = useRef<AuthState | null>(null);
@@ -47,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     generation.current++;
     apply(next);
   }
-  if (!state) return <main className="p-8">{error ? <p role="alert">연결 실패: {error} <button className="btn" onClick={refresh}>다시 시도</button></p> : <p role="status">접속 상태 확인 중…</p>}</main>;
+  if (!state) return <main className="p-8">{error ? <p role="alert">{t("연결 실패:", "Connection failed:")} {error} <button className="btn" onClick={refresh}>{t("다시 시도", "Retry")}</button></p> : <p role="status">{t("접속 상태 확인 중…", "Checking session…")}</p>}</main>;
   if (state.mode === "required" && !state.user) return <LoginForm onLogin={next => { generation.current++; apply(next); }} />;
   return <AuthContext.Provider value={{ state, refresh, logout, changePassword, can: (id, role) => state.mode === "local" || !!state.user?.is_admin || (levels[state.memberships[id]] ?? -1) >= levels[role] }}>
     <div key={`${state.mode}:${state.user?.id ?? "local"}:${state.user?.is_admin ?? false}:${JSON.stringify(state.memberships)}`}>{children}</div>
@@ -55,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 function LoginForm({ onLogin }: { onLogin: (state: AuthState) => void }) {
+  const { t } = useLanguage();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -65,10 +69,11 @@ function LoginForm({ onLogin }: { onLogin: (state: AuthState) => void }) {
     catch (error) { setError((error as Error).message); setPassword(""); }
     finally { setPending(false); }
   }}>
-    <div><h1 className="text-xl font-bold">Sign-off Hub 로그인</h1><p className="mt-2 text-sm text-[var(--text-secondary)]">관리자가 발급한 계정으로 프로젝트에 접속하세요.</p></div>
-    <label className="block text-sm">사용자 이름<input autoFocus autoComplete="username" required maxLength={64} className="input w-full mt-2" value={username} onChange={e => setUsername(e.target.value)} disabled={pending} /></label>
-    <label className="block text-sm">비밀번호<input type="password" autoComplete="current-password" required maxLength={256} className="input w-full mt-2" value={password} onChange={e => setPassword(e.target.value)} disabled={pending} /></label>
-    {error && <p role="alert" className="text-sm text-[var(--status-critical)]">로그인 실패: {error}</p>}
-    <button className="btn btn-primary w-full" disabled={pending}>{pending ? "확인 중…" : "로그인"}</button>
+    <Link className="text-sm text-[var(--series-1)]" to="/guide">{t("서비스 소개 →", "Service guide →")}</Link>
+    <div><h1 className="text-xl font-bold">{t("Sign-off Hub 로그인", "Sign in to Sign-off Hub")}</h1><p className="mt-2 text-sm text-[var(--text-secondary)]">{t("관리자가 발급한 계정으로 프로젝트에 접속하세요.", "Use an account issued by your administrator to access projects.")}</p></div>
+    <label className="block text-sm">{t("사용자 이름", "Username")}<input autoFocus autoComplete="username" required maxLength={64} className="input w-full mt-2" value={username} onChange={e => setUsername(e.target.value)} disabled={pending} /></label>
+    <label className="block text-sm">{t("비밀번호", "Password")}<input type="password" autoComplete="current-password" required maxLength={256} className="input w-full mt-2" value={password} onChange={e => setPassword(e.target.value)} disabled={pending} /></label>
+    {error && <p role="alert" className="text-sm text-[var(--status-critical)]">{t("로그인 실패:", "Sign-in failed:")} {error}</p>}
+    <button className="btn btn-primary w-full" disabled={pending}>{pending ? t("확인 중…", "Checking…") : t("로그인", "Sign in")}</button>
   </form></main>;
 }

@@ -1,9 +1,10 @@
+import { useLanguage } from "../components/LanguageProvider";
 import { useAuth } from "../components/AuthProvider";
 import { PULSE_TESTBENCH } from "./pulseTestbench";
 import { SimulationDetails } from "../components/SimulationDetails";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, Navigate, useLocation, useParams } from "react-router";
 
 import type { RtlSignoffResult, StaExecutionResult } from "../api";
 import { api } from "../api";
@@ -159,25 +160,32 @@ endmodule
 `;
 
 export default function Analysis() {
-  const { hash } = useLocation();
+  const { t } = useLanguage();
+  const analysisTools = [
+  { slug: 'rtl', legacy: 'rtl-signoff', title: t("RTL 사인오프 래더", "RTL sign-off ladder"), description: t("RTL 린트·구조 규칙·시뮬레이션·합성을 실행하고 결과와 근거를 확인합니다.", "Run RTL lint, structural checks, simulation and synthesis, then review results and evidence."), kind: t("도구 실행", "Tool execution"), component: RtlSignoffSection },
+  { slug: 'sta', legacy: 'sta-signoff', title: t("OpenSTA 타이밍 실행", "OpenSTA timing execution"), description: t("넷리스트·Liberty·SDC와 선택적 SPEF로 정적 타이밍을 실행하고 경로를 저장합니다.", "Run static timing with a netlist, Liberty, SDC and optional SPEF, and retain timing paths."), kind: t("도구 실행", "Tool execution"), component: StaSignoffSection },
+  { slug: 'ir-drop', legacy: 'ir-drop', title: t("IR-drop 스크리닝", "IR-drop screening"), description: t("전원망 밀도·활동도·강도를 바탕으로 전압 강하 위험 영역을 탐색합니다.", "Explore voltage-drop risk using power-grid density, activity and strength."), kind: t("추정 · 스크리닝", "Estimate \u00b7 screening"), component: IrDropSection },
+  { slug: 'timing', legacy: 'timing', title: t("MMMC 타이밍", "MMMC timing"), description: t("코너별 요약 수치를 비교하고 머지 WNS/TNS 및 PBA 추정을 확인합니다.", "Compare corner summaries, merged WNS/TNS and PBA estimates."), kind: t("요약 · 추정", "Summary \u00b7 estimate"), component: TimingSection },
+  { slug: 'glitch-power', legacy: 'glitch-power', title: t("글리치 파워", "Glitch power"), description: t("활동도 기반 글리치 전력 비중과 네트별 위험을 분석합니다.", "Analyze activity-based glitch power and risks by net."), kind: t("추정 분석", "Estimated analysis"), component: GlitchSection },
+];
 
-  // client-side routing never triggers the browser's native hash scroll,
-  // and the target section doesn't exist in the DOM until React mounts it
-  useEffect(() => {
-    if (!hash) return;
-    const el = document.getElementById(hash.slice(1));
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [hash]);
-
-  return (
-    <div className="space-y-6">
-      <RtlSignoffSection />
-      <StaSignoffSection />
-      <IrDropSection />
-      <TimingSection />
-      <GlitchSection />
-    </div>
-  );
+  const { hash, search } = useLocation();
+  const { tool } = useParams();
+  const selected = analysisTools.find(item => item.slug === tool);
+  const legacy = !tool && analysisTools.find(item => `#${item.legacy}` === hash);
+  useEffect(() => { window.scrollTo(0, 0); }, [tool]);
+  if (legacy) return <Navigate replace to={`/analysis/${legacy.slug}${search}`} />;
+  if (tool && !selected) return <div className="space-y-4"><h1 className="text-2xl font-semibold">{t('분석 도구를 찾을 수 없습니다', 'Analysis tool not found')}</h1><Link className="btn btn-ghost" to="/analysis">{t('분석 도구 선택', 'Choose an analysis tool')}</Link></div>;
+  const Tool = selected?.component;
+  return <div className="space-y-6">
+    <header className="space-y-3">
+      {selected && <Link className="text-sm text-[var(--series-1)]" to="/analysis">{t('← 분석 도구 선택', '← Choose an analysis tool')}</Link>}
+      <h1 className="text-2xl font-semibold">{selected?.title ?? t("분석 도구", "Analysis tools")}</h1>
+      <p className="text-sm text-[var(--text-secondary)]">{selected?.description ?? t("목적에 맞는 도구를 선택하세요. 실제 검증 실행과 빠른 추정 분석을 구분해 사용합니다.", "Choose a tool for your task. Distinguish verification execution from fast estimates.")}</p>
+      <Link className="text-sm text-[var(--series-1)]" to="/guide">{t('서비스 목적과 검증 범위 →', 'Service purpose and verification scope →')}</Link>
+    </header>
+    {Tool ? <Tool key={tool} /> : <div className="grid gap-4 md:grid-cols-2">{analysisTools.map(item => <Link key={item.slug} to={`/analysis/${item.slug}`} className="card card-hover p-6"><p className="text-xs text-[var(--series-1)]">{item.kind}</p><h2 className="mt-3 font-semibold">{item.title} →</h2><p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">{item.description}</p></Link>)}</div>}
+  </div>;
 }
 
 function StaSignoffSection() {
