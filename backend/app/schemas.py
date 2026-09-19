@@ -153,6 +153,10 @@ class SignoffReleaseDecisionOut(BaseModel):
     chain_version: int | None
     previous_decision_sha256: str | None
     credential_confirmed_at: datetime | None
+    signature_version: int | None
+    signing_key_id: str | None
+    signing_public_key: str | None
+    decision_signature: str | None
     gate_snapshot_sha256: str | None
     evidence_snapshot_sha256: str | None
     lifecycle_status: Literal['current', 'evidence_changed', 'superseded_by_decision', 'legacy_unbound']
@@ -171,6 +175,7 @@ class SignoffReleaseAuditOut(BaseModel):
     decision_count: int
     legacy_decision_count: int
     chained_decision_count: int
+    signed_decision_count: int
     chain_head_sha256: str | None
     verified_at: datetime
 

@@ -394,7 +394,7 @@ export default function ProjectDetail() {
               <div>
                 <h3 className="font-semibold text-sm">사람의 사인오프 결정</h3>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">승인자만 결정할 수 있습니다. 서버가 현재 근거 패키지를 다시 검증해 결정과 함께 불변 보관하며 AI는 승인·거절에 개입하지 않습니다.</p>
-                {releaseAudit.data && <p className="mt-1 break-all text-xs text-[var(--status-good)]">결정 체인 검증 완료 · {releaseAudit.data.decision_count}건 · 헤드 {releaseAudit.data.chain_head_sha256 || '기록 없음'}</p>}
+                {releaseAudit.data && <p className="mt-1 break-all text-xs text-[var(--status-good)]">결정 체인 검증 완료 · {releaseAudit.data.decision_count}건 · 공개키 서명 {releaseAudit.data.signed_decision_count}건 · 헤드 {releaseAudit.data.chain_head_sha256 || '기록 없음'}</p>}
                 {releaseAudit.isError && <p role="alert" className="mt-1 text-xs text-[var(--status-critical)]">결정 감사 체인 검증 실패: {releaseAudit.error.message}</p>}
                 <button className="btn btn-ghost mt-2" disabled={releaseLedger.isPending || releaseAudit.isError} onClick={() => releaseLedger.mutate()}>{releaseLedger.isPending ? '감사 원장 생성 중…' : '검증 가능한 감사 원장 내보내기'}</button>
                 {releaseLedger.isError && <p role="alert" className="mt-1 text-xs text-[var(--status-critical)]">{releaseLedger.error.message}</p>}
@@ -422,6 +422,7 @@ export default function ProjectDetail() {
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={item.decision === 'approved' ? 'good' : 'critical'} label={item.decision === 'approved' ? '승인' : '차단'} />
                     <StatusBadge status={item.lifecycle_status === 'current' ? 'good' : 'warning'} label={{ current: '현재 근거와 일치', evidence_changed: '근거 변경 · 재결정 필요', superseded_by_decision: '후속 결정으로 대체됨', legacy_unbound: '기존 기록 · 현재성 미확인' }[item.lifecycle_status]} />
+                    <StatusBadge status={item.decision_signature ? 'good' : 'warning'} label={item.decision_signature ? '내장 Ed25519 서명 검증' : '기존 미서명 기록'} />
                     <strong>{STAGE_LABELS[item.stage]}</strong>
                     <span>{item.decided_by} · {new Date(item.created_at).toLocaleString()}</span>
                     <button className="btn btn-ghost" disabled={archivedPackage.isPending} onClick={() => archivedPackage.mutate(item.id)}>보관 패키지</button>

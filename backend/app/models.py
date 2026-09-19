@@ -232,6 +232,10 @@ class SignoffReleaseDecision(Base):
     chain_version: Mapped[int | None] = mapped_column(nullable=True)
     previous_decision_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     credential_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    signature_version: Mapped[int | None] = mapped_column(nullable=True)
+    signing_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    signing_public_key: Mapped[str | None] = mapped_column(String(43), nullable=True)
+    decision_signature: Mapped[str | None] = mapped_column(String(86), nullable=True)
     package_bytes: Mapped[bytes] = mapped_column(LargeBinary)
     byte_length: Mapped[int]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

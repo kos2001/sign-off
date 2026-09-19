@@ -20,6 +20,7 @@ from ..schemas import (
     SignoffReleaseAuditOut,
 )
 from ..release_ledger import FORMAT as LEDGER_FORMAT, canonical_digest, verify_ledger
+from ..release_signing import configured_signer, verify_signature
 from .runs import export_gate, export_signoff_package
 from ..services.account_security import record_security_event
 
@@ -92,6 +93,14 @@ def release_out(record: SignoffReleaseDecision, *, current_evidence_sha256: str,
     if (verify_evidence_snapshot and record.evidence_snapshot_sha256 is not None
             and evidence_digest(record.manifest) != record.evidence_snapshot_sha256):
         raise HTTPException(409, '보관된 근거 스냅샷 무결성 검증에 실패했습니다.')
+    try:
+        verify_signature(
+            record.decision_sha256, signature_version=record.signature_version,
+            signing_key_id=record.signing_key_id, signing_public_key=record.signing_public_key,
+            decision_signature=record.decision_signature,
+        )
+    except ValueError as error:
+        raise HTTPException(409, '보관된 사인오프 결정 공개키 서명 검증에 실패했습니다.') from error
     lifecycle = ('superseded_by_decision' if record.id != latest_decision_id else
                  'legacy_unbound' if record.evidence_snapshot_sha256 is None else
                  'current' if record.evidence_snapshot_sha256 == current_evidence_sha256 else
@@ -106,6 +115,8 @@ def release_out(record: SignoffReleaseDecision, *, current_evidence_sha256: str,
         chain_version=record.chain_version,
         previous_decision_sha256=record.previous_decision_sha256,
         credential_confirmed_at=record.credential_confirmed_at,
+        signature_version=record.signature_version, signing_key_id=record.signing_key_id,
+        signing_public_key=record.signing_public_key, decision_signature=record.decision_signature,
         gate_snapshot_sha256=record.gate_snapshot_sha256,
         evidence_snapshot_sha256=record.evidence_snapshot_sha256, lifecycle_status=lifecycle,
         byte_length=record.byte_length,
@@ -190,6 +201,10 @@ def create_release_decision(
         credential_confirmed_at=confirmed_at,
     )
     record.decision_sha256 = decision_digest(record)
+    signer = configured_signer()
+    if signer is not None:
+        for field, value in signer.sign(record.decision_sha256).items():
+            setattr(record, field, value)
     db.add(record)
     expected_head = project.release_decision_chain_head_sha256
     head_condition = (Project.release_decision_chain_head_sha256.is_(None) if expected_head is None
@@ -256,11 +271,21 @@ def audit_release_decisions(project_id: int, db: Session = Depends(get_db)):
         .order_by(SignoffReleaseDecision.id)))
     legacy_count = 0
     chain_count = 0
+    signed_count = 0
     previous = None
     chain_started = False
     for row in rows:
         if not row.decision_sha256 or decision_digest(row) != row.decision_sha256:
             raise HTTPException(409, f'사인오프 결정 #{row.id} 무결성 검증에 실패했습니다.')
+        try:
+            signed = verify_signature(
+                row.decision_sha256, signature_version=row.signature_version,
+                signing_key_id=row.signing_key_id, signing_public_key=row.signing_public_key,
+                decision_signature=row.decision_signature,
+            )
+        except ValueError as error:
+            raise HTTPException(409, f'사인오프 결정 #{row.id}의 공개키 서명이 일치하지 않습니다.') from error
+        signed_count += int(signed)
         if row.chain_version is None:
             if chain_started:
                 raise HTTPException(409, f'사인오프 결정 #{row.id}의 체인 버전이 누락되었습니다.')
@@ -276,7 +301,8 @@ def audit_release_decisions(project_id: int, db: Session = Depends(get_db)):
         raise HTTPException(409, '사인오프 결정 해시 체인의 저장된 헤드가 일치하지 않습니다.')
     return SignoffReleaseAuditOut(
         status='verified', decision_count=len(rows), legacy_decision_count=legacy_count,
-        chained_decision_count=chain_count, chain_head_sha256=expected_head,
+        chained_decision_count=chain_count, signed_decision_count=signed_count,
+        chain_head_sha256=expected_head,
         verified_at=datetime.now(timezone.utc),
     )
 
@@ -296,6 +322,10 @@ def export_release_decision_ledger(project_id: int, db: Session = Depends(get_db
         'decisions': [{
             'id': row.id, **release_decision_payload(row),
             'decision_sha256': row.decision_sha256,
+            'signature_version': row.signature_version,
+            'signing_key_id': row.signing_key_id,
+            'signing_public_key': row.signing_public_key,
+            'decision_signature': row.decision_signature,
         } for row in rows],
     }
     # Verify the exact portable representation before returning it.

@@ -8,6 +8,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .release_signing import load_public_key, verify_signature
+
 FORMAT = 'signoff/release-decision-ledger/v1'
 SHA256 = re.compile(r'^[0-9a-f]{64}$')
 STAGES = {'rtl', 'synthesis', 'placement', 'routing', 'final'}
@@ -18,6 +20,7 @@ BASE_FIELDS = {
 OPTIONAL_DIGEST_FIELDS = {'gate_snapshot_sha256', 'evidence_snapshot_sha256'}
 CHAIN_FIELDS = {'chain_version', 'previous_decision_sha256'}
 OPTIONAL_SIGNED_FIELDS = {'credential_confirmed_at'}
+SIGNATURE_FIELDS = {'signature_version', 'signing_key_id', 'signing_public_key', 'decision_signature'}
 
 
 def canonical_digest(payload: dict) -> str:
@@ -46,7 +49,12 @@ def _digest(value, field, *, nullable=False):
         raise ValueError(f'{field} must be a lowercase SHA-256 digest')
 
 
-def verify_ledger(ledger: dict, expected_head: str | None = None) -> dict:
+def verify_ledger(ledger: dict, expected_head: str | None = None, *,
+                  trusted_public_keys: dict[str, str] | None = None,
+                  require_trusted_signatures: bool = False,
+                  allow_unsigned_prefix_count: int = 0) -> dict:
+    if type(allow_unsigned_prefix_count) is not int or allow_unsigned_prefix_count < 0:
+        raise ValueError('allow_unsigned_prefix_count must be a non-negative integer')
     if not isinstance(ledger, dict) or ledger.get('format') != FORMAT:
         raise ValueError('unsupported release decision ledger format')
     if type(ledger.get('project_id')) is not int or ledger['project_id'] < 1:
@@ -70,11 +78,14 @@ def verify_ledger(ledger: dict, expected_head: str | None = None) -> dict:
     previous_id = 0
     legacy_count = 0
     chain_count = 0
+    signed_count = 0
+    trusted_count = 0
     chain_started = False
     for index, item in enumerate(decisions):
         if not isinstance(item, dict):
             raise ValueError(f'decision at index {index} must be an object')
-        allowed = BASE_FIELDS | OPTIONAL_DIGEST_FIELDS | OPTIONAL_SIGNED_FIELDS | CHAIN_FIELDS | {'id', 'decision_sha256'}
+        allowed = (BASE_FIELDS | OPTIONAL_DIGEST_FIELDS | OPTIONAL_SIGNED_FIELDS |
+                   CHAIN_FIELDS | SIGNATURE_FIELDS | {'id', 'decision_sha256'})
         if set(item) - allowed:
             raise ValueError(f'decision at index {index} contains unsigned fields')
         decision_id = item.get('id')
@@ -116,6 +127,26 @@ def verify_ledger(ledger: dict, expected_head: str | None = None) -> dict:
             raise ValueError(f'decision #{decision_id} has invalid signed fields') from error
         if actual != item['decision_sha256']:
             raise ValueError(f'decision #{decision_id} digest mismatch')
+        try:
+            signed = verify_signature(
+                item['decision_sha256'], signature_version=item.get('signature_version'),
+                signing_key_id=item.get('signing_key_id'),
+                signing_public_key=item.get('signing_public_key'),
+                decision_signature=item.get('decision_signature'),
+            )
+        except ValueError as error:
+            raise ValueError(f'decision #{decision_id} {error}') from error
+        if signed:
+            signed_count += 1
+            if trusted_public_keys is not None or require_trusted_signatures:
+                trusted = (trusted_public_keys or {}).get(item['signing_key_id'])
+                if trusted is None or trusted != item['signing_public_key']:
+                    if require_trusted_signatures and index >= allow_unsigned_prefix_count:
+                        raise ValueError(f'decision #{decision_id} was not signed by a trusted key')
+                else:
+                    trusted_count += 1
+        elif require_trusted_signatures and index >= allow_unsigned_prefix_count:
+            raise ValueError(f'decision #{decision_id} has no trusted signature')
         chain_version = item.get('chain_version')
         if chain_version is None:
             if chain_started:
@@ -136,6 +167,7 @@ def verify_ledger(ledger: dict, expected_head: str | None = None) -> dict:
         'status': 'verified', 'project_id': ledger['project_id'],
         'decision_count': len(decisions), 'legacy_decision_count': legacy_count,
         'chained_decision_count': chain_count, 'chain_head_sha256': head,
+        'signed_decision_count': signed_count, 'trusted_signature_count': trusted_count,
     }
 
 
@@ -161,9 +193,25 @@ def main(argv=None):
     parser.add_argument('verify', choices=['verify'])
     parser.add_argument('--ledger', required=True, type=Path)
     parser.add_argument('--expected-head')
+    parser.add_argument('--trusted-public-key', action='append', default=[], type=Path)
+    parser.add_argument('--require-trusted-signatures', action='store_true')
+    parser.add_argument('--allow-unsigned-prefix-count', type=int, default=0)
     args = parser.parse_args(argv)
     try:
-        result = verify_ledger(_load(args.ledger), args.expected_head)
+        trusted = {}
+        for path in args.trusted_public_key:
+            identifier, encoded = load_public_key(path)
+            if identifier in trusted:
+                raise ValueError(f'duplicate trusted public key {identifier}')
+            trusted[identifier] = encoded
+        if args.require_trusted_signatures and not trusted:
+            raise ValueError('--require-trusted-signatures requires --trusted-public-key')
+        result = verify_ledger(
+            _load(args.ledger), args.expected_head,
+            trusted_public_keys=trusted or None,
+            require_trusted_signatures=args.require_trusted_signatures,
+            allow_unsigned_prefix_count=args.allow_unsigned_prefix_count,
+        )
     except (OSError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1
