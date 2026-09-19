@@ -419,6 +419,8 @@ export interface SignoffReleaseDecision {
   decision_sha256: string; gate_snapshot_sha256: string | null; evidence_snapshot_sha256: string | null;
   chain_version: number | null; previous_decision_sha256: string | null;
   credential_confirmed_at: string | null;
+  signature_version: number | null; signing_key_id: string | null;
+  signing_public_key: string | null; decision_signature: string | null;
   lifecycle_status: 'current' | 'evidence_changed' | 'superseded_by_decision' | 'legacy_unbound';
   byte_length: number; created_at: string; gate: GateStatus;
 }
@@ -822,7 +824,8 @@ export const api = {
     request<SignoffReleaseReview>(`/projects/${projectId}/signoff-releases/review?stage=${stage}`),
   signoffReleaseAudit: (projectId: number) => request<{
     status: 'verified'; decision_count: number; legacy_decision_count: number;
-    chained_decision_count: number; chain_head_sha256: string | null; verified_at: string;
+    chained_decision_count: number; signed_decision_count: number;
+    chain_head_sha256: string | null; verified_at: string;
   }>(`/projects/${projectId}/signoff-releases/audit`),
   exportSignoffReleaseLedger: (projectId: number) =>
     request<Blob>(`/projects/${projectId}/signoff-releases/audit/export`, undefined, 'blob'),

@@ -31,6 +31,9 @@ pip을 사용하는 별도 가상환경에서는 `python -m pip install --requir
 현재 Starlette 1.3.1이 4.15에서 deprecated 된 별칭을 사용하므로 경고 없는 검증 조합인 4.14.x로
 상한을 두며, Starlette가 새 API로 전환되면 두 패키지를 함께 갱신합니다.
 
+`cryptography`의 Ed25519 구현은 사람의 사인오프 결정 공개키 서명과 오프라인 원장 검증에 사용합니다.
+private 키 원문은 DB·원장·로그에 저장하지 않으며 dependency 잠금에는 cffi/pycparser를 포함합니다.
+
 ## 의도적인 갱신
 
 직접 의존성을 바꿀 때 `.in`을 편집하고 잠금 파일을 함께 갱신합니다. 아래 명령은

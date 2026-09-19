@@ -157,6 +157,13 @@ def test_invalid_request_body_limit_prevents_startup(monkeypatch, value):
         create_app()
 
 
+def test_required_release_signing_key_prevents_startup(monkeypatch):
+    monkeypatch.setenv('SIGNOFF_RELEASE_SIGNING_REQUIRED', '1')
+    monkeypatch.delenv('SIGNOFF_RELEASE_SIGNING_PRIVATE_KEY', raising=False)
+    with pytest.raises(RuntimeError, match='release signing private key is required'):
+        create_app()
+
+
 @pytest.mark.parametrize('headers,status', [
     ([(b'content-length', b'10'), (b'Content-Length', b'10')], 400),
     ([(b'content-length', b'9' * 10_000)], 413),

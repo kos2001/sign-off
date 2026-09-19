@@ -81,6 +81,12 @@ def initialize_schema(engine):
                 connection.execute(text('ALTER TABLE signoff_release_decisions ADD COLUMN previous_decision_sha256 VARCHAR(64)'))
             if 'credential_confirmed_at' not in release_columns:
                 connection.execute(text(f'ALTER TABLE signoff_release_decisions ADD COLUMN credential_confirmed_at {timestamp_type}'))
+            for column, definition in {
+                'signature_version': 'INTEGER', 'signing_key_id': 'VARCHAR(64)',
+                'signing_public_key': 'VARCHAR(43)', 'decision_signature': 'VARCHAR(86)',
+            }.items():
+                if column not in release_columns:
+                    connection.execute(text(f'ALTER TABLE signoff_release_decisions ADD COLUMN {column} {definition}'))
             batch_columns = {item["name"] for item in inspect(connection).get_columns("sta_batch_executions")}
             for column, definition in {
                 "cancel_requested": f"BOOLEAN NOT NULL DEFAULT {'FALSE' if engine.dialect.name == 'postgresql' else '0'}",
