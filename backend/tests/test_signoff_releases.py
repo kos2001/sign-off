@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import zipfile
+import base64
 
 import pytest
 from fastapi import Response
@@ -12,6 +13,9 @@ from app.db import SessionLocal
 from app.models import AccountSecurityEvent, RunEvidence, SignoffReleaseDecision, SignoffRun
 from app.routers.releases import evidence_digest
 from app.release_ledger import verify_ledger
+from app.release_signing import DecisionSigner
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from test_auth import PASSWORD, accounts
 
 
@@ -343,6 +347,13 @@ def test_portable_release_ledger_cli_and_tamper_detection(accounts, tmp_path):
     ], capture_output=True, text=True, timeout=10)
     assert verified.returncode == 0, verified.stderr
     assert json.loads(verified.stdout)['status'] == 'verified'
+    with pytest.raises(ValueError, match='no trusted signature'):
+        verify_ledger(ledger, item['decision_sha256'], trusted_public_keys={},
+                      require_trusted_signatures=True)
+    assert verify_ledger(
+        ledger, item['decision_sha256'], trusted_public_keys={},
+        require_trusted_signatures=True, allow_unsigned_prefix_count=1,
+    )['signed_decision_count'] == 0
 
     ledger['decisions'][0]['reason'] = 'rewritten outside the service'
     with pytest.raises(ValueError, match='digest mismatch'):
@@ -353,3 +364,56 @@ def test_portable_release_ledger_cli_and_tamper_detection(accounts, tmp_path):
     ], capture_output=True, text=True, timeout=10)
     assert wrong_head.returncode == 1
     assert 'externally retained head' in wrong_head.stderr
+
+
+def test_signed_release_ledger_verifies_with_an_external_trusted_key(accounts, monkeypatch, tmp_path):
+    _, ids, login = accounts
+    private = Ed25519PrivateKey.generate()
+    raw = private.private_bytes(
+        serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption(),
+    )
+    monkeypatch.setenv('SIGNOFF_RELEASE_SIGNING_PRIVATE_KEY', base64.urlsafe_b64encode(raw).decode().rstrip('='))
+    attach_source(ids['run'])
+    url = f"/projects/{ids['project']}/signoff-releases"
+    item = login('approver').post(url, json=confirmed({
+        'stage': 'final', 'decision': 'rejected', 'reason': 'signed audit evidence',
+    })).json()
+    assert item['signature_version'] == 1
+    assert len(item['signing_key_id']) == 64 and len(item['decision_signature']) == 86
+    ledger = login('viewer').get(f'{url}/audit/export').json()
+    with pytest.raises(ValueError, match='not signed by a trusted key'):
+        verify_ledger(ledger, require_trusted_signatures=True)
+    public = tmp_path / 'release-public.key'
+    public.write_text(item['signing_public_key'] + '\n')
+    path = tmp_path / 'signed-ledger.json'
+    path.write_text(json.dumps(ledger, ensure_ascii=False))
+    verified = subprocess.run([
+        sys.executable, '-m', 'app.release_ledger', 'verify', '--ledger', str(path),
+        '--trusted-public-key', str(public), '--require-trusted-signatures',
+    ], capture_output=True, text=True, timeout=10)
+    assert verified.returncode == 0, verified.stderr
+    result = json.loads(verified.stdout)
+    assert result['signed_decision_count'] == result['trusted_signature_count'] == 1
+    assert login('viewer').get(f'{url}/audit').json()['signed_decision_count'] == 1
+
+    wrong_public = tmp_path / 'wrong-public.key'
+    wrong_public.write_text(DecisionSigner.from_encoded(
+        base64.urlsafe_b64encode(Ed25519PrivateKey.generate().private_bytes(
+            serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        )).decode().rstrip('=')
+    ).public_key + '\n')
+    untrusted = subprocess.run([
+        sys.executable, '-m', 'app.release_ledger', 'verify', '--ledger', str(path),
+        '--trusted-public-key', str(wrong_public), '--require-trusted-signatures',
+    ], capture_output=True, text=True, timeout=10)
+    assert untrusted.returncode == 1 and 'not signed by a trusted key' in untrusted.stderr
+
+    ledger['decisions'][0]['decision_signature'] = 'A' * 86
+    with pytest.raises(ValueError, match='signature verification failed'):
+        verify_ledger(ledger)
+    with SessionLocal() as db:
+        row = db.get(SignoffReleaseDecision, item['id'])
+        row.signing_key_id = '0' * 64
+        db.commit()
+    assert login('viewer').get(f'{url}/audit').status_code == 409

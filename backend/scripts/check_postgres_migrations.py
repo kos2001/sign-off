@@ -58,7 +58,8 @@ def main():
                 raise RuntimeError(f'missing migrated projects.{column}')
         release_columns = {column['name'] for column in inspector.get_columns('signoff_release_decisions')}
         for column in {'gate_snapshot_sha256', 'chain_version', 'previous_decision_sha256',
-                       'credential_confirmed_at'}:
+                       'credential_confirmed_at', 'signature_version', 'signing_key_id',
+                       'signing_public_key', 'decision_signature'}:
             if column not in release_columns:
                 raise RuntimeError(f'missing migrated signoff_release_decisions.{column}')
         with engine.connect() as connection:

@@ -15,6 +15,7 @@ from .db import Base, engine, SessionLocal
 from .migrations import initialize_schema
 from .metrics import Metrics, configured_token
 from .request_limits import RequestBodyError, cache_limited_body, configured_request_limit
+from .release_signing import configured_signer
 from .worker_maintenance import worker_lifespan
 from .worker_readiness import WorkerReadiness
 from .services.rtl.worker_client import WorkerError
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
     auth_required()  # Reject misspelled auth modes instead of silently disabling protection.
     configured_token()  # Reject weak scrape credentials before opening the service.
     request_limit = configured_request_limit()
+    configured_signer()  # Validate the optional release signing policy and key.
     capacity()
     sta_capacity()
     review_capacity()
