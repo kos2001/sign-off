@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 
 import { ScreenBoundary } from "./components/ScreenBoundary";
+import { LanguageProvider } from "./components/LanguageProvider";
 import App from "./App";
 import "./index.css";
 
@@ -13,10 +14,10 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ScreenBoundary><QueryClientProvider client={queryClient}>
+    <LanguageProvider><ScreenBoundary><QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <App />
       </BrowserRouter>
-    </QueryClientProvider></ScreenBoundary>
+    </QueryClientProvider></ScreenBoundary></LanguageProvider>
   </StrictMode>,
 );

@@ -275,13 +275,10 @@ body {
 
 /* Public product guide: independent of authenticated project data. */
 .guide-shell { max-width: 1320px; margin: auto; padding: 0 40px; }
-.guide-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 24px 0; }
 .guide-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; white-space: nowrap; }
 .guide-brand > span { background: var(--series-1); padding: 5px 12px; border-radius: 8px; }
 .guide-header-actions { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .guide-languages { display: flex; gap: 4px; border: 1px solid var(--border); padding: 3px; border-radius: 8px; font-size: 12px; }
-.guide-languages a { padding: 6px 10px; border-radius: 5px; color: var(--text-secondary); }
-.guide-languages a[aria-current] { background: var(--surface-2); color: white; }
 .guide-nav { display: flex; gap: 8px; flex-wrap: wrap; padding: 14px 0; border-block: 1px solid var(--border); }
 .guide-tab { padding: 8px 12px; font-size: 13px; color: var(--text-secondary); border-radius: 6px; }
 .guide-tab.active { background: rgba(57,135,229,.15); color: #9ec5f4; }
@@ -317,7 +314,6 @@ body {
 .guide-shell a:focus-visible { outline: 2px solid #9ec5f4; outline-offset: 4px; }
 @media (max-width: 640px) {
   .guide-shell { padding: 0 18px; }
-  .guide-header { align-items: flex-start; flex-direction: column; gap: 16px; }
   .guide-header-actions { gap: 12px; }
   .guide-hero { padding: 36px 0 28px; }
   .guide-intro { font-size: 15px; }
@@ -328,4 +324,16 @@ body {
   .guide-flow-caption { flex-direction: column; gap: 8px; }
   .guide-card { padding: 20px; }
   .guide-sequence .guide-card { grid-template-columns: 26px 1fr; gap: 8px; }
+}
+
+.global-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--surface-1); }
+.global-navigation { display: flex; gap: 20px; font-size: 13px; color: var(--text-secondary); }
+.global-navigation a[aria-current] { color: #9ec5f4; }
+.guide-languages button { padding: 6px 10px; border-radius: 5px; color: var(--text-secondary); cursor: pointer; }
+.guide-languages button[aria-pressed="true"] { background: var(--surface-2); color: white; }
+.global-header a:focus-visible, .global-header button:focus-visible { outline: 2px solid #9ec5f4; outline-offset: 4px; }
+@media (max-width: 640px) {
+  .global-header { flex-direction: column; align-items: flex-start; padding: 16px 18px; }
+  .global-header .guide-header-actions { width: 100%; justify-content: space-between; gap: 12px; }
+  .global-navigation { gap: 12px; }
 }

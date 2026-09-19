@@ -1,4 +1,5 @@
-import ServiceGuide, { GuideEntry } from "./pages/ServiceGuide";
+import { AppHeader } from "./components/AppHeader";
+import ServiceGuide, { GuideEntry, LegacyGuideEntry } from "./pages/ServiceGuide";
 import DesignStructure from "./pages/DesignStructure";
 import NotFound from "./pages/NotFound";
 import { RouteScreenBoundary } from "./components/ScreenBoundary";
@@ -43,11 +44,12 @@ import RevisionCoverage from './pages/RevisionCoverage';
 import { ReviewDraftProvider } from "./components/ReviewDrafts";
 
 export default function App() {
-  return <Routes>
+  return <><AppHeader /><Routes>
     <Route path="/guide" element={<GuideEntry />} />
-    <Route path="/guide/:language/:section" element={<ServiceGuide />} />
+    <Route path="/guide/:section" element={<ServiceGuide />} />
+    <Route path="/guide/:language/:section" element={<LegacyGuideEntry />} />
     <Route path="*" element={<Workspace />} />
-  </Routes>;
+  </Routes></>;
 }
 
 function Workspace() {

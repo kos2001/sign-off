@@ -8,10 +8,6 @@ type GuideCopy = {
   purpose: string; scope: string; flow: string[]; flowLabel: string;
   pages: Record<GuideSection, Page>;
 };
-export function preferredGuideLanguage(): GuideLanguage {
-  try { return localStorage.getItem('signoff-guide-language') === 'en' ? 'en' : 'ko'; }
-  catch { return 'ko'; }
-}
 export const guideCopy: Record<GuideLanguage, GuideCopy> = {
   ko: {
     nav: { overview: '서비스 개요', workflow: '개발 흐름 속 위치', capabilities: '기능과 검증 범위', agents: '에이전트와 사람', start: '시작하기' },
@@ -67,7 +63,7 @@ export const guideCopy: Record<GuideLanguage, GuideCopy> = {
       },
       start: {
         eyebrow: 'GETTING STARTED', title: '한 개의 리비전, 한 번의 검증부터.',
-        intro: '처음에는 작은 설계로 입력과 결과의 연결을 확인하세요. 아래 작업 공간은 현재 한국어로 제공되며, 인증이 필요한 배포에서는 관리자가 발급한 계정으로 접속합니다.',
+        intro: '처음에는 작은 설계로 입력과 결과의 연결을 확인하세요. 인증이 필요한 배포에서는 관리자가 발급한 계정으로 접속합니다.',
         items: [
           { title: '01 / 프로젝트와 검증 계획', body: '프로젝트를 선택하거나 만들고 공정·파운드리 정보를 확인합니다. 단계별 필수 도메인과 타이밍 시나리오를 정합니다.', detail: '팀에서는 조회·편집·승인 역할을 나누고 같은 검증 기준을 사용하세요.', to: '/' },
           { title: '02 / 실행하거나 보고서 가져오기', body: 'RTL·OpenSTA 도구를 실행하거나 프로젝트에서 외부 결과를 가져옵니다. 실제 설계 리비전을 지정하고 원본 보고서·로그를 함께 보존합니다.', detail: '예제 입력으로 흐름을 익힌 뒤 실제 입력으로 교체하세요.', to: '/analysis' },
@@ -80,7 +76,7 @@ export const guideCopy: Record<GuideLanguage, GuideCopy> = {
   },
   en: {
     nav: { overview: 'Overview', workflow: 'Development workflow', capabilities: 'Capabilities & scope', agents: 'Agents & people', start: 'Getting started' },
-    workspace: 'Open workspace (Korean)', skip: 'Skip to content', next: 'Next guide',
+    workspace: 'Open workspace', skip: 'Skip to content', next: 'Next guide',
     purpose: 'Bring design results together to support the next decision.',
     scope: 'From RTL to final sign-off · evidence, review and decision history',
     flow: ['RTL design', 'Synthesis', 'Placement', 'Routing', 'Final review'], flowLabel: 'Connect verification evidence and approval decisions across every stage.',
@@ -132,7 +128,7 @@ export const guideCopy: Record<GuideLanguage, GuideCopy> = {
       },
       start: {
         eyebrow: 'GETTING STARTED', title: 'Start with one revision and one verification run.',
-        intro: 'Use a small design to confirm the link between inputs and results. The working screens currently use Korean. Authenticated deployments require an account issued by your administrator.',
+        intro: 'Use a small design to confirm the link between inputs and results. Authenticated deployments require an account issued by your administrator.',
         items: [
           { title: '01 / Project & verification plan', body: 'Select or create a project and check its process and foundry information. Define required verification domains and timing scenarios for each stage.', detail: 'Assign viewer, editor and approver roles around a shared verification policy.', to: '/' },
           { title: '02 / Execute or import', body: 'Run RTL or OpenSTA tools, or import external results within a project. Specify the actual design revision and retain source reports and logs.', detail: 'Try example inputs to learn the workflow, then replace them with actual design inputs.', to: '/analysis' },
