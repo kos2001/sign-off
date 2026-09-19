@@ -3,7 +3,7 @@ import { PULSE_TESTBENCH } from "./pulseTestbench";
 import { SimulationDetails } from "../components/SimulationDetails";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, Navigate, useLocation, useParams } from "react-router";
 
 import type { RtlSignoffResult, StaExecutionResult } from "../api";
 import { api } from "../api";
@@ -158,26 +158,32 @@ const CLEAN_RTL = `module ibex_pulse_sync (
 endmodule
 `;
 
+const analysisTools = [
+  { slug: 'rtl', legacy: 'rtl-signoff', title: 'RTL 사인오프 래더', description: 'RTL 린트·구조 규칙·시뮬레이션·합성을 실행하고 결과와 근거를 확인합니다.', kind: '도구 실행', component: RtlSignoffSection },
+  { slug: 'sta', legacy: 'sta-signoff', title: 'OpenSTA 타이밍 실행', description: '넷리스트·Liberty·SDC와 선택적 SPEF로 정적 타이밍을 실행하고 경로를 저장합니다.', kind: '도구 실행', component: StaSignoffSection },
+  { slug: 'ir-drop', legacy: 'ir-drop', title: 'IR-drop 스크리닝', description: '전원망 밀도·활동도·강도를 바탕으로 전압 강하 위험 영역을 탐색합니다.', kind: '추정 · 스크리닝', component: IrDropSection },
+  { slug: 'timing', legacy: 'timing', title: 'MMMC 타이밍', description: '코너별 요약 수치를 비교하고 머지 WNS/TNS 및 PBA 추정을 확인합니다.', kind: '요약 · 추정', component: TimingSection },
+  { slug: 'glitch-power', legacy: 'glitch-power', title: '글리치 파워', description: '활동도 기반 글리치 전력 비중과 네트별 위험을 분석합니다.', kind: '추정 분석', component: GlitchSection },
+];
+
 export default function Analysis() {
-  const { hash } = useLocation();
-
-  // client-side routing never triggers the browser's native hash scroll,
-  // and the target section doesn't exist in the DOM until React mounts it
-  useEffect(() => {
-    if (!hash) return;
-    const el = document.getElementById(hash.slice(1));
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [hash]);
-
-  return (
-    <div className="space-y-6">
-      <RtlSignoffSection />
-      <StaSignoffSection />
-      <IrDropSection />
-      <TimingSection />
-      <GlitchSection />
-    </div>
-  );
+  const { hash, search } = useLocation();
+  const { tool } = useParams();
+  const selected = analysisTools.find(item => item.slug === tool);
+  const legacy = !tool && analysisTools.find(item => `#${item.legacy}` === hash);
+  useEffect(() => { window.scrollTo(0, 0); }, [tool]);
+  if (legacy) return <Navigate replace to={`/analysis/${legacy.slug}${search}`} />;
+  if (tool && !selected) return <div className="space-y-4"><h1 className="text-2xl font-semibold">분석 도구를 찾을 수 없습니다</h1><Link className="btn btn-ghost" to="/analysis">분석 도구 선택</Link></div>;
+  const Tool = selected?.component;
+  return <div className="space-y-6">
+    <header className="space-y-3">
+      {selected && <Link className="text-sm text-[var(--series-1)]" to="/analysis">← 분석 도구 선택</Link>}
+      <h1 className="text-2xl font-semibold">{selected?.title ?? '분석 도구'}</h1>
+      <p className="text-sm text-[var(--text-secondary)]">{selected?.description ?? '목적에 맞는 도구를 선택하세요. 실제 검증 실행과 빠른 추정 분석을 구분해 사용합니다.'}</p>
+      <Link className="text-sm text-[var(--series-1)]" to="/guide">서비스 목적과 검증 범위 · 한국어 / English →</Link>
+    </header>
+    {Tool ? <Tool key={tool} /> : <div className="grid gap-4 md:grid-cols-2">{analysisTools.map(item => <Link key={item.slug} to={`/analysis/${item.slug}`} className="card card-hover p-6"><p className="text-xs text-[var(--series-1)]">{item.kind}</p><h2 className="mt-3 font-semibold">{item.title} →</h2><p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">{item.description}</p></Link>)}</div>}
+  </div>;
 }
 
 function StaSignoffSection() {

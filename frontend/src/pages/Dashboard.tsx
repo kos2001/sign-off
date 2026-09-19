@@ -60,6 +60,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold">프로젝트 대시보드</h1><Link className="btn btn-ghost" to="/guide">서비스 소개 · 한국어 / English</Link></header>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <StatTile label="프로젝트" value={projects.data?.total ?? 0} suffix="개" />
         <StatTile

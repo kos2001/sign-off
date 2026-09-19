@@ -21,7 +21,7 @@ function SidebarSection({ title, items }: { title: string; items: NavItem[] }) {
           const [itemPath, itemHash] = item.to.split("#");
           const isActive = itemHash
             ? pathname === itemPath && hash === `#${itemHash}`
-            : pathname === item.to || pathname.startsWith(`${item.to}/`);
+            : pathname === item.to || (item.to !== "/analysis" && pathname.startsWith(`${item.to}/`));
           return (
             <li key={item.to}>
               <NavLink to={item.to} className={`sidebar-link ${isActive ? "sidebar-link-active" : ""}`}>
@@ -64,7 +64,7 @@ export function Sidebar() {
 
       <nav id="main-navigation" aria-label="주 메뉴" className={mobileOpen ? "mt-5 md:mt-0" : "hidden md:block"}>
         <div className="mb-5 text-xs space-y-2">{auth.state.user ? <><p>로그인: {auth.state.user.username}{auth.state.user.is_admin ? " · 관리자" : ""}</p><button className="btn btn-ghost" onClick={() => auth.logout().catch(error => setLogoutError(error.message))}>로그아웃</button><NavLink className="btn btn-ghost" to="/account">계정 설정</NavLink>{logoutError && <p role="alert">{logoutError}</p>}</> : <p>로컬 모드 · 계정 인증 없음</p>}</div>
-        <SidebarSection title="개요" items={[{ to: "/", label: "대시보드" }, { to: "/agents", label: "에이전트 개입 안내" }]} />
+        <SidebarSection title="개요" items={[{ to: "/", label: "대시보드" }, { to: "/guide", label: "서비스 소개 · 한국어 / English" }, { to: "/agents", label: "에이전트 개입 안내" }]} />
         {auth.state.user?.is_admin && <SidebarSection title="운영 관리" items={[{ to: '/admin/security-events', label: '보안 이력 관리' }]} />}
 
         <SidebarSection
@@ -78,11 +78,12 @@ export function Sidebar() {
         <SidebarSection
           title="분석 도구"
           items={[
-            { to: "/analysis#rtl-signoff", label: "RTL 사인오프 래더" },
-            { to: "/analysis#sta-signoff", label: "OpenSTA 타이밍 실행" },
-            { to: "/analysis#ir-drop", label: "IR-drop 스크리닝" },
-            { to: "/analysis#timing", label: "MMMC 타이밍" },
-            { to: "/analysis#glitch-power", label: "글리치 파워" },
+            { to: "/analysis", label: "분석 도구 선택" },
+            { to: "/analysis/rtl", label: "RTL 사인오프 래더" },
+            { to: "/analysis/sta", label: "OpenSTA 타이밍 실행" },
+            { to: "/analysis/ir-drop", label: "IR-drop 스크리닝" },
+            { to: "/analysis/timing", label: "MMMC 타이밍" },
+            { to: "/analysis/glitch-power", label: "글리치 파워" },
           ]}
         />
       </nav>

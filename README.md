@@ -21,6 +21,17 @@
   시각화, 커스텀 SVG 차트(IR-drop 히트맵, 슬랙 다이버징 바, 전력 스택 바), agent 개입 여부를
   명시적으로 보여주는 리뷰 패널.
 
+## 서비스 소개와 화면 구성
+
+로그인 없이 읽는 안내: `/guide/ko/overview` (한국어), `/guide/en/overview` (English).
+서비스 개요, 개발 흐름 속 위치, 기능과 검증 범위, 에이전트와 사람, 시작하기의 다섯 페이지로
+구성됩니다. 언어를 바꿔도 현재 안내 페이지가 유지되며 선택한 언어는 다음 방문에 복원됩니다.
+소개 영역은 API 접속 없이도 열립니다. 작업 공간은 현재 한국어로 제공됩니다.
+
+분석 도구 선택은 `/analysis`, 개별 도구는 `/analysis/rtl`, `/analysis/sta`, `/analysis/ir-drop`,
+`/analysis/timing`, `/analysis/glitch-power`입니다. 기존 `/analysis#rtl-signoff` 등의 링크도
+해당 도구 페이지로 연결됩니다. 대시보드·로그인 화면·사이드바에서 소개에 접근할 수 있습니다.
+
 ## 실행
 
 ```bash

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, setCsrfToken, type AuthState, type ProjectRole } from "../api";
 
@@ -65,6 +66,7 @@ function LoginForm({ onLogin }: { onLogin: (state: AuthState) => void }) {
     catch (error) { setError((error as Error).message); setPassword(""); }
     finally { setPending(false); }
   }}>
+    <Link className="text-sm text-[var(--series-1)]" to="/guide">서비스 소개 · 한국어 / English →</Link>
     <div><h1 className="text-xl font-bold">Sign-off Hub 로그인</h1><p className="mt-2 text-sm text-[var(--text-secondary)]">관리자가 발급한 계정으로 프로젝트에 접속하세요.</p></div>
     <label className="block text-sm">사용자 이름<input autoFocus autoComplete="username" required maxLength={64} className="input w-full mt-2" value={username} onChange={e => setUsername(e.target.value)} disabled={pending} /></label>
     <label className="block text-sm">비밀번호<input type="password" autoComplete="current-password" required maxLength={256} className="input w-full mt-2" value={password} onChange={e => setPassword(e.target.value)} disabled={pending} /></label>

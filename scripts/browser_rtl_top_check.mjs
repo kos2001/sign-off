@@ -13,7 +13,7 @@ try {
   assert.equal(login.status(), 200); const session = await login.json();
   const page = await context.newPage(); page.setDefaultTimeout(10000);
   await page.route('**/api/agents/review/**', route => route.fulfill({ json: { role: 'a1_rtl', triggered: false, available: null, a5: { role: 'a5_synth', triggered: false, available: null }, v: null } }));
-  await page.goto(`${base}/analysis#rtl`);
+  await page.goto(`${base}/analysis/rtl`);
   const top = page.getByRole('textbox', { name: '린트·합성 최상위 모듈 (선택)', exact: true });
   await top.fill('chip; exec');
   assert.ok(await page.getByRole('button', { name: '사인오프 래더 실행', exact: true }).isDisabled());
