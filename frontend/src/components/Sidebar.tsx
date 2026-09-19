@@ -47,19 +47,8 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="flex items-center gap-2.5 px-1 md:mb-6">
-        <span
-          aria-hidden
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white"
-          style={{ background: "linear-gradient(135deg, var(--series-1), var(--seq-600))" }}
-        >
-          S
-        </span>
-        <div>
-          <h1 className="text-base font-bold leading-tight">Sign-off Hub</h1>
-          <p className="text-xs leading-tight" style={{ color: "var(--text-muted)" }}>
-            {t("칩 설계 사인오프 관리 · 분석", "Chip sign-off management & analysis")} </p>
-        </div>
+      <div className="flex items-center justify-between px-1 md:hidden">
+        <span className="text-sm font-medium">{t("작업 메뉴", "Workspace menu")}</span>
         <button className="btn btn-ghost ml-auto md:hidden" aria-expanded={mobileOpen} aria-controls="main-navigation" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? t("메뉴 닫기", "Close menu") : t("메뉴", "Menu")}</button>
       </div>
 
