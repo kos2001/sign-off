@@ -53,7 +53,7 @@ export function Sidebar() {
       </div>
 
       <nav id="main-navigation" aria-label={t("주 메뉴", "Main navigation")} className={mobileOpen ? "mt-5 md:mt-0" : "hidden md:block"}>
-        <div className="mb-5 text-xs space-y-2">{auth.state.user ? <><p>{t("로그인:", "Signed in:")} {auth.state.user.username}{auth.state.user.is_admin ? " · 관리자" : ""}</p><button className="btn btn-ghost" onClick={() => auth.logout().catch(error => setLogoutError(error.message))}>{t("로그아웃", "Sign out")}</button><NavLink className="btn btn-ghost" to="/account">{t("계정 설정", "Account settings")}</NavLink>{logoutError && <p role="alert">{logoutError}</p>}</> : <p>{t("로컬 모드 · 계정 인증 없음", "Local mode · no account authentication")}</p>}</div>
+        <div className="mb-5 text-xs space-y-2">{auth.state.user ? <><p>{t("로그인:", "Signed in:")} {auth.state.user.username}{auth.state.user.is_admin ? t(" · 관리자", " · Administrator") : ""}</p><button className="btn btn-ghost" onClick={() => auth.logout().catch(error => setLogoutError(error.message))}>{t("로그아웃", "Sign out")}</button><NavLink className="btn btn-ghost" to="/account">{t("계정 설정", "Account settings")}</NavLink>{logoutError && <p role="alert">{logoutError}</p>}</> : <p>{t("로컬 모드 · 계정 인증 없음", "Local mode · no account authentication")}</p>}</div>
         <SidebarSection title={t("개요", "Overview")} items={[{ to: "/", label: t("대시보드", "Dashboard") }, { to: "/guide", label: t("서비스 소개", "Service guide") }, { to: "/agents", label: t("에이전트 개입 안내", "Agent responsibilities") }]} />
         {auth.state.user?.is_admin && <SidebarSection title={t("운영 관리", "Administration")} items={[{ to: '/admin/security-events', label: t("보안 이력 관리", "Security events") }]} />}
 

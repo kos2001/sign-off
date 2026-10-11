@@ -92,3 +92,28 @@ node scripts/browser_service_guide_check.mjs
 언어 변경 시 대시보드와 로그인 입력값 보존, 로그인 화면의 소개 링크, 이전 언어별 주소와 해시 주소 호환,
 도구별 단독 표시와 도구 선택 화면 복귀를 확인합니다. 스크린샷은
 `/tmp/signoff-service-guide-check`에 저장합니다.
+
+## 영어 작업 공간 누락 검사
+
+`browser_english_coverage_check.mjs`는 영어를 선택한 상태로 대시보드, 프로젝트·런·위반 화면,
+모든 보고서 가져오기, 런별 상세 보기, 계정·보안 이력, 에이전트 안내, 분석 도구와 없는 주소까지
+53개 화면을 엽니다. 펼침 영역을 연 뒤 본문과 `aria-label`·`placeholder`·`title`·`alt`에서 한글을
+찾고, 390px 폭의 가로 넘침과 페이지 오류를 함께 검사합니다. 데모 시드 데이터는 영어이므로 화면의
+한글은 번역 누락입니다. 언어 선택 버튼의 "한국어"만 예외입니다. 데이터를 변경하지 않으며,
+`seed_demo.py`로 채운 임시 DB의 로컬 모드 백엔드를 사용합니다.
+
+```bash
+SIGNOFF_QA_DIR=$(mktemp -d)
+cd backend
+SIGNOFF_DATABASE_URL="sqlite:///$SIGNOFF_QA_DIR/test.db" .venv/bin/python scripts/seed_demo.py
+SIGNOFF_DATABASE_URL="sqlite:///$SIGNOFF_QA_DIR/test.db" \
+  .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18000
+# 다른 터미널: 프런트엔드를 15173으로 실행한 뒤 저장소 루트에서
+SIGNOFF_PLAYWRIGHT_MODULE=/tmp/signoff-browser-tools/node_modules/playwright/index.mjs \
+SIGNOFF_TEST_UI=http://127.0.0.1:15173 \
+node scripts/browser_english_coverage_check.mjs
+```
+
+시드 데이터로 열리지 않는 상용 도구 증거 분기 등은 이 검사가 화면에 띄우지 못합니다. 새 문구는
+`useLanguage()`의 `t('한국어', 'English')` 또는 React 밖에서 `tr()`로 작성하고, 날짜는
+`formatDateTime()`으로 표시합니다.
