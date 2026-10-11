@@ -1,4 +1,5 @@
 import type { RtlSignoffResult } from './api';
+import { tr } from './components/LanguageProvider';
 
 export type RtlDiagnostic = {
   tool: 'lint' | 'width' | 'synthesize'; severity: string; code: string | null;
@@ -35,8 +36,8 @@ export function sourceMapping(source: string | null) {
 }
 
 export function diagnosticLinkProblem(diagnostic: RtlDiagnostic, mapping: ReturnType<typeof sourceMapping>): string | null {
-  if (diagnostic.file !== 'design.sv' && diagnostic.file !== './design.sv') return '다른 파일의 진단';
-  if (mapping.remapped) return '`line 지시문으로 위치가 변경될 수 있음';
-  if (!Number.isSafeInteger(diagnostic.line) || diagnostic.line < 1 || diagnostic.line > mapping.lines.length) return '저장된 소스 범위 밖';
+  if (diagnostic.file !== 'design.sv' && diagnostic.file !== './design.sv') return tr('다른 파일의 진단', 'Diagnostic for another file');
+  if (mapping.remapped) return tr('`line 지시문으로 위치가 변경될 수 있음', 'Location may be shifted by a `line directive');
+  if (!Number.isSafeInteger(diagnostic.line) || diagnostic.line < 1 || diagnostic.line > mapping.lines.length) return tr('저장된 소스 범위 밖', 'Outside the stored source range');
   return null;
 }

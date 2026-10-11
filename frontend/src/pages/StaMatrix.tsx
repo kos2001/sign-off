@@ -5,6 +5,7 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import { api, STAGES, STAGE_LABELS, type Stage } from '../api';
 import { Card, Field, StatTile, StatusBadge } from '../components/ui';
 import { useAuth } from '../components/AuthProvider';
+import { formatDateTime, tr, useLanguage } from '../components/LanguageProvider';
 
 function metric(metrics: Record<string, unknown>, name: string) {
   const value = metrics[name];
@@ -20,11 +21,14 @@ function tone(status: string) {
   return status === 'passed' ? 'good' : status === 'failed' ? 'critical' : 'warning';
 }
 
-const coverageLabels = {
-  recorded: '실행됨', missing: '실행 누락', parasitics_missing: 'SPEF 누락', unplanned: '계획 외',
-};
+function coverageLabels() {
+  return {
+    recorded: tr('실행됨', 'Run'), missing: tr('실행 누락', 'Run missing'), parasitics_missing: tr('SPEF 누락', 'SPEF missing'), unplanned: tr('계획 외', 'Unplanned'),
+  };
+}
 
 export default function StaMatrix() {
+  const { t } = useLanguage();
   const { id } = useParams();
   const projectId = Number(id);
   const auth = useAuth();
@@ -78,68 +82,68 @@ export default function StaMatrix() {
 
   return <div className="space-y-5">
     <header className="space-y-2">
-      <Link className="text-sm underline text-[var(--text-secondary)]" to={`/projects/${projectId}`}>← {project.data?.name ?? '프로젝트'} · 프로젝트 개요</Link>
-      <h1 className="text-xl font-bold">STA 시나리오 매트릭스</h1>
-      <p className="text-sm text-[var(--text-muted)]">같은 설계 리비전과 단계에서 서버가 실행한 OpenSTA 시나리오의 최신 결과를 비교합니다.</p>
+      <Link className="text-sm underline text-[var(--text-secondary)]" to={`/projects/${projectId}`}>← {project.data?.name ?? t('프로젝트', 'Project')} · {t('프로젝트 개요', 'Project overview')}</Link>
+      <h1 className="text-xl font-bold">{t('STA 시나리오 매트릭스', 'STA scenario matrix')}</h1>
+      <p className="text-sm text-[var(--text-muted)]">{t('같은 설계 리비전과 단계에서 서버가 실행한 OpenSTA 시나리오의 최신 결과를 비교합니다.', 'Compares the latest results of OpenSTA scenarios run by the server for the same design revision and stage.')}</p>
     </header>
-    <Card title="조회 범위" subtitle="시나리오 이름별 최신 실행을 표시하며, 이전 실행 수를 함께 보존합니다.">
+    <Card title={t('조회 범위', 'Scope')} subtitle={t('시나리오 이름별 최신 실행을 표시하며, 이전 실행 수를 함께 보존합니다.', 'Shows the latest run for each scenario name and keeps the count of earlier runs.')}>
       <form className="flex flex-wrap items-end gap-3" onSubmit={apply}>
-        <Field label="스테이지"><select className="input" value={stage} onChange={event => setStage(event.target.value as Stage)}>{STAGES.map(value => <option key={value} value={value}>{STAGE_LABELS[value]}</option>)}</select></Field>
-        <Field label="설계 리비전"><input className="input min-w-64" maxLength={160} required value={revision} onChange={event => setRevision(event.target.value)} placeholder="예: release-2026.09" /></Field>
-        <button className="btn btn-primary">매트릭스 조회</button>
+        <Field label={t('스테이지', 'Stage')}><select className="input" value={stage} onChange={event => setStage(event.target.value as Stage)}>{STAGES.map(value => <option key={value} value={value}>{STAGE_LABELS[value]}</option>)}</select></Field>
+        <Field label={t('설계 리비전', 'Design revision')}><input className="input min-w-64" maxLength={160} required value={revision} onChange={event => setRevision(event.target.value)} placeholder={t('예: release-2026.09', 'e.g. release-2026.09')} /></Field>
+        <button className="btn btn-primary">{t('매트릭스 조회', 'Load matrix')}</button>
       </form>
     </Card>
-    <Card title={`${STAGE_LABELS[selectedStage]} 기대 시나리오`} subtitle="승인자가 필수 코너·모드와 post-route SPEF 요구를 버전형 계획으로 관리합니다.">
-      {definitions.isPending ? <p role="status">시나리오 설정 불러오는 중…</p> : definitions.isError ? <p role="alert">{definitions.error.message}</p> : <div className="space-y-3">
-        <p className="text-xs text-[var(--text-muted)]">계획 v{definitions.data.version} · {definitions.data.source === 'versioned' ? `${definitions.data.updated_by} · ${definitions.data.reason}` : '기존 정의 · 다음 저장부터 변경 이력 보존'}</p>
+    <Card title={t(`${STAGE_LABELS[selectedStage]} 기대 시나리오`, `${STAGE_LABELS[selectedStage]} expected scenarios`)} subtitle={t('승인자가 필수 코너·모드와 post-route SPEF 요구를 버전형 계획으로 관리합니다.', 'Approvers manage required corners, modes and post-route SPEF requirements as a versioned plan.')}>
+      {definitions.isPending ? <p role="status">{t('시나리오 설정 불러오는 중…', 'Loading scenario settings…')}</p> : definitions.isError ? <p role="alert">{definitions.error.message}</p> : <div className="space-y-3">
+        <p className="text-xs text-[var(--text-muted)]">{t('계획', 'Plan')} v{definitions.data.version} · {definitions.data.source === 'versioned' ? `${definitions.data.updated_by} · ${definitions.data.reason}` : t('기존 정의 · 다음 저장부터 변경 이력 보존', 'Legacy definition · change history is kept from the next save')}</p>
         {draft.map((item, index) => <div className="flex flex-wrap items-center gap-3" key={index}>
-          <input aria-label={`시나리오 ${index + 1} 이름`} className="input min-w-64 flex-1" maxLength={160} disabled={!auth.can(projectId, 'approver')} value={item.name} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, name: event.target.value } : row))} placeholder="예: slow-setup-functional" />
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!auth.can(projectId, 'approver')} checked={item.require_spef} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, require_spef: event.target.checked } : row))} />SPEF 필수</label>
-          {auth.can(projectId, 'approver') && <button className="btn btn-ghost" onClick={() => setDraft(rows => rows.filter((_, i) => i !== index))}>삭제</button>}
+          <input aria-label={t(`시나리오 ${index + 1} 이름`, `Scenario ${index + 1} name`)} className="input min-w-64 flex-1" maxLength={160} disabled={!auth.can(projectId, 'approver')} value={item.name} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, name: event.target.value } : row))} placeholder={t('예: slow-setup-functional', 'e.g. slow-setup-functional')} />
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!auth.can(projectId, 'approver')} checked={item.require_spef} onChange={event => setDraft(rows => rows.map((row, i) => i === index ? { ...row, require_spef: event.target.checked } : row))} />{t('SPEF 필수', 'SPEF required')}</label>
+          {auth.can(projectId, 'approver') && <button className="btn btn-ghost" onClick={() => setDraft(rows => rows.filter((_, i) => i !== index))}>{t('삭제', 'Delete')}</button>}
         </div>)}
-        {draft.length === 0 && <p className="text-sm text-[var(--text-muted)]">정의된 기대 시나리오가 없습니다. 이 상태에서는 실행 기록을 계획 외로 표시합니다.</p>}
-        {auth.can(projectId, 'approver') && <><Field label="계획 변경 사유"><textarea className="input w-full" rows={2} maxLength={4000} value={planReason} onChange={event => setPlanReason(event.target.value)} /></Field><div className="flex flex-wrap gap-2"><button className="btn btn-ghost" disabled={draft.length >= 100} onClick={() => setDraft(rows => [...rows, { name: '', require_spef: false }])}>시나리오 추가</button><button className="btn btn-primary" disabled={saveDefinitions.isPending || !draft.length || !planReason.trim() || draft.some(item => !item.name.trim())} onClick={() => saveDefinitions.mutate()}>{saveDefinitions.isPending ? '저장 중…' : `계획 v${definitions.data.version + 1} 저장`}</button></div></>}
+        {draft.length === 0 && <p className="text-sm text-[var(--text-muted)]">{t('정의된 기대 시나리오가 없습니다. 이 상태에서는 실행 기록을 계획 외로 표시합니다.', 'No expected scenarios are defined. Until they are, recorded runs are shown as unplanned.')}</p>}
+        {auth.can(projectId, 'approver') && <><Field label={t('계획 변경 사유', 'Reason for plan change')}><textarea className="input w-full" rows={2} maxLength={4000} value={planReason} onChange={event => setPlanReason(event.target.value)} /></Field><div className="flex flex-wrap gap-2"><button className="btn btn-ghost" disabled={draft.length >= 100} onClick={() => setDraft(rows => [...rows, { name: '', require_spef: false }])}>{t('시나리오 추가', 'Add scenario')}</button><button className="btn btn-primary" disabled={saveDefinitions.isPending || !draft.length || !planReason.trim() || draft.some(item => !item.name.trim())} onClick={() => saveDefinitions.mutate()}>{saveDefinitions.isPending ? t('저장 중…', 'Saving…') : t(`계획 v${definitions.data.version + 1} 저장`, `Save plan v${definitions.data.version + 1}`)}</button></div></>}
         {saveDefinitions.isError && <p role="alert">{saveDefinitions.error.message}</p>}
-        {saveDefinitions.isSuccess && <p role="status">기대 시나리오 세트를 저장했습니다.</p>}
+        {saveDefinitions.isSuccess && <p role="status">{t('기대 시나리오 세트를 저장했습니다.', 'Expected scenario set saved.')}</p>}
         {planHistory.data?.items.length ? <details className="rounded-lg border border-[var(--border)] p-3">
-          <summary className="cursor-pointer text-sm font-semibold">최근 계획 변경 이력</summary>
+          <summary className="cursor-pointer text-sm font-semibold">{t('최근 계획 변경 이력', 'Recent plan changes')}</summary>
           <ol className="mt-3 space-y-2 text-sm">{planHistory.data.items.map(item => <li className="hairline-b pb-2" key={item.version}>
-            <span className="font-semibold">v{item.version}</span> · {item.updated_by} · {item.scenarios.length}개 시나리오
-            <span className="block text-xs text-[var(--text-muted)]">{item.reason} · {item.created_at ? new Date(item.created_at).toLocaleString('ko-KR') : '시각 미상'}</span>
+            <span className="font-semibold">v{item.version}</span> · {item.updated_by} · {t(`${item.scenarios.length}개 시나리오`, `${item.scenarios.length} scenarios`)}
+            <span className="block text-xs text-[var(--text-muted)]">{item.reason} · {item.created_at ? formatDateTime(item.created_at) : t('시각 미상', 'Time unknown')}</span>
           </li>)}</ol>
-          {planHistory.data.next_before_id && <p className="mt-2 text-xs text-[var(--text-muted)]">이전 이력은 API 커서로 조회할 수 있습니다.</p>}
+          {planHistory.data.next_before_id && <p className="mt-2 text-xs text-[var(--text-muted)]">{t('이전 이력은 API 커서로 조회할 수 있습니다.', 'Earlier history is available through the API cursor.')}</p>}
         </details> : null}
       </div>}
     </Card>
-    {!selectedRevision && <Card><p className="text-sm">설계 리비전을 입력하면 기록된 시나리오를 조회합니다.</p></Card>}
-    {selectedRevision && matrix.isPending && <p role="status">시나리오 매트릭스 불러오는 중…</p>}
-    {selectedRevision && matrix.isError && <Card><p role="alert">{matrix.error.message}</p><button className="btn btn-ghost mt-3" onClick={() => matrix.refetch()}>다시 시도</button></Card>}
+    {!selectedRevision && <Card><p className="text-sm">{t('설계 리비전을 입력하면 기록된 시나리오를 조회합니다.', 'Enter a design revision to load its recorded scenarios.')}</p></Card>}
+    {selectedRevision && matrix.isPending && <p role="status">{t('시나리오 매트릭스 불러오는 중…', 'Loading scenario matrix…')}</p>}
+    {selectedRevision && matrix.isError && <Card><p role="alert">{matrix.error.message}</p><button className="btn btn-ghost mt-3" onClick={() => matrix.refetch()}>{t('다시 시도', 'Retry')}</button></Card>}
     {matrix.data && <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <StatTile label="기대 / 실행" value={`${matrix.data.summary.expected_scenario_count} / ${matrix.data.summary.recorded_expected_scenarios}`} tone={matrix.data.summary.scenario_coverage_complete ? 'good' : undefined} />
-        <StatTile label="실행 누락" value={matrix.data.summary.missing_scenarios} tone={matrix.data.summary.missing_scenarios ? 'critical' : 'good'} />
-        <StatTile label="SPEF 요구 누락" value={matrix.data.summary.parasitic_requirement_gaps} tone={matrix.data.summary.parasitic_requirement_gaps ? 'critical' : 'good'} />
-        <StatTile label="실패" value={matrix.data.summary.failed_scenarios} tone={matrix.data.summary.failed_scenarios ? 'critical' : 'good'} />
-        <StatTile label="최악 보고 슬랙" value={matrix.data.summary.worst_reported_slack_ps ?? '—'} suffix={matrix.data.summary.worst_reported_slack_ps === null ? undefined : 'ps'} />
+        <StatTile label={t('기대 / 실행', 'Expected / run')} value={`${matrix.data.summary.expected_scenario_count} / ${matrix.data.summary.recorded_expected_scenarios}`} tone={matrix.data.summary.scenario_coverage_complete ? 'good' : undefined} />
+        <StatTile label={t('실행 누락', 'Runs missing')} value={matrix.data.summary.missing_scenarios} tone={matrix.data.summary.missing_scenarios ? 'critical' : 'good'} />
+        <StatTile label={t('SPEF 요구 누락', 'SPEF requirement gaps')} value={matrix.data.summary.parasitic_requirement_gaps} tone={matrix.data.summary.parasitic_requirement_gaps ? 'critical' : 'good'} />
+        <StatTile label={t('실패', 'Failed')} value={matrix.data.summary.failed_scenarios} tone={matrix.data.summary.failed_scenarios ? 'critical' : 'good'} />
+        <StatTile label={t('최악 보고 슬랙', 'Worst reported slack')} value={matrix.data.summary.worst_reported_slack_ps ?? '—'} suffix={matrix.data.summary.worst_reported_slack_ps === null ? undefined : 'ps'} />
       </div>
-      <Card title={`${STAGE_LABELS[matrix.data.stage]} · ${matrix.data.design_revision}`} subtitle="표시 값은 각 시나리오의 최신 서버 실행 결과입니다.">
+      <Card title={`${STAGE_LABELS[matrix.data.stage]} · ${matrix.data.design_revision}`} subtitle={t('표시 값은 각 시나리오의 최신 서버 실행 결과입니다.', 'Values are from the latest server run of each scenario.')}>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr className="hairline-b"><th className="px-2 py-3">시나리오</th><th className="px-2 py-3">커버리지</th><th className="px-2 py-3">상태</th><th className="px-2 py-3">WNS</th><th className="px-2 py-3">위반 / 보고 / 미제약</th><th className="px-2 py-3">기생 성분</th><th className="px-2 py-3">실행 근거</th></tr></thead>
+          <thead><tr className="hairline-b"><th className="px-2 py-3">{t('시나리오', 'Scenario')}</th><th className="px-2 py-3">{t('커버리지', 'Coverage')}</th><th className="px-2 py-3">{t('상태', 'Status')}</th><th className="px-2 py-3">WNS</th><th className="px-2 py-3">{t('위반 / 보고 / 미제약', 'Violating / reported / unconstrained')}</th><th className="px-2 py-3">{t('기생 성분', 'Parasitics')}</th><th className="px-2 py-3">{t('실행 근거', 'Run evidence')}</th></tr></thead>
           <tbody>{matrix.data.scenarios.map(row => <tr className="hairline-b" key={row.scenario}>
-            <td className="px-2 py-3 font-semibold break-all">{row.scenario}<p className="mt-1 text-xs font-normal text-[var(--text-muted)]">기록 {row.run_count}회</p></td>
-            <td className="px-2 py-3"><StatusBadge status={row.coverage_state === 'recorded' ? 'good' : row.coverage_state === 'unplanned' ? 'neutral' : 'critical'} label={coverageLabels[row.coverage_state]} /></td>
+            <td className="px-2 py-3 font-semibold break-all">{row.scenario}<p className="mt-1 text-xs font-normal text-[var(--text-muted)]">{t(`기록 ${row.run_count}회`, `${row.run_count} recorded runs`)}</p></td>
+            <td className="px-2 py-3"><StatusBadge status={row.coverage_state === 'recorded' ? 'good' : row.coverage_state === 'unplanned' ? 'neutral' : 'critical'} label={coverageLabels()[row.coverage_state]} /></td>
             <td className="px-2 py-3">{row.status ? <StatusBadge status={tone(row.status)} label={row.status} /> : '—'}</td>
             <td className="px-2 py-3 whitespace-nowrap">{slack(row.metrics)}</td>
             <td className="px-2 py-3 whitespace-nowrap">{metric(row.metrics, 'violating_paths')} / {metric(row.metrics, 'reported_paths')} / {metric(row.metrics, 'unconstrained_paths')}</td>
-            <td className="px-2 py-3">{row.parasitics === 'spef' ? 'SPEF' : row.parasitics === 'none' ? '미적용' : '—'}{row.require_spef && <span className="block text-xs text-[var(--text-muted)]">필수</span>}</td>
-            <td className="px-2 py-3">{row.run_id ? <><Link className="underline" to={`/runs/${row.run_id}`}>run #{row.run_id}</Link><span className="block text-xs text-[var(--text-muted)]">{row.tool_version}</span><Link className="text-xs underline" to={`/runs/${row.run_id}/paths`}>경로 표본</Link></> : '—'}</td>
+            <td className="px-2 py-3">{row.parasitics === 'spef' ? 'SPEF' : row.parasitics === 'none' ? t('미적용', 'Not applied') : '—'}{row.require_spef && <span className="block text-xs text-[var(--text-muted)]">{t('필수', 'Required')}</span>}</td>
+            <td className="px-2 py-3">{row.run_id ? <><Link className="underline" to={`/runs/${row.run_id}`}>run #{row.run_id}</Link><span className="block text-xs text-[var(--text-muted)]">{row.tool_version}</span><Link className="text-xs underline" to={`/runs/${row.run_id}/paths`}>{t('경로 표본', 'Path samples')}</Link></> : '—'}</td>
           </tr>)}</tbody>
         </table></div>
-        {matrix.data.scenarios.length === 0 && <p className="py-4 text-sm">이 범위에 서버 OpenSTA 실행 기록이 없습니다.</p>}
+        {matrix.data.scenarios.length === 0 && <p className="py-4 text-sm">{t('이 범위에 서버 OpenSTA 실행 기록이 없습니다.', 'No server OpenSTA runs are recorded for this scope.')}</p>}
       </Card>
-      <Card title="범위와 에이전트 개입">
-        <p className="text-sm">이 화면과 집계 API에는 AI 에이전트가 개입하지 않습니다. 저장된 OpenSTA 실행 근거를 읽기 전용으로 집계합니다.</p>
-        <p className="mt-2 text-xs text-[var(--text-muted)]">기대 세트와 최신 실행을 비교해 누락을 표시합니다. 타이밍 수치는 보고된 경로 표본만 포함하므로 전체 사인오프 커버리지는 별도로 확인해야 합니다.</p>
+      <Card title={t('범위와 에이전트 개입', 'Scope and agent involvement')}>
+        <p className="text-sm">{t('이 화면과 집계 API에는 AI 에이전트가 개입하지 않습니다. 저장된 OpenSTA 실행 근거를 읽기 전용으로 집계합니다.', 'No AI agent is involved in this screen or its summary API. It aggregates stored OpenSTA run evidence read-only.')}</p>
+        <p className="mt-2 text-xs text-[var(--text-muted)]">{t('기대 세트와 최신 실행을 비교해 누락을 표시합니다. 타이밍 수치는 보고된 경로 표본만 포함하므로 전체 사인오프 커버리지는 별도로 확인해야 합니다.', 'Missing scenarios are flagged by comparing the expected set with the latest runs. Timing figures cover only the reported path samples, so full sign-off coverage must be checked separately.')}</p>
       </Card>
     </>}
   </div>;

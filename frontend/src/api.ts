@@ -1,3 +1,5 @@
+import { tr } from './components/LanguageProvider';
+
 export type Domain = "rtl" | "cdc" | "dft" | "low_power" | "sta" | "emir" | "pv" | "lvs" | "lec" | "glitch_power" | "thermal";
 export type Stage = "rtl" | "synthesis" | "placement" | "routing" | "final";
 export type RunStatus = "running" | "passed" | "failed" | "incomplete";
@@ -587,7 +589,7 @@ function sessionExpired() { window.dispatchEvent(new Event("signoff-session-expi
 
 function serverFailure(response: Response) {
   const id = response.headers.get('X-Request-ID');
-  return '서버가 요청을 처리하지 못했습니다.' + (id && /^[a-f0-9]{32}$/.test(id) ? ` 문의 번호: ${id}` : ' 잠시 후 다시 확인하세요.');
+  return tr('서버가 요청을 처리하지 못했습니다.', 'The server could not process the request.') + (id && /^[a-f0-9]{32}$/.test(id) ? tr(` 문의 번호: ${id}`, ` Support reference: ${id}`) : tr(' 잠시 후 다시 확인하세요.', ' Please check again shortly.'));
 }
 
 function validationMessage(body: unknown): string | null {
@@ -598,7 +600,7 @@ function validationMessage(body: unknown): string | null {
     const field = item.loc.filter((part: unknown) => part !== 'body' && (typeof part === 'string' || typeof part === 'number')).join('.');
     return [`${field ? field + ': ' : ''}${item.msg}`];
   });
-  return messages.length ? messages.join(' · ') + (detail.length > 3 ? ' · 추가 입력 오류가 있습니다.' : '') : null;
+  return messages.length ? messages.join(' · ') + (detail.length > 3 ? tr(' · 추가 입력 오류가 있습니다.', ' · There are more input errors.') : '') : null;
 }
 
 async function request<T>(path: string, init?: RequestInit, responseType: 'json' | 'text' | 'blob' = 'json'): Promise<T> {
@@ -878,7 +880,7 @@ export const api = {
       const body = await res.json().catch(() => null);
       if (res.status >= 500) throw new Error(serverFailure(res));
       if (res.status === 429) {
-        throw new Error('서버의 RTL 분석이 모두 사용 중입니다. 아직 분석을 시작하지 않았습니다. 5초 뒤 다시 실행하세요.');
+        throw new Error(tr('서버의 RTL 분석이 모두 사용 중입니다. 아직 분석을 시작하지 않았습니다. 5초 뒤 다시 실행하세요.', 'All RTL analysis slots on the server are busy. The analysis has not started. Run it again in 5 seconds.'));
       }
       throw new Error(
         body && typeof body.detail === "string" ? body.detail : validationMessage(body) ?? `${res.status} ${res.statusText}`,
@@ -892,12 +894,12 @@ export const api = {
       if (!line.trim()) return;
       const event = JSON.parse(line) as RtlStreamEvent | { event: "error"; detail: string };
       if (event.event === "error") {
-        throw new Error('RTL 실행 워커가 작업을 완료하지 못했습니다. 서버 상태를 확인하고 다시 실행하세요.');
+        throw new Error(tr('RTL 실행 워커가 작업을 완료하지 못했습니다. 서버 상태를 확인하고 다시 실행하세요.', 'The RTL worker could not finish the job. Check the server status and run it again.'));
       }
       if (event.event === "result") {
         if (!event.result || !["SIGNED_OFF", "CONDITIONAL", "REJECTED"].includes(event.result.verdict)
           || !Array.isArray(event.result.stages) || !Array.isArray(event.result.rules)) {
-          throw new Error("RTL 분석 결과 형식이 올바르지 않습니다. 다시 실행하세요.");
+          throw new Error(tr("RTL 분석 결과 형식이 올바르지 않습니다. 다시 실행하세요.", "The RTL analysis result has an invalid format. Run it again."));
         }
         receivedResult = true;
       }
@@ -914,7 +916,7 @@ export const api = {
       }
       buffer += decoder.decode();
       deliver(buffer);
-      if (!receivedResult) throw new Error("RTL 분석 응답이 완료되기 전에 연결이 종료되었습니다. 다시 실행하세요.");
+      if (!receivedResult) throw new Error(tr("RTL 분석 응답이 완료되기 전에 연결이 종료되었습니다. 다시 실행하세요.", "The connection closed before the RTL analysis response finished. Run it again."));
     } catch (error) {
       await reader.cancel().catch(() => {});
       throw error;
@@ -942,7 +944,7 @@ export const api = {
     if (!res.ok || !res.body) {
       const body = await res.json().catch(() => null);
       if (res.status >= 500) throw new Error(serverFailure(res));
-      if (res.status === 429) throw new Error('서버 분석 용량이 모두 사용 중입니다. 아직 실행을 시작하지 않았습니다. 5초 뒤 다시 실행하세요.');
+      if (res.status === 429) throw new Error(tr('서버 분석 용량이 모두 사용 중입니다. 아직 실행을 시작하지 않았습니다. 5초 뒤 다시 실행하세요.', 'Server analysis capacity is fully in use. The run has not started. Run it again in 5 seconds.'));
       throw new Error(body && typeof body.detail === 'string' ? body.detail : validationMessage(body) ?? `${res.status} ${res.statusText}`);
     }
     const reader = res.body.getReader();
@@ -951,10 +953,10 @@ export const api = {
     const deliver = (line: string) => {
       if (!line.trim()) return;
       const event = JSON.parse(line) as StaStreamEvent | { event: 'error'; detail: string };
-      if (event.event === 'error') throw new Error(event.detail || 'OpenSTA 실행을 완료하지 못했습니다.');
-      if (!['stage_start', 'stage_done', 'result'].includes(event.event)) throw new Error('OpenSTA 진행 응답 형식이 올바르지 않습니다.');
+      if (event.event === 'error') throw new Error(event.detail || tr('OpenSTA 실행을 완료하지 못했습니다.', 'The OpenSTA run could not finish.'));
+      if (!['stage_start', 'stage_done', 'result'].includes(event.event)) throw new Error(tr('OpenSTA 진행 응답 형식이 올바르지 않습니다.', 'The OpenSTA progress response has an invalid format.'));
       if (event.event === 'result') {
-        if (!event.result || typeof event.result.run_id !== 'number' || !event.result.metrics || !event.result.execution) throw new Error('OpenSTA 최종 결과 형식이 올바르지 않습니다.');
+        if (!event.result || typeof event.result.run_id !== 'number' || !event.result.metrics || !event.result.execution) throw new Error(tr('OpenSTA 최종 결과 형식이 올바르지 않습니다.', 'The final OpenSTA result has an invalid format.'));
         receivedResult = true;
       }
       onEvent(event);
@@ -968,7 +970,7 @@ export const api = {
         for (const line of lines) deliver(line);
       }
       buffer += decoder.decode(); deliver(buffer);
-      if (!receivedResult) throw new Error('OpenSTA 최종 결과를 받기 전에 연결이 종료되었습니다.');
+      if (!receivedResult) throw new Error(tr('OpenSTA 최종 결과를 받기 전에 연결이 종료되었습니다.', 'The connection closed before the final OpenSTA result arrived.'));
     } catch (error) {
       await reader.cancel().catch(() => {});
       throw error;
@@ -981,7 +983,7 @@ export const api = {
     if (!res.ok || !res.body) {
       const body = await res.json().catch(() => null);
       if (res.status >= 500) throw new Error(serverFailure(res));
-      if (res.status === 429) throw new Error('서버 분석 용량이 모두 사용 중입니다. 아직 실행을 시작하지 않았습니다. 5초 뒤 다시 실행하세요.');
+      if (res.status === 429) throw new Error(tr('서버 분석 용량이 모두 사용 중입니다. 아직 실행을 시작하지 않았습니다. 5초 뒤 다시 실행하세요.', 'Server analysis capacity is fully in use. The run has not started. Run it again in 5 seconds.'));
       throw new Error(body && typeof body.detail === 'string' ? body.detail : validationMessage(body) ?? `${res.status} ${res.statusText}`);
     }
     const reader = res.body.getReader();
@@ -990,8 +992,8 @@ export const api = {
     const deliver = (line: string) => {
       if (!line.trim()) return;
       const event = JSON.parse(line) as StaBatchEvent;
-      if (!['batch_start', 'scenario_start', 'scenario_done', 'scenario_error', 'batch_done'].includes(event.event)) throw new Error('OpenSTA 배치 진행 응답 형식이 올바르지 않습니다.');
-      if (event.event === 'scenario_done' && (!event.result || typeof event.result.run_id !== 'number')) throw new Error('OpenSTA 배치 결과 형식이 올바르지 않습니다.');
+      if (!['batch_start', 'scenario_start', 'scenario_done', 'scenario_error', 'batch_done'].includes(event.event)) throw new Error(tr('OpenSTA 배치 진행 응답 형식이 올바르지 않습니다.', 'The OpenSTA batch progress response has an invalid format.'));
+      if (event.event === 'scenario_done' && (!event.result || typeof event.result.run_id !== 'number')) throw new Error(tr('OpenSTA 배치 결과 형식이 올바르지 않습니다.', 'The OpenSTA batch result has an invalid format.'));
       if (event.event === 'batch_done') receivedDone = true;
       onEvent(event);
     };
@@ -1004,7 +1006,7 @@ export const api = {
         for (const line of lines) deliver(line);
       }
       buffer += decoder.decode(); deliver(buffer);
-      if (!receivedDone) throw new Error('OpenSTA 배치 결과를 받기 전에 연결이 종료되었습니다.');
+      if (!receivedDone) throw new Error(tr('OpenSTA 배치 결과를 받기 전에 연결이 종료되었습니다.', 'The connection closed before the OpenSTA batch result arrived.'));
     } catch (error) {
       await reader.cancel().catch(() => {});
       throw error;
@@ -1033,7 +1035,7 @@ export const api = {
 };
 
 export const DOMAIN_LABELS: Record<Domain, string> = {
-  rtl: "RTL 품질",
+  get rtl() { return tr("RTL 품질", "RTL quality"); },
   sta: "STA",
   emir: "EM/IR",
   pv: "PV",

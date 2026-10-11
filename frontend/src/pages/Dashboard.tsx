@@ -148,7 +148,7 @@ export default function Dashboard() {
         )}
         {projects.data && projects.data.total > pageSize && <nav className="mt-4 flex items-center justify-between" aria-label={t("프로젝트 페이지", "Project pages")}>
           <button className="btn btn-ghost" disabled={page === 1} onClick={() => updateParams({ page: page <= 2 ? null : String(page - 1) })}>{t("이전", "Previous")}</button>
-          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{page} / {Math.ceil(projects.data.total / pageSize)} 페이지 · 총 {projects.data.total}{t("개", "")}</span>
+          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{t(`${page} / ${Math.ceil(projects.data.total / pageSize)} 페이지 · 총 ${projects.data.total}개`, `Page ${page} of ${Math.ceil(projects.data.total / pageSize)} · ${projects.data.total} total`)}</span>
           <button className="btn btn-ghost" disabled={page * pageSize >= projects.data.total} onClick={() => updateParams({ page: String(page + 1) })}>{t("다음", "Next")}</button>
         </nav>}
       </Card>
