@@ -1,56 +1,60 @@
 import { AppHeader } from "./components/AppHeader";
-import ServiceGuide, { GuideEntry, LegacyGuideEntry } from "./pages/ServiceGuide";
-import DesignStructure from "./pages/DesignStructure";
-import NotFound from "./pages/NotFound";
-import { RouteScreenBoundary } from "./components/ScreenBoundary";
+import { RouteScreenBoundary, ScreenLoading } from "./components/ScreenBoundary";
 import { AuthProvider } from "./components/AuthProvider";
-import AgentGuide from "./pages/AgentGuide";
-import Account from "./pages/Account";
-import SecurityEvents from './pages/SecurityEvents';
-import ReportImport from "./pages/ReportImport";
-import TimingPaths from "./pages/TimingPaths";
-import Markers from './pages/Markers';
-import PowerIntegrityImport from './pages/PowerIntegrityImport';
-import PowerIntegrityFindings from './pages/PowerIntegrityFindings';
-import CommercialPowerImport from './pages/CommercialPowerImport';
-import PowerBreakdown from './pages/PowerBreakdown';
-import CommercialThermalImport from './pages/CommercialThermalImport';
-import ThermalHotspots from './pages/ThermalHotspots';
-import CommercialRtlImport from './pages/CommercialRtlImport';
-import RtlRegression from './pages/RtlRegression';
-import CommercialLvsImport from './pages/CommercialLvsImport';
-import LvsMismatches from './pages/LvsMismatches';
-import CommercialLecImport from './pages/CommercialLecImport';
-import LecFailures from './pages/LecFailures';
-import CommercialCdcImport from './pages/CommercialCdcImport';
-import CdcFindings from './pages/CdcFindings';
-import CommercialDftImport from './pages/CommercialDftImport';
-import DftFindings from './pages/DftFindings';
-import CommercialLowPowerImport from './pages/CommercialLowPowerImport';
-import LowPowerFindings from './pages/LowPowerFindings';
-import ProjectMembers from "./pages/ProjectMembers";
-import ProjectCollectors from './pages/ProjectCollectors';
-import OpenLaneImport from './pages/OpenLaneImport';
+import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router";
 
 import { Sidebar } from "./components/Sidebar";
-import Analysis from "./pages/Analysis";
-import Dashboard from "./pages/Dashboard";
-import ProjectDetail from "./pages/ProjectDetail";
-import Violations from "./pages/Violations";
-import RunComparison from "./pages/RunComparison";
-import RunWorkspace from "./pages/RunWorkspace";
-import StaMatrix from "./pages/StaMatrix";
-import RevisionCoverage from './pages/RevisionCoverage';
 import { ReviewDraftProvider } from "./components/ReviewDrafts";
 
+const ServiceGuide = lazy(() => import("./pages/ServiceGuide"));
+const GuideEntry = lazy(() => import("./pages/ServiceGuide").then(module => ({ default: module.GuideEntry })));
+const LegacyGuideEntry = lazy(() => import("./pages/ServiceGuide").then(module => ({ default: module.LegacyGuideEntry })));
+const DesignStructure = lazy(() => import("./pages/DesignStructure"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const AgentGuide = lazy(() => import("./pages/AgentGuide"));
+const Account = lazy(() => import("./pages/Account"));
+const SecurityEvents = lazy(() => import("./pages/SecurityEvents"));
+const ReportImport = lazy(() => import("./pages/ReportImport"));
+const TimingPaths = lazy(() => import("./pages/TimingPaths"));
+const Markers = lazy(() => import("./pages/Markers"));
+const PowerIntegrityImport = lazy(() => import("./pages/PowerIntegrityImport"));
+const PowerIntegrityFindings = lazy(() => import("./pages/PowerIntegrityFindings"));
+const CommercialPowerImport = lazy(() => import("./pages/CommercialPowerImport"));
+const PowerBreakdown = lazy(() => import("./pages/PowerBreakdown"));
+const CommercialThermalImport = lazy(() => import("./pages/CommercialThermalImport"));
+const ThermalHotspots = lazy(() => import("./pages/ThermalHotspots"));
+const CommercialRtlImport = lazy(() => import("./pages/CommercialRtlImport"));
+const RtlRegression = lazy(() => import("./pages/RtlRegression"));
+const CommercialLvsImport = lazy(() => import("./pages/CommercialLvsImport"));
+const LvsMismatches = lazy(() => import("./pages/LvsMismatches"));
+const CommercialLecImport = lazy(() => import("./pages/CommercialLecImport"));
+const LecFailures = lazy(() => import("./pages/LecFailures"));
+const CommercialCdcImport = lazy(() => import("./pages/CommercialCdcImport"));
+const CdcFindings = lazy(() => import("./pages/CdcFindings"));
+const CommercialDftImport = lazy(() => import("./pages/CommercialDftImport"));
+const DftFindings = lazy(() => import("./pages/DftFindings"));
+const CommercialLowPowerImport = lazy(() => import("./pages/CommercialLowPowerImport"));
+const LowPowerFindings = lazy(() => import("./pages/LowPowerFindings"));
+const ProjectMembers = lazy(() => import("./pages/ProjectMembers"));
+const ProjectCollectors = lazy(() => import("./pages/ProjectCollectors"));
+const OpenLaneImport = lazy(() => import("./pages/OpenLaneImport"));
+const Analysis = lazy(() => import("./pages/Analysis"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
+const Violations = lazy(() => import("./pages/Violations"));
+const RunComparison = lazy(() => import("./pages/RunComparison"));
+const RunWorkspace = lazy(() => import("./pages/RunWorkspace"));
+const StaMatrix = lazy(() => import("./pages/StaMatrix"));
+const RevisionCoverage = lazy(() => import("./pages/RevisionCoverage"));
+
 export default function App() {
-  return <><AppHeader /><Routes>
+  return <><AppHeader /><Suspense fallback={<ScreenLoading />}><Routes>
     <Route path="/guide" element={<GuideEntry />} />
     <Route path="/guide/:section" element={<ServiceGuide />} />
     <Route path="/guide/:language/:section" element={<LegacyGuideEntry />} />
     <Route path="*" element={<Workspace />} />
-  </Routes></>;
+  </Routes></Suspense></>;
 }
 
 function Workspace() {
@@ -58,7 +62,7 @@ function Workspace() {
     <AuthProvider><ReviewDraftProvider><div className="app-shell">
       <Sidebar />
       <main className="app-main">
-        <RouteScreenBoundary><Routes>
+        <RouteScreenBoundary><Suspense fallback={<ScreenLoading />}><Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/projects/:id/violations" element={<Violations />} />
@@ -100,7 +104,7 @@ function Workspace() {
           <Route path="/analysis" element={<Analysis />} />
           <Route path="/analysis/:tool" element={<Analysis />} />
           <Route path="*" element={<NotFound />} />
-        </Routes></RouteScreenBoundary>
+        </Routes></Suspense></RouteScreenBoundary>
       </main>
     </div></ReviewDraftProvider></AuthProvider>
   );
