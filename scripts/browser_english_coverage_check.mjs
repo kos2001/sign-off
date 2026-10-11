@@ -26,7 +26,7 @@ try {
   const p = `/projects/${project.id}`;
   const routes = [
     '/', p, `${p}/violations`, `${p}/compare`, `${p}/sta-matrix`, `${p}/revision-coverage`, `${p}/members`, `${p}/collectors`,
-    `${p}/import`, `${p}/import/commercial-sta`, `${p}/import/commercial-drc`, `${p}/import/klayout`,
+    `${p}/import`, `${p}/import/openlane`, `${p}/import/commercial-sta`, `${p}/import/commercial-drc`, `${p}/import/klayout`,
     ...['emir', 'power', 'thermal', 'rtl', 'lvs', 'lec', 'cdc', 'dft', 'low-power'].map(kind => `${p}/import/commercial-${kind}`),
     ...runs.map(run => `/runs/${run.id}`),
     `/runs/${runOf('rtl')}/structure`, `/runs/${runOf('sta')}/paths`, `/runs/${runOf('pv')}/markers`,
