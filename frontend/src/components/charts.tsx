@@ -55,6 +55,7 @@ export function IrDropHeatmap({
   map: number[][];
   thresholdMv: number;
 }) {
+  const { t } = useLanguage();
   const { show, hide, node } = useTooltip();
   const [tableView, setTableView] = useState(false);
   const rows = map.length;
@@ -68,7 +69,7 @@ export function IrDropHeatmap({
       <div className="mb-3 flex items-center justify-between">
         <ScaleLegend max={max} unit="mV" />
         <button className="btn btn-ghost" onClick={() => setTableView((v) => !v)}>
-          {tableView ? "히트맵 보기" : "테이블 보기"}
+          {tableView ? t("히트맵 보기", "Show heatmap") : t("테이블 보기", "Show table")}
         </button>
       </div>
 
@@ -104,7 +105,7 @@ export function IrDropHeatmap({
           width={cols * (cell + gap)}
           height={rows * (cell + gap)}
           role="img"
-          aria-label="IR-drop 히트맵"
+          aria-label={t("IR-drop 히트맵", "IR-drop heatmap")}
         >
           {map.map((row, r) =>
             row.map((v, c) => (
@@ -119,7 +120,10 @@ export function IrDropHeatmap({
                 onMouseMove={(e) =>
                   show(
                     e,
-                    `타일 (${r}, ${c}) · ${v.toFixed(1)} mV${v > thresholdMv ? " · 핫스팟" : ""}`,
+                    t(
+                      `타일 (${r}, ${c}) · ${v.toFixed(1)} mV${v > thresholdMv ? " · 핫스팟" : ""}`,
+                      `Tile (${r}, ${c}) · ${v.toFixed(1)} mV${v > thresholdMv ? " · hotspot" : ""}`,
+                    ),
                   )
                 }
                 onMouseLeave={hide}
@@ -152,6 +156,7 @@ function ScaleLegend({ max, unit }: { max: number; unit: string }) {
 /* ---------- diverging bars around a zero baseline (slack polarity) ---------- */
 
 export function SlackBars({ slacks, endpointIds }: { slacks: number[]; endpointIds?: string[] | null }) {
+  const { t } = useLanguage();
   const [selected, setSelected] = useState<number | null>(null);
   const valid = slacks.every(Number.isFinite);
   const maxAbs = Math.max(...slacks.map(Math.abs), Number.MIN_VALUE);
@@ -163,10 +168,10 @@ export function SlackBars({ slacks, endpointIds }: { slacks: number[]; endpointI
       notation: scientific ? 'scientific' : 'standard',
     }).format(value === 0 ? 0 : value);
   };
-  return <figure aria-label="엔드포인트 슬랙" className="space-y-3">
-    <figcaption className="text-xs text-[var(--text-muted)]">왼쪽은 음수, 오른쪽은 0 이상입니다. 종점을 선택하면 ID와 값을 확인할 수 있습니다.</figcaption>
-    {!slacks.length || !valid ? <p role="status" className="text-sm">차트로 표시할 유효한 슬랙이 없습니다.</p> : <>
-      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] gap-2 text-xs text-[var(--text-muted)]" aria-hidden="true"><span>종점</span><span className="text-center">0 ps</span><span className="text-right">슬랙 (ps)</span></div>
+  return <figure aria-label={t("엔드포인트 슬랙", "Endpoint slack")} className="space-y-3">
+    <figcaption className="text-xs text-[var(--text-muted)]">{t("왼쪽은 음수, 오른쪽은 0 이상입니다. 종점을 선택하면 ID와 값을 확인할 수 있습니다.", "Negative slack extends left, zero or positive extends right. Select an endpoint to see its ID and value.")}</figcaption>
+    {!slacks.length || !valid ? <p role="status" className="text-sm">{t("차트로 표시할 유효한 슬랙이 없습니다.", "No valid slack values to chart.")}</p> : <>
+      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] gap-2 text-xs text-[var(--text-muted)]" aria-hidden="true"><span>{t("종점", "Endpoint")}</span><span className="text-center">0 ps</span><span className="text-right">{t("슬랙 (ps)", "Slack (ps)")}</span></div>
       <ol className="space-y-1">
         {slacks.map((slack, index) => {
           const width = Math.abs(slack) / maxAbs * 50;
@@ -174,7 +179,7 @@ export function SlackBars({ slacks, endpointIds }: { slacks: number[]; endpointI
           const id = endpointIds?.[index];
           return <li key={index}>
             <button type="button" aria-expanded={selected === index}
-              aria-label={`EP${index}${id ? ` · ${id}` : ''} · 슬랙 ${slack} ps${isMinimum ? ' · 표시된 종점 중 최소 슬랙' : ''}`}
+              aria-label={`EP${index}${id ? ` · ${id}` : ''} · ${t('슬랙', 'Slack')} ${slack} ps${isMinimum ? t(' · 표시된 종점 중 최소 슬랙', ' · lowest slack among shown endpoints') : ''}`}
               className="grid w-full grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] items-center gap-2 rounded-md px-1 py-2 text-left focus-visible:outline-2 focus-visible:outline-[var(--series-1)] hover:bg-[var(--surface-2)]"
               onClick={() => setSelected(selected === index ? null : index)}>
               <span className="text-xs text-[var(--text-secondary)]">EP{index}</span>
@@ -184,9 +189,9 @@ export function SlackBars({ slacks, endpointIds }: { slacks: number[]; endpointI
               </span>
               <span className={`min-w-0 break-all text-right text-xs tabular-nums ${isMinimum ? 'font-bold' : ''}`} style={{ color: slack < 0 ? 'var(--status-critical)' : 'var(--text-primary)' }}>{format(slack)}</span>
             </button>
-            {selected === index && <div role="region" aria-label={`EP${index} 슬랙 상세`} className="mb-2 rounded-lg border border-[var(--border)] p-3 text-xs space-y-1 break-all">
-              <p className="font-semibold">EP{index} · {id ?? '종점 ID 미제공'}</p>
-              <p>슬랙 {slack} ps{isMinimum ? ' · 표시된 종점 중 최소 슬랙' : ''}</p>
+            {selected === index && <div role="region" aria-label={t(`EP${index} 슬랙 상세`, `EP${index} slack details`)} className="mb-2 rounded-lg border border-[var(--border)] p-3 text-xs space-y-1 break-all">
+              <p className="font-semibold">EP{index} · {id ?? t('종점 ID 미제공', 'Endpoint ID not provided')}</p>
+              <p>{t('슬랙', 'Slack')} {slack} ps{isMinimum ? t(' · 표시된 종점 중 최소 슬랙', ' · lowest slack among shown endpoints') : ''}</p>
             </div>}
           </li>;
         })}
@@ -264,6 +269,7 @@ export function RunStatusBar({
 /* ---------- readiness progress: fraction of gate domains ready ---------- */
 
 export function ReadyProgress({ ready, total }: { ready: number; total: number }) {
+  const { t } = useLanguage();
   const ratio = total > 0 ? ready / total : 0;
   const fill = ratio >= 1 ? "var(--status-good)" : ratio > 0 ? "var(--status-warning)" : "var(--status-critical)";
   return (
@@ -275,12 +281,12 @@ export function ReadyProgress({ ready, total }: { ready: number; total: number }
         aria-valuenow={ready}
         aria-valuemin={0}
         aria-valuemax={total}
-        aria-label="게이트 도메인 준비율"
+        aria-label={t("게이트 도메인 준비율", "Gate domain readiness")}
       >
         <div className="h-full rounded-full" style={{ width: `${ratio * 100}%`, background: fill }} />
       </div>
       <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-        {ready}/{total} 준비됨
+        {ready}/{total} {t("준비됨", "ready")}
       </span>
     </div>
   );
@@ -293,6 +299,7 @@ export function PowerStackBars({
 }: {
   nets: { name: string; functional_power_uw: number; glitch_power_uw: number }[];
 }) {
+  const { t } = useLanguage();
   const { show, hide, node } = useTooltip();
   const width = 640;
   const barH = 16;
@@ -312,18 +319,18 @@ export function PowerStackBars({
       <div className="mb-3 flex gap-4 text-xs" style={{ color: "var(--text-secondary)" }}>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--series-1)" }} />
-          기능 전력
+          {t("기능 전력", "Functional power")}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "var(--series-2)" }} />
-          글리치 전력
+          {t("글리치 전력", "Glitch power")}
         </span>
       </div>
       <svg
         width={width}
         height={nets.length * (barH + gap)}
         role="img"
-        aria-label="네트별 전력 분해"
+        aria-label={t("네트별 전력 분해", "Power breakdown by net")}
       >
         {nets.map((n, i) => {
           const y = i * (barH + gap);
@@ -349,7 +356,7 @@ export function PowerStackBars({
                 rx={3}
                 fill="var(--series-1)"
                 onMouseMove={(e) =>
-                  show(e, `${n.name} · 기능 ${n.functional_power_uw.toFixed(3)} µW`)
+                  show(e, `${n.name} · ${t("기능", "Functional")} ${n.functional_power_uw.toFixed(3)} µW`)
                 }
                 onMouseLeave={hide}
               />
@@ -362,7 +369,7 @@ export function PowerStackBars({
                   rx={3}
                   fill="var(--series-2)"
                   onMouseMove={(e) =>
-                    show(e, `${n.name} · 글리치 ${n.glitch_power_uw.toFixed(3)} µW`)
+                    show(e, `${n.name} · ${t("글리치", "Glitch")} ${n.glitch_power_uw.toFixed(3)} µW`)
                   }
                   onMouseLeave={hide}
                 />
