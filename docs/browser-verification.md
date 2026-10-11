@@ -124,3 +124,11 @@ node scripts/browser_english_coverage_check.mjs
 (`backend/tests/fixtures/openlane/`)를 파일 선택으로 올립니다. 미리보기의 코너별 타이밍 표·도메인
 finding, 390·320px 폭, 세 런 저장, 런 근거와 원본 다운로드, 두 리비전 비교, routing 게이트 차단 사유,
 영어·한국어 화면을 확인합니다. 실행 변수는 영어 누락 검사와 같습니다.
+
+## 경로별 코드 분할
+
+`browser_code_splitting_check.mjs`는 개발 서버가 아닌 프로덕션 빌드에서 실행합니다. `npm run build` 뒤
+`BACKEND_PORT=18000 npx vite preview --host 127.0.0.1 --port 4173`으로 띄우고 `seed_demo.py`로 채운
+로컬 모드 백엔드를 사용합니다. 서비스 소개·대시보드·프로젝트 상세의 첫 로드 JS 크기, 소개 화면이
+프로젝트 화면 코드를 받지 않는지, 화면 간 이동과 이전 버전 화면 파일이 사라졌을 때의 새 버전 안내를
+확인합니다.
