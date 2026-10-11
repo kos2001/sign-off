@@ -1,4 +1,5 @@
 # Sign-off Hub
+<p><strong lang="ko">한국어</strong> · <a href="README.en.md" lang="en">English</a></p>
 
 칩 설계 사인오프(sign-off) 관리·분석 플랫폼. `signoff-latest-tech-and-skills.md` 리서치 리포트의
 최신 사인오프 기술(shift-left 게이트, IR-drop 스크리닝, 벡터리스 글리치 파워, MMMC/PBA 타이밍)을
@@ -54,6 +55,29 @@ pnpm dev
 테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1124개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
+
+## 화면
+
+시드된 Ibex × SKY130 데모를 영어 UI로 전환해 캡처했습니다.
+
+<table>
+  <tr>
+    <td><img src="docs/img/dashboard.png" alt="프로젝트 대시보드" width="100%"></td>
+    <td><img src="docs/img/project-detail.png" alt="프로젝트 상세와 shift-left 스테이지 게이트" width="100%"></td>
+  </tr>
+  <tr>
+    <td>프로젝트 대시보드 — 전체 프로젝트의 런 상태와 프로젝트별 사인오프 진행률.</td>
+    <td>프로젝트 상세 — 라이프사이클, shift-left 스테이지 게이트, 사인오프 계획, 릴리스 후보 리비전.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/img/run-detail.png" alt="사인오프 런 상세와 위반 검토" width="100%"></td>
+    <td><img src="docs/img/analysis-ir-drop.png" alt="IR-drop 스크리닝 분석 도구" width="100%"></td>
+  </tr>
+  <tr>
+    <td>사인오프 런 상세 — 실행 근거, 지표(WNS/TNS, 코너), 위반 검토.</td>
+    <td>IR-drop 스크리닝 — agent 개입 여부를 명시하는 분석 도구 화면.</td>
+  </tr>
+</table>
 
 ## hermes-agent 연동 (선택)
 
@@ -216,3 +240,7 @@ crossing과 정적 finding을 검증하고 RTL 게이트의 독립 CDC/RDC 근�
 과거 결정을 `근거 변경 · 재결정 필요`로 표시합니다.
 
 [KLayout DRC 마커 보고서 가져오기](docs/klayout-import.md)를 지원합니다. PV 런·위반·원본 근거로 보존하며 전체 DRC 통과와 구분합니다.
+
+## 라이선스
+
+MIT — [LICENSE](LICENSE) 참고.
