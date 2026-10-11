@@ -30,6 +30,7 @@ import CommercialLowPowerImport from './pages/CommercialLowPowerImport';
 import LowPowerFindings from './pages/LowPowerFindings';
 import ProjectMembers from "./pages/ProjectMembers";
 import ProjectCollectors from './pages/ProjectCollectors';
+import OpenLaneImport from './pages/OpenLaneImport';
 import { Route, Routes } from "react-router";
 
 import { Sidebar } from "./components/Sidebar";
@@ -71,6 +72,7 @@ function Workspace() {
           <Route path="/projects/:id/import/commercial-emir" element={<PowerIntegrityImport />} />
           <Route path="/projects/:id/import/commercial-power" element={<CommercialPowerImport />} />
           <Route path="/projects/:id/import/commercial-thermal" element={<CommercialThermalImport />} />
+          <Route path="/projects/:id/import/openlane" element={<OpenLaneImport />} />
           <Route path="/projects/:id/import/commercial-rtl" element={<CommercialRtlImport />} />
           <Route path="/projects/:id/import/commercial-lvs" element={<CommercialLvsImport />} />
           <Route path="/projects/:id/import/commercial-lec" element={<CommercialLecImport />} />

@@ -110,7 +110,7 @@ def compare_runs(baseline: SignoffRun, candidate: SignoffRun) -> dict:
             'commercial_rtl_report', 'opensta_report', 'opensta_execution', 'commercial_sta_report',
             'klayout_report', 'commercial_drc_report', 'commercial_emir_report',
             'commercial_power_report', 'commercial_thermal_report', 'commercial_lvs_report', 'commercial_lec_report', 'commercial_cdc_report', 'commercial_dft_report',
-            'commercial_low_power_report',
+            'commercial_low_power_report', 'openlane_metrics',
         }
         return run.status in (RunStatus.running, RunStatus.incomplete) or imported_partial and not attested_import
 

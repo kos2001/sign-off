@@ -51,7 +51,7 @@ pnpm install
 pnpm dev
 ```
 
-테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1108개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
+테스트: `cd backend && PYTHONPATH=. .venv/bin/python -m pytest` (1124개 통과; Linux 메모리 제한 검사는 macOS에서 건너뜀)
 
 백엔드 설치는 전이 의존성의 버전과 해시까지 고정합니다. [의존성 설치·갱신 절차](docs/dependencies.md)를 참고하세요.
 
@@ -183,6 +183,9 @@ RTL 테스트벤치 입력, 실제 Icarus 실행, 컴파일·실행 로그와 �
 발급·폐기 처리자 감사 이력을 관리할 수 있습니다.
 [Calibre / Pegasus DRC 마커 JSON 가져오기](docs/commercial-drc-import.md)는 툴·버전·좌표 단위·심각도와
 도형을 검증하고 마커 탐색과 위반 검토 흐름에 연결합니다.
+[OpenLane 2 플로우 결과 가져오기](docs/openlane-import.md)는 `final/metrics.json` 또는 실패한 런의
+`state_out.json` 하나로 코너별 STA, DRC·안테나·XOR·PDN, LVS 런을 같은 리비전에 만들고 리비전 간
+비교에 연결합니다. 플로우 요약이므로 게이트를 열지 않습니다.
 [Calibre / Pegasus LVS 결과 가져오기](docs/commercial-lvs-import.md)는 레이아웃·회로도 TOP과 추출
 개수, 비교 판정과 불일치를 검증하고 routing/final 게이트의 독립 LVS 근거로 연결합니다.
 [Formality / Conformal LEC 결과 가져오기](docs/commercial-lec-import.md)는 reference·implementation
