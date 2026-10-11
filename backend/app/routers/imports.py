@@ -2,7 +2,7 @@ import hashlib
 import json
 from datetime import datetime
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
@@ -29,6 +29,7 @@ from ..services.commercial_cdc import parse_commercial_cdc
 from ..services.commercial_dft import parse_commercial_dft
 from ..services.commercial_low_power import parse_commercial_low_power
 from ..services.klayout_report import parse_klayout
+from ..services.openlane_metrics import parse_openlane_metrics
 from ..services.sta_scenario_plans import resolve_sta_scenario_plan
 
 router = APIRouter(tags=['report-imports'])
@@ -945,3 +946,81 @@ def import_commercial_emir(project_id: int, payload: CommercialEmirImportPayload
             return run
         raise
     return run
+
+
+class OpenLaneImportPayload(ReportImportPayload):
+    time_unit: Literal['ns', 'ps'] = 'ns'
+
+
+def parse_openlane(payload):
+    return parse(payload, lambda source: parse_openlane_metrics(source, payload.time_unit))
+
+
+class OpenLaneImportOut(BaseModel):
+    runs: list[RunOut]
+
+
+OPENLANE_DOMAINS = ('sta', 'pv', 'lvs')
+
+
+def openlane_import_keys(import_id: UUID) -> dict[str, str]:
+    # One receipt per created run; derived keys keep one client import_id idempotent.
+    return {domain: str(uuid5(import_id, f'openlane-metrics/{domain}')) for domain in OPENLANE_DOMAINS}
+
+
+@router.post('/projects/{project_id}/imports/openlane-metrics/preview')
+def preview_openlane_metrics(project_id: int, payload: OpenLaneImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    return parse_openlane(payload)
+
+
+@router.post('/projects/{project_id}/imports/openlane-metrics', response_model=OpenLaneImportOut, status_code=201)
+def import_openlane_metrics(project_id: int, payload: OpenLaneImportPayload, db: Session = Depends(get_db)):
+    from .projects import get_project_or_404
+    get_project_or_404(project_id, db)
+    digest = hashlib.sha256(json.dumps({'format': 'openlane-metrics', 'payload': payload.model_dump(mode='json')},
+                                      sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    keys = openlane_import_keys(payload.import_id)
+
+    def existing():
+        receipts = db.scalars(select(ReportImport).where(ReportImport.project_id == project_id,
+                                                         ReportImport.import_key.in_(keys.values()))).all()
+        if any(receipt.payload_sha256 != digest for receipt in receipts):
+            raise HTTPException(409, 'import identifier already used with different content')
+        order = {key: index for index, key in enumerate(keys.values())}
+        return [db.get(SignoffRun, receipt.run_id) for receipt in sorted(receipts, key=lambda r: order[r.import_key])]
+
+    if runs := existing():
+        return {'runs': runs}
+    result = parse_openlane(payload)
+    shared = {key: result[key] for key in ['parser', 'tool', 'metric_count', 'source_format', 'time_unit',
+                                           'non_finite_metrics', 'source_sha256', 'design_summary']}
+    shared['metadata'] = {key: getattr(payload, key) for key in ['filename', 'tool_version', 'scenario']}
+    shared['metadata']['report_format'] = result['parser']
+    shared['flow_domains'] = [domain['domain'] for domain in result['domains']]
+    shared['submitted_by'] = submitter(db)
+    created = []
+    for domain in result['domains']:
+        run = SignoffRun(project_id=project_id, domain=domain['domain'], stage=payload.stage, tool=result['tool'],
+                         status=domain['status'], metrics=domain['metrics'])
+        run.evidence = RunEvidence(source='openlane_metrics', source_text=payload.source_text,
+                                   source_sha256=result['source_sha256'], design_revision=payload.design_revision,
+                                   result={**shared, **domain})
+        for item in domain['items']:
+            run.violations.append(Violation(check_name=f"openlane/{domain['domain']}/{item['check']}"[:120],
+                                            severity=item['severity'], location=item['location'][:200],
+                                            description=item['message']))
+        db.add(run)
+        created.append((domain['domain'], run))
+    try:
+        db.flush()
+        for domain, run in created:
+            db.add(ReportImport(project_id=project_id, import_key=keys[domain], payload_sha256=digest, run_id=run.id))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if runs := existing():
+            return {'runs': runs}
+        raise
+    return {'runs': [run for _, run in created]}

@@ -117,3 +117,10 @@ node scripts/browser_english_coverage_check.mjs
 시드 데이터로 열리지 않는 상용 도구 증거 분기 등은 이 검사가 화면에 띄우지 못합니다. 새 문구는
 `useLanguage()`의 `t('한국어', 'English')` 또는 React 밖에서 `tr()`로 작성하고, 날짜는
 `formatDateTime()`으로 표시합니다.
+
+## OpenLane 2 가져오기
+
+`browser_openlane_import_check.mjs`는 로컬 모드 임시 DB 서버에 프로젝트를 만들고, 실제 sky130 런 지표
+(`backend/tests/fixtures/openlane/`)를 파일 선택으로 올립니다. 미리보기의 코너별 타이밍 표·도메인
+finding, 390·320px 폭, 세 런 저장, 런 근거와 원본 다운로드, 두 리비전 비교, routing 게이트 차단 사유,
+영어·한국어 화면을 확인합니다. 실행 변수는 영어 누락 검사와 같습니다.

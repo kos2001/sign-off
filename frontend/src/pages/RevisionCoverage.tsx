@@ -23,6 +23,7 @@ function gateReason(reason: string | null) {
     'Captured verification coverage required; manual status is not evidence': tr('검증 범위 근거 필요', 'Coverage evidence required'),
     'Imported path report does not establish full STA coverage': tr('STA 전체 범위 미확인', 'Full STA coverage not established'),
     'Executed path sample does not establish full STA coverage': tr('STA 전체 범위 미확인', 'Full STA coverage not established'),
+    'Imported OpenLane flow metrics do not establish full sign-off coverage': tr('OpenLane 플로우 지표만으로는 전체 검증 범위 미확인', 'OpenLane flow metrics alone do not establish full coverage'),
     'Trusted STA evidence targets an outdated scenario plan': tr('오래된 MMMC 계획 근거', 'Evidence targets an outdated MMMC plan'),
   };
   return known[reason] ?? reason;

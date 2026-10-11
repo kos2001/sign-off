@@ -88,6 +88,7 @@ function gateReasonLabel(reason?: string | null) {
     'Imported marker report does not establish full DRC coverage': tr('DRC 전체 검증 범위 미확인', 'Full DRC coverage not established'),
     'Imported LVS result does not establish full LVS coverage': tr('LVS 전체 검증 범위 미확인', 'Full LVS coverage not established'),
     'Imported LEC result does not establish full equivalence coverage': tr('LEC 전체 검증 범위 미확인', 'Full LEC coverage not established'),
+    'Imported OpenLane flow metrics do not establish full sign-off coverage': tr('OpenLane 플로우 지표만으로는 전체 검증 범위 미확인', 'OpenLane flow metrics alone do not establish full coverage'),
     'Captured verification coverage required; manual status is not evidence': tr('검증 범위 근거 필요 · 수동 상태만으로 통과 불가', 'Coverage evidence required · Manual status alone cannot pass'),
     "latest run status is 'running'": tr('최신 런 실행 중', 'Latest run in progress'),
     "latest run status is 'failed'": tr('최신 런 실패', 'Latest run failed'),
@@ -348,6 +349,7 @@ export default function ProjectDetail() {
               )}
               <button
                 className="btn flex items-center gap-2"
+                aria-pressed={s === stage}
                 style={
                   s === stage
                     ? { background: "var(--series-1)", color: "#fff" }

@@ -36,7 +36,7 @@ export interface SignoffRun {
   status: RunStatus;
   metrics: Record<string, unknown>;
   created_at: string;
-  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "commercial_cdc_report" | "commercial_dft_report" | "commercial_low_power_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report";
+  evidence_source: "manual" | "rtl_ladder" | "legacy" | "commercial_rtl_report" | "commercial_cdc_report" | "commercial_dft_report" | "commercial_low_power_report" | "opensta_report" | "opensta_execution" | "commercial_sta_report" | "klayout_report" | "commercial_drc_report" | "commercial_emir_report" | "commercial_power_report" | "commercial_thermal_report" | "commercial_lvs_report" | "commercial_lec_report" | "openlane_metrics";
   result_locked: boolean;
   design_revision: string | null;
 }
@@ -64,7 +64,7 @@ export interface RunEvidence {
   source_text: string | null;
   source_sha256: string | null;
   design_revision: string | null;
-  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & Partial<LecPreview> & Partial<CdcPreview> & Partial<DftPreview> & Partial<LowPowerPreview> & {
+  result: Partial<RtlSignoffResult> & Partial<RegressionPreview> & Partial<ReportPreview> & Partial<KLayoutPreview> & Partial<PowerIntegrityPreview> & Partial<CommercialPowerPreview> & Partial<ThermalPreview> & Partial<LvsPreview> & Partial<LecPreview> & Partial<CdcPreview> & Partial<DftPreview> & Partial<LowPowerPreview> & Partial<Omit<OpenLanePreview, 'domains'>> & { flow_domains?: Domain[] } & {
     metadata?: { filename: string; tool_version: string; scenario: string; parasitics?: 'spef' | 'none' };
     submitted_by?: { user_id: number; username: string } | { collector_id: number; name: string } | null;
     input_artifacts?: Partial<Record<'netlist' | 'liberty' | 'sdc' | 'spef', { sha256: string; byte_length: number }>>;
@@ -72,6 +72,22 @@ export interface RunEvidence {
   created_at: string;
 }
 
+export interface OpenLaneImportInput extends Omit<ReportImportInput, 'coverage_attestation'> { time_unit: 'ns' | 'ps' }
+export interface OpenLaneCorner {
+  corner: string; setup_ws_ps: number | null; setup_tns_ps: number | null; setup_violations: number | null;
+  hold_ws_ps: number | null; hold_tns_ps: number | null; hold_violations: number | null;
+  max_slew_violations: number | null; max_cap_violations: number | null; max_fanout_violations: number | null;
+}
+export interface OpenLaneDomainResult {
+  domain: 'sta' | 'pv' | 'lvs'; status: 'failed' | 'incomplete'; metrics: Record<string, number | null>;
+  missing: string[]; coverage: string; coverage_note: string; corners?: OpenLaneCorner[];
+  items: { check: string; severity: Severity; location: string; message: string; fingerprint: string }[];
+}
+export interface OpenLanePreview {
+  parser: string; tool: string; metric_count: number; source_format: 'metrics.json' | 'state_out.json';
+  time_unit: 'ns' | 'ps'; non_finite_metrics: string[]; source_sha256: string;
+  design_summary: Record<string, number | null>; domains: OpenLaneDomainResult[];
+}
 export interface ReportImportInput {
   import_id: string; stage: Stage; filename: string; tool_version: string;
   design_revision: string; scenario: string; source_text: string;
@@ -651,6 +667,8 @@ export const api = {
   previewCommercialRtl:(projectId:number,body:ReportImportInput)=>request<RegressionPreview>(`/projects/${projectId}/imports/commercial-rtl/preview`,{method:'POST',body:JSON.stringify(body)}),
   importCommercialRtl:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-rtl`,{method:'POST',body:JSON.stringify(body)}),
   rtlRegression:(runId:number,filters:Record<string,string>)=>request<RegressionPage>(`/runs/${runId}/rtl-regression?${new URLSearchParams(filters)}`),
+  previewOpenLaneMetrics:(projectId:number,body:OpenLaneImportInput)=>request<OpenLanePreview>(`/projects/${projectId}/imports/openlane-metrics/preview`,{method:'POST',body:JSON.stringify(body)}),
+  importOpenLaneMetrics:(projectId:number,body:OpenLaneImportInput)=>request<{ runs: SignoffRun[] }>(`/projects/${projectId}/imports/openlane-metrics`,{method:'POST',body:JSON.stringify(body)}),
   previewCommercialLvs:(projectId:number,body:ReportImportInput)=>request<LvsPreview>(`/projects/${projectId}/imports/commercial-lvs/preview`,{method:'POST',body:JSON.stringify(body)}),
   importCommercialLvs:(projectId:number,body:ReportImportInput)=>request<SignoffRun>(`/projects/${projectId}/imports/commercial-lvs`,{method:'POST',body:JSON.stringify(body)}),
   lvsMismatches:(runId:number,filters:Record<string,string>)=>request<LvsPage>(`/runs/${runId}/lvs-mismatches?${new URLSearchParams(filters)}`),

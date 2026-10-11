@@ -157,6 +157,9 @@ def evaluate_gate(runs: list[SignoffRun], stage: Stage, plan: dict | None = None
         elif latest.evidence_source == 'commercial_dft_report' and not attested_coverage:
             reason = 'Imported DFT result does not establish full scan and ATPG coverage'
             ready = False
+        elif latest.evidence_source == 'openlane_metrics':
+            reason = 'Imported OpenLane flow metrics do not establish full sign-off coverage'
+            ready = False
         elif latest.domain == Domain.rtl and latest.evidence_source == 'rtl_ladder' and latest.result_locked and rtl_result_status(evidence_result) != RunStatus.passed:
             reason = f"RTL evidence is {rtl_result_status(evidence_result).value}; required stages must all pass"
             ready = False
